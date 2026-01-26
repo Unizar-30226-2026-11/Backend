@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",                        // Node moderno soporta casi todo
+    "module": "CommonJS",                      // Estándar para Express
+    "moduleResolution": "node",
+    "lib": ["ES2022"],                         // Eliminamos DOM, dejamos solo ES
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",                          // Asegura que la estructura se mantenga
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,                      // Acelera la compilación omitiendo tipos de librerías
+    "forceConsistentCasingInFileNames": true,
+
+    /* Reglas de estilo que ya tenías (¡muy buenas!) */
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Paths */
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "typeRoots": ["./node_modules/@types", "./src/types"]
+  },
+  "include": ["src/**/*"],                     // Captura todo dentro de src
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
