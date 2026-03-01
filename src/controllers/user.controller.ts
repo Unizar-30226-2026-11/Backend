@@ -1,3 +1,4 @@
+// controllers/user.controller.ts
 import { Response } from 'express';
 
 import { AuthenticatedRequest } from '../types';

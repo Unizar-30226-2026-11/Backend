@@ -2,15 +2,19 @@
 import { Router } from 'express';
 
 import { getCardsByCollection, getCollections } from '../controllers';
-import { authMiddleware } from '../middlewares';
+import { authenticate, validateIdParam } from '../middlewares';
 
 const router = Router();
 
 // Público o requiere autenticación?
 // Lo mantenemos con auth para seguir tu patrón.
-router.use(authMiddleware);
+router.use(authenticate);
 
 router.get('/', getCollections);
-router.get('/:collectionId/cards', getCardsByCollection);
+router.get(
+  '/:collectionId/cards',
+  validateIdParam('collectionId'),
+  getCardsByCollection,
+);
 
 export default router;

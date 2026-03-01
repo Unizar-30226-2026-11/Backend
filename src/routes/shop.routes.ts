@@ -2,13 +2,19 @@
 import { Router } from 'express';
 
 import { buyItem, getShopItems } from '../controllers';
-import { authMiddleware } from '../middlewares';
+import { authenticate } from '../middlewares';
+import { checkItemNotOwned, validateBuyItemBody } from '../middlewares';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(authenticate);
 
 router.get('/items', getShopItems);
-router.post('/buy', buyItem);
+router.post(
+  '/buy',
+  validateBuyItemBody, // ¿El ID del item es válido y viene en el body?
+  checkItemNotOwned, // ¿El usuario ya tiene este item? (Evita compras duplicadas)
+  buyItem, // Controller: Realizar la transacción
+);
 
 export default router;

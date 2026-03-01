@@ -1,9 +1,10 @@
+// middlewares/auth.middleware.ts
 import { NextFunction, Response } from 'express';
 import jwt, { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 
 import { AuthenticatedRequest } from '../types';
 
-export const authMiddleware = (
+export const authenticate = (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction,

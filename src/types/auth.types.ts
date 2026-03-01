@@ -1,3 +1,4 @@
+// types/auth.types.ts
 import { Request } from 'express';
 
 // Interfaz para extender el Request de Express e inyectar los datos del usuario
