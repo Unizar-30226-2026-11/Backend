@@ -1,9 +1,6 @@
 // routes/user.routes.ts
 import { Router } from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { validateDeckBody } from '../middlewares/validators.middleware';
-import { isDeckOwner } from '../middlewares/resourceAuth.middleware';
-import { hasCardsInCollection } from '../middlewares/cardOwnership.middleware';
+import { authMiddleware, isDeckOwner, hasCardsInCollection, validateDeckBody } from '../middlewares';
 import {
     getProfile,
     getBalance,
@@ -14,7 +11,7 @@ import {
     createDeck,
     updateDeck,
     deleteDeck
-} from '../controllers/user.controller';
+} from '../controllers';
 
 const router = Router();
 
