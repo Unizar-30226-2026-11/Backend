@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 // Simulación de las llamadas a la base de datos
-const mockDb = {
+export const mockDb = {
     User: {
         findById: async (id: string) => ({ id, username: 'PlayerOne', level: 15, status: 'online' }),
         find: async (query: any) => [{ id: 'user_999', username: 'TestUser' }]
@@ -17,8 +17,9 @@ const mockDb = {
         findOwnedByUserId: async (id: string) => ([{ cardId: 'c_001', name: 'Golpe Crítico', quantity: 3 }])
     },
     Deck: {
-        find: async (query: any) => ([{ deckId: 'd_123', name: 'Mazo Destrucción', cardCount: 40 }]),
+        find: async (query: any) => ([{ deckId: 'd_123', name: 'Mazo Destrucción', cardCount: 40, userId: 'user_123' }]),
         create: async (data: any) => ({ deckId: `d_${Date.now()}`, ...data }),
+        findById: async (id: string) => ({ deckId: id, userId: 'user_123', name: 'Mazo Destrucción' }), // Simula que el dueño es user_123
         findByIdAndUpdate: async (id: string, data: any) => ({ deckId: id, ...data }),
         findByIdAndDelete: async (id: string) => true
     }
@@ -107,67 +108,41 @@ export const createDeck = async (req: AuthenticatedRequest, res: Response): Prom
         const userId = req.user!.id;
         const { name, cardIds } = req.body;
 
-        if (!name || !Array.isArray(cardIds) || cardIds.length === 0) {
-            res.status(400).json({ message: 'Nombre del mazo y lista de cartas son requeridos.' });
-            return;
-        }
-
-        // Aquí iría la validación lógica: verificar que el usuario posee esas cartas
-
         const newDeck = await mockDb.Deck.create({
             userId,
-            name,
+            name: name.trim(),
             cards: cardIds,
             cardCount: cardIds.length
         });
 
         res.status(201).json({ message: 'Mazo creado exitosamente.', deck: newDeck });
     } catch (error) {
-        res.status(500).json({ message: 'Error al crear el mazo.' });
+        res.status(500).json({ message: 'Error interno al crear el mazo.' });
     }
 };
 
 export const updateDeck = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-        const userId = req.user!.id;
-        const deckId = req.params.deckId;
+        const { deckId } = req.params;
         const { name, cardIds } = req.body;
 
-        if (!deckId) {
-            res.status(400).json({ message: 'El ID del mazo es requerido.' });
-            return;
-        }
+        const updatedDeck = await mockDb.Deck.findByIdAndUpdate(deckId, { 
+            name: name.trim(), 
+            cards: cardIds 
+        });
 
-        // Validar propiedad del mazo antes de actualizar (simulado en DB real)
-        const updatedDeck = await mockDb.Deck.findByIdAndUpdate(deckId, { name, cards: cardIds });
-
-        if (!updatedDeck) {
-            res.status(404).json({ message: 'Mazo no encontrado.' });
-            return;
-        }
-
-        res.status(200).json({ message: 'Mazo actualizado exitosamente.', deck: updatedDeck });
+        res.status(200).json({ message: 'Mazo actualizado.', deck: updatedDeck });
     } catch (error) {
-        res.status(500).json({ message: 'Error al actualizar el mazo.' });
+        res.status(500).json({ message: 'Error interno al actualizar.' });
     }
 };
 
 export const deleteDeck = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-        const deckId = req.params.deckId;
+        const { deckId } = req.params;
 
-        if (!deckId) {
-            res.status(400).json({ message: 'El ID del mazo es requerido.' });
-            return;
-        }
-
-        // Validar propiedad del mazo antes de borrar
-        const isDeleted = await mockDb.Deck.findByIdAndDelete(deckId);
-
-        if (!isDeleted) {
-            res.status(404).json({ message: 'Mazo no encontrado.' });
-            return;
-        }
+        // El middleware garantizó que es su mazo
+        await mockDb.Deck.findByIdAndDelete(deckId);
 
         res.status(200).json({ message: 'Mazo eliminado correctamente.' });
     } catch (error) {

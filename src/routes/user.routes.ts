@@ -1,6 +1,9 @@
 // routes/user.routes.ts
 import { Router } from 'express';
 import { authMiddleware } from '../middlewares/auth.middleware';
+import { validateDeckBody } from '../middlewares/validators.middleware';
+import { isDeckOwner } from '../middlewares/resourceAuth.middleware';
+import { hasCardsInCollection } from '../middlewares/cardOwnership.middleware';
 import {
     getProfile,
     getBalance,
@@ -26,8 +29,12 @@ router.get('/search', searchUsers);
 // Gestión de Colección Personal y Mazos
 router.get('/cards', getOwnedCards);
 router.get('/decks', getUserDecks);
-router.post('/decks', createDeck);
-router.put('/decks/:deckId', updateDeck);
-router.delete('/decks/:deckId', deleteDeck);
+
+// CREAR: 1.Auth -> 2.Formato -> 3.Dueño de cartas -> 4.Controller
+router.post('/decks', validateDeckBody, hasCardsInCollection, createDeck);
+
+// ACTUALIZAR: 1.Auth -> 2.Dueño del mazo -> 3.Formato -> 4.Dueño de cartas -> 5.Controller
+router.put('/decks/:deckId', isDeckOwner, validateDeckBody, hasCardsInCollection, updateDeck);
+router.delete('/decks/:deckId', isDeckOwner, deleteDeck);
 
 export default router;
