@@ -1,14 +1,16 @@
 // routes/lobby.routes.ts
 import { Router } from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { createLobby, getPublicLobbies, getLobbyByCode } from '../controllers/lobby.controller';
+
+import { createLobby, getLobbyByCode, getPublicLobbies } from '../controllers';
+import { validateCreateLobbyBody, validateIdParam } from '../middlewares';
+import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(authenticate);
 
-router.post('/', createLobby);
-router.get('/', getPublicLobbies); 
-router.get('/:lobbyCode', getLobbyByCode); // Búsqueda exacta por código
+router.post('/', validateCreateLobbyBody, createLobby);
+router.get('/', getPublicLobbies);
+router.get('/:lobbyCode', validateIdParam('lobbyCode'), getLobbyByCode); // Búsqueda exacta por código
 
 export default router;

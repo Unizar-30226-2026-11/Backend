@@ -5,6 +5,8 @@
  * Evita inyecciones básicas y caracteres especiales problemáticos en URLs.
  */
 export const ID_SAFE_REGEX = /^[a-zA-Z0-9_]+$/;
+// Añadimos el regex específico para salas
+export const LOBBY_CODE_REGEX = /^[A-Z0-9]{4,6}$/;
 
 /**
  * Opcional: Si IDs siempre tienen una longitud fija (ej: u_ + 10 caracteres)

@@ -1,7 +1,7 @@
 // middlewares/validators.middleware.ts
 import { NextFunction, Request, Response } from 'express';
 
-import { ID_PREFIXES, ID_SAFE_REGEX } from '../constants';
+import { ID_PREFIXES, ID_SAFE_REGEX, LOBBY_CODE_REGEX } from '../constants';
 import { AuthenticatedRequest } from '../types';
 
 // Mapa interno para saber qué prefijo corresponde a cada parámetro
@@ -74,8 +74,8 @@ const validateId = (
 ) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     const idValue = req[source][paramName];
-    const expectedPrefix = PARAM_PREFIX_MAP[paramName];
 
+    // Validación de existencia y tipo
     if (!idValue || typeof idValue !== 'string') {
       res.status(400).json({
         message: `El campo '${paramName}' es requerido y debe ser un texto.`,
@@ -83,6 +83,19 @@ const validateId = (
       return;
     }
 
+    // CASO ESPECIAL: Lobby Code (No usa prefijos, usa formato A-Z0-9)
+    if (paramName === 'lobbyCode') {
+      if (!LOBBY_CODE_REGEX.test(idValue)) {
+        res.status(400).json({
+          message: `El código de sala debe tener entre 4 y 6 caracteres alfanuméricos en mayúsculas.`,
+        });
+        return;
+      }
+      return next();
+    }
+
+    // Validación de Prefijos (para IDs normales)
+    const expectedPrefix = PARAM_PREFIX_MAP[paramName];
     if (expectedPrefix && !idValue.startsWith(expectedPrefix)) {
       res.status(400).json({
         message: `Formato inválido. '${paramName}' debe comenzar con '${expectedPrefix}'.`,
@@ -90,6 +103,7 @@ const validateId = (
       return;
     }
 
+    // Validación de caracteres permitidos
     if (!ID_SAFE_REGEX.test(idValue)) {
       res.status(400).json({
         message: `El campo '${paramName}' contiene caracteres no permitidos.`,
@@ -104,6 +118,8 @@ const validateId = (
 // Valida parámetros en la URL como :userId, :deckId, etc.
 export const validateIdParam = (paramName: string) =>
   validateId(paramName, 'params');
+export const validateIdBody = (paramName: string) =>
+  validateId(paramName, 'body');
 
 // Valida específicamente el cuerpo al enviar solicitud
 export const validateSendRequestBody = validateId('targetUserId', 'body');
@@ -133,4 +149,41 @@ export const validateRespondRequestBody = (
       message: 'Error interno al validar la respuesta de la solicitud.',
     });
   }
+};
+
+/**
+ * Valida el cuerpo complejo al crear un nuevo lobby
+ */
+export const validateCreateLobbyBody = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const { name, maxPlayers, engine, isPrivate } = req.body;
+
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    res.status(400).json({ message: 'El nombre de la sala es obligatorio.' });
+    return;
+  }
+
+  if (typeof maxPlayers !== 'number' || maxPlayers < 3 || maxPlayers > 6) {
+    res
+      .status(400)
+      .json({ message: 'El número de jugadores debe ser entre 3 y 6.' });
+    return;
+  }
+
+  if (engine !== 'Classic' && engine !== 'Stella') {
+    res
+      .status(400)
+      .json({ message: 'El motor debe ser "Classic" o "Stella".' });
+    return;
+  }
+
+  if (typeof isPrivate !== 'boolean') {
+    res.status(400).json({ message: 'El campo isPrivate debe ser booleano.' });
+    return;
+  }
+
+  next();
 };

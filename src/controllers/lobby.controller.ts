@@ -1,40 +1,91 @@
 // controllers/lobby.controller.ts
 import { Response } from 'express';
-import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
-export const createLobby = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    // Se espera en req.body: { name: string, maxPlayers: number, engine: string, isPrivate: boolean }
-    // 1. Generar un código único corto para la sala (ej. "X7B9").
-    // 2. Guardar el lobby en la base de datos o Redis.
-    
-    res.status(201).json({ 
-        message: 'Sala creada con éxito',
-        lobbyCode: 'X7B9' // El código que el anfitrión compartirá con sus amigos
+import { LobbyService } from '../services';
+import { AuthenticatedRequest } from '../types';
+
+export const createLobby = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const hostId = req.user!.id;
+    const { name, maxPlayers, engine, isPrivate } = req.body;
+
+    // Llamada al servicio para crear la sala
+    const createdLobby = await LobbyService.create({
+      hostId,
+      name,
+      maxPlayers,
+      engine,
+      isPrivate,
     });
+
+    res.status(201).json({
+      message: 'Sala creada exitosamente. Listo para conexión WebSocket.',
+      lobby: createdLobby,
+    });
+  } catch (error) {
+    console.error('Error in createLobby:', error);
+    res.status(500).json({ message: 'Error interno al crear la sala.' });
+  }
 };
 
-export const getPublicLobbies = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    // Se espera Opcionalmente en req.query: { search: string }
-    // 1. Buscar en BD/Redis salas donde isPrivate == false y status == 'waiting'.
-    // 2. Si existe req.query.search, filtrar por el nombre de la sala (LIKE %search%).
-    
-    res.status(200).json({ 
-        lobbies: [
-            { lobbyCode: 'A1B2', name: 'Sala de Novatos', players: 2, maxPlayers: 4 }
-        ] 
-    });
-};
+export const getPublicLobbies = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const searchQuery = req.query.search as string | undefined;
 
-export const getLobbyByCode = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    // Se espera en req.params: { lobbyCode: string }
-    // 1. Buscar la sala exacta por su código (sin importar si es pública o privada).
-    // 2. Validar que la sala exista y tenga espacio disponible.
-    // 3. Devolver los detalles para que el frontend pueda iniciar la conexión WebSocket.
-    
+    // Búsqueda delegada al servicio
+    const publicLobbies = await LobbyService.getPublicLobbies(searchQuery);
+
+    // Retornar la lista
     res.status(200).json({
-        lobbyCode: req.params.lobbyCode,
-        hostId: 'user_123',
-        engine: 'Classic',
-        status: 'waiting'
+      lobbies: publicLobbies,
     });
+  } catch (error) {
+    console.error('Error in getPublicLobbies:', error);
+    res.status(500).json({ message: 'Error al buscar salas públicas.' });
+  }
+};
+
+export const getLobbyByCode = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { lobbyCode } = req.params;
+
+    const lobby = await LobbyService.getLobbyByCode(lobbyCode);
+
+    // Validaciones de negocio en el controlador (o podrían ir al servicio)
+    if (!lobby) {
+      res
+        .status(404)
+        .json({ message: 'La sala solicitada no existe o ya ha terminado.' });
+      return;
+    }
+
+    // Verificar si la sala ya está llena
+    if (lobby.players.length >= lobby.maxPlayers) {
+      res.status(403).json({
+        message: 'La sala está llena. No se pueden unir más jugadores.',
+        lobbyCode: lobby.lobbyCode,
+      });
+      return;
+    }
+
+    // Retornar los detalles para permitir la conexión en el frontend
+    res.status(200).json({
+      message: 'Sala encontrada.',
+      lobby,
+    });
+  } catch (error) {
+    console.error('Error in getLobbyByCode:', error);
+    res
+      .status(500)
+      .json({ message: 'Error al buscar la información de la sala.' });
+  }
 };
