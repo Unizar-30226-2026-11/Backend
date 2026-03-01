@@ -1,8 +1,7 @@
 // middlewares/ownership.middleware.ts
 import { NextFunction, Response } from 'express';
 
-import { mockDb as mockDbShop } from '../controllers/shop.controller';
-import { mockDb } from '../controllers/user.controller';
+import { ShopService, UserService } from '../services';
 import { AuthenticatedRequest } from '../types';
 
 export const isDeckOwner = async (
@@ -19,7 +18,7 @@ export const isDeckOwner = async (
       return;
     }
 
-    const deck = await mockDb.Deck.findById(deckId);
+    const deck = await UserService.getDeckById(deckId);
 
     if (!deck) {
       res.status(404).json({ message: 'Mazo no encontrado.' });
@@ -61,7 +60,7 @@ export const hasCardsInCollection = async (
     }
 
     // Obtenemos las cartas que el usuario posee realmente
-    const ownedCards = await mockDb.CardCollection.findOwnedByUserId(userId);
+    const ownedCards = await UserService.getUserCards(userId);
 
     // Creamos un Set o un Map para que la búsqueda sea ultra rápida O(1)
     const ownedCardIds = new Set(ownedCards.map((c) => c.cardId));
@@ -96,7 +95,7 @@ export const checkItemNotOwned = async (
     const { itemId } = req.body;
 
     // Verificar si el usuario ya posee el artículo (mazo temático o cosmético)
-    const isOwned = await mockDbShop.Inventory.checkOwnership(userId, itemId);
+    const isOwned = await ShopService.checkOwnership(userId, itemId);
 
     if (isOwned) {
       res.status(400).json({

@@ -1,52 +1,8 @@
 // controllers/friend.controller.ts
 import { Response } from 'express';
 
+import { FriendService } from '../services';
 import { AuthenticatedRequest } from '../types';
-
-// Simulación de la base de datos asíncrona para el sistema de Amigos
-const mockDb = {
-  Friends: {
-    getConfirmedFriends: async (userId: string) => [
-      { id: 'u_456', username: 'PlayerDos', status: 'online' },
-      { id: 'u_789', username: 'GamerX', status: 'offline' },
-    ],
-    getPendingRequests: async (userId: string) => [
-      {
-        id: 'req_001',
-        fromUserId: 'u_999',
-        fromUsername: 'Ninja',
-        createdAt: '2026-03-01T10:00:00Z',
-      },
-    ],
-    checkRelationshipStatus: async (userA: string, userB: string) => {
-      // Retorna 'friends', 'pending', o 'none'
-      return 'none';
-    },
-    createRequest: async (fromUserId: string, toUserId: string) => ({
-      id: `req_${Date.now()}`,
-      fromUserId,
-      toUserId,
-      status: 'pending',
-    }),
-    findRequestById: async (requestId: string) => {
-      if (requestId === 'req_001') {
-        return {
-          id: 'req_001',
-          fromUserId: 'u_999',
-          toUserId: 'u_123',
-          status: 'pending',
-        };
-      }
-      return null;
-    },
-    updateRequestStatus: async (
-      requestId: string,
-      status: 'accepted' | 'rejected',
-    ) => true,
-    createBidirectionalFriendship: async (userA: string, userB: string) => true,
-    removeBidirectionalFriendship: async (userA: string, userB: string) => true,
-  },
-};
 
 export const getFriends = async (
   req: AuthenticatedRequest,
@@ -56,7 +12,7 @@ export const getFriends = async (
     const userId = req.user!.id;
 
     // Obtener la lista de amigos confirmados
-    const friends = await mockDb.Friends.getConfirmedFriends(userId);
+    const friends = await FriendService.getConfirmedFriends(userId);
 
     res.status(200).json({ friends });
   } catch (error) {
@@ -73,7 +29,7 @@ export const getPendingRequests = async (
     const userId = req.user!.id;
 
     // Obtener solicitudes entrantes pendientes
-    const pendingRequests = await mockDb.Friends.getPendingRequests(userId);
+    const pendingRequests = await FriendService.getPendingRequests(userId);
 
     res.status(200).json({ pendingRequests });
   } catch (error) {
@@ -101,7 +57,7 @@ export const sendRequest = async (
     }
 
     // Comprobar si ya son amigos o si ya existe una solicitud pendiente
-    const relationshipStatus = await mockDb.Friends.checkRelationshipStatus(
+    const relationshipStatus = await FriendService.checkRelationshipStatus(
       userId,
       targetUserId,
     );
@@ -122,7 +78,10 @@ export const sendRequest = async (
     }
 
     // Crear y guardar la solicitud en la base de datos
-    const newRequest = await mockDb.Friends.createRequest(userId, targetUserId);
+    const newRequest = await FriendService.createFriendRequest(
+      userId,
+      targetUserId,
+    );
 
     res.status(201).json({
       message: 'Solicitud de amistad enviada con éxito.',
@@ -146,7 +105,7 @@ export const respondToRequest = async (
     const { action } = req.body;
 
     // Buscar la solicitud en la base de datos
-    const request = await mockDb.Friends.findRequestById(requestId);
+    const request = await FriendService.findRequestById(requestId);
 
     if (!request) {
       res.status(404).json({ message: 'La solicitud de amistad no existe.' });
@@ -163,13 +122,12 @@ export const respondToRequest = async (
 
     // Procesar la acción (Aceptar o Rechazar)
     if (action === 'accept') {
-      // Actualizar estado de la solicitud y crear la relación bidireccional
-      await mockDb.Friends.updateRequestStatus(requestId, 'accepted');
-      await mockDb.Friends.createBidirectionalFriendship(
+      // Toda la lógica de negocio (cambiar estado y crear amistad) ocurre dentro del servicio
+      await FriendService.acceptFriendRequest(
+        requestId,
         request.fromUserId,
         request.toUserId,
       );
-
       res
         .status(200)
         .json({ message: 'Solicitud de amistad aceptada. Ahora son amigos.' });
@@ -177,9 +135,7 @@ export const respondToRequest = async (
     }
 
     if (action === 'reject') {
-      // Solo actualizar el estado a rechazado (o eliminar el registro, dependiendo del diseño de la BD)
-      await mockDb.Friends.updateRequestStatus(requestId, 'rejected');
-
+      await FriendService.rejectFriendRequest(requestId);
       res.status(200).json({ message: 'Solicitud de amistad rechazada.' });
       return;
     }
@@ -200,10 +156,7 @@ export const removeFriend = async (
     const { friendId } = req.params;
 
     // Eliminar la relación bidireccional de amistad en la base de datos
-    const success = await mockDb.Friends.removeBidirectionalFriendship(
-      userId,
-      friendId,
-    );
+    const success = await FriendService.removeFriend(userId, friendId);
 
     if (!success) {
       res.status(400).json({
