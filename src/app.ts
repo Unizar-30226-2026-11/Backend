@@ -1,4 +1,5 @@
 import express, { Application } from 'express';
+import router from './routes';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -21,7 +22,7 @@ app.use(express.json()); // Parsear JSON en el body
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // --- Rutas ---
-// app.use('/api/auth', authRoutes); // LCambiar esto
+app.use('/api', router);
 
 // Middleware de manejo de errores global (opcional pero recomendado)
 app.use((err: any, req: any, res: any, next: any) => {
