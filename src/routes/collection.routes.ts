@@ -1,7 +1,8 @@
 // routes/collection.routes.ts
 import { Router } from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { getCollections, getCardsByCollection } from '../controllers/collection.controller';
+
+import { getCardsByCollection, getCollections } from '../controllers';
+import { authMiddleware } from '../middlewares';
 
 const router = Router();
 

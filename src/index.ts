@@ -5,24 +5,24 @@ import app from './app';
 const PORT = process.env.PORT || 3000;
 
 async function bootstrap() {
-    try {
-        // Conectar Prisma
-        // await prisma.$connect();
-        // console.log('✅ Base de datos (Prisma) lista.');
+  try {
+    // Conectar Prisma
+    // await prisma.$connect();
+    // console.log('✅ Base de datos (Prisma) lista.');
 
-        // Conectar Redis
-        // await connectRedis();
+    // Conectar Redis
+    // await connectRedis();
 
-        // Arrancar Express
-        app.listen(PORT, () => {
-            console.log(`🚀 Servidor en http://localhost:${PORT}`);
-        });
-    } catch (error) {
-        console.error('❌ Error crítico en el arranque:', error);
-        // await prisma.$disconnect();
-        // if (redisClient.isOpen) await redisClient.disconnect();
-        process.exit(1);
-    }
+    // Arrancar Express
+    app.listen(PORT, () => {
+      console.log(`🚀 Servidor en http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('❌ Error crítico en el arranque:', error);
+    // await prisma.$disconnect();
+    // if (redisClient.isOpen) await redisClient.disconnect();
+    process.exit(1);
+  }
 }
 
 bootstrap();
