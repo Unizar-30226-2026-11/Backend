@@ -1,21 +1,28 @@
 // routes/user.routes.ts
 import { Router } from 'express';
-import { authMiddleware, isDeckOwner, hasCardsInCollection, validateDeckBody } from '../middlewares';
+
 import {
-    getProfile,
-    getBalance,
-    getInventory,
-    searchUsers,
-    getOwnedCards,
-    getUserDecks,
-    createDeck,
-    updateDeck,
-    deleteDeck
+  createDeck,
+  deleteDeck,
+  getBalance,
+  getInventory,
+  getOwnedCards,
+  getProfile,
+  getUserDecks,
+  searchUsers,
+  updateDeck,
 } from '../controllers';
+import {
+  authenticate,
+  hasCardsInCollection,
+  isDeckOwner,
+  validateDeckBody,
+  validateIdParam,
+} from '../middlewares';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(authenticate);
 
 // Perfil y economía
 router.get('/profile', getProfile);
@@ -31,7 +38,19 @@ router.get('/decks', getUserDecks);
 router.post('/decks', validateDeckBody, hasCardsInCollection, createDeck);
 
 // ACTUALIZAR: 1.Auth -> 2.Dueño del mazo -> 3.Formato -> 4.Dueño de cartas -> 5.Controller
-router.put('/decks/:deckId', isDeckOwner, validateDeckBody, hasCardsInCollection, updateDeck);
-router.delete('/decks/:deckId', isDeckOwner, deleteDeck);
+router.put(
+  '/decks/:deckId',
+  validateIdParam('deckId'),
+  isDeckOwner,
+  validateDeckBody,
+  hasCardsInCollection,
+  updateDeck,
+);
+router.delete(
+  '/decks/:deckId',
+  validateIdParam('deckId'),
+  isDeckOwner,
+  deleteDeck,
+);
 
 export default router;
