@@ -1,7 +1,18 @@
 // middlewares/validators.middleware.ts
 import { NextFunction, Request, Response } from 'express';
 
+import { ID_PREFIXES, ID_SAFE_REGEX } from '../constants';
 import { AuthenticatedRequest } from '../types';
+
+// Mapa interno para saber qué prefijo corresponde a cada parámetro
+const PARAM_PREFIX_MAP: Record<string, string> = {
+  userId: ID_PREFIXES.USER,
+  friendId: ID_PREFIXES.USER,
+  targetUserId: ID_PREFIXES.USER,
+  requestId: ID_PREFIXES.REQUEST,
+  collectionId: ID_PREFIXES.COLLECTION,
+  deckId: ID_PREFIXES.DECK,
+};
 
 export const validateDeckBody = (
   req: Request,
@@ -54,42 +65,72 @@ export const validateBuyItemBody = (
   }
 };
 
-export const validateIdParam = (paramName: string) => {
+/**
+ * Función base reutilizable (Fábrica)
+ */
+const validateId = (
+  paramName: string,
+  source: 'params' | 'body' = 'params',
+) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const id = req.params[paramName];
+    const idValue = req[source][paramName];
+    const expectedPrefix = PARAM_PREFIX_MAP[paramName];
 
-    // Verificar que el parámetro exista
-    if (!id) {
+    if (!idValue || typeof idValue !== 'string') {
       res.status(400).json({
-        message: `El parámetro '${paramName}' es obligatorio.`,
+        message: `El campo '${paramName}' es requerido y debe ser un texto.`,
       });
       return;
     }
 
-    // Validación de formato (Ejemplo: debe empezar con 'col_' si es collectionId)
-    // Esto evita que metan scripts o IDs de otros tipos de recursos
-    if (paramName === 'collectionId' && !id.startsWith('col_')) {
+    if (expectedPrefix && !idValue.startsWith(expectedPrefix)) {
       res.status(400).json({
-        message:
-          'Formato de ID de colección inválido. Debe comenzar con "col_".',
-      });
-      return;
-    } else if (paramName === 'deckId' && !id.startsWith('d_')) {
-      res.status(400).json({
-        message: 'Formato de ID de mazo inválido. Debe comenzar con "d_".',
+        message: `Formato inválido. '${paramName}' debe comenzar con '${expectedPrefix}'.`,
       });
       return;
     }
 
-    // Limpieza (Sanitización) básica para evitar ataques de inyección simples
-    const alphanumericRegex = /^[a-zA-Z0-9_]+$/;
-    if (!alphanumericRegex.test(id)) {
+    if (!ID_SAFE_REGEX.test(idValue)) {
       res.status(400).json({
-        message: `El ${paramName} contiene caracteres no permitidos.`,
+        message: `El campo '${paramName}' contiene caracteres no permitidos.`,
       });
       return;
     }
 
     next();
   };
+};
+
+// Valida parámetros en la URL como :userId, :deckId, etc.
+export const validateIdParam = (paramName: string) =>
+  validateId(paramName, 'params');
+
+// Valida específicamente el cuerpo al enviar solicitud
+export const validateSendRequestBody = validateId('targetUserId', 'body');
+
+/**
+ * Valida el cuerpo de la petición al responder a una solicitud de amistad.
+ */
+export const validateRespondRequestBody = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): void => {
+  try {
+    const { action } = req.body;
+    const validActions = ['accept', 'reject'];
+
+    if (!action || !validActions.includes(action)) {
+      res.status(400).json({
+        message: `La acción debe ser: ${validActions.join(' o ')}.`,
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    console.error('Error in validateRespondRequestBody:', error);
+    res.status(500).json({
+      message: 'Error interno al validar la respuesta de la solicitud.',
+    });
+  }
 };
