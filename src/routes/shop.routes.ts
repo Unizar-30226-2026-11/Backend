@@ -116,7 +116,7 @@ router.get('/items', getShopItems);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
- *       402:
+ *       403:
  *         description: Saldo insuficiente para realizar la compra
  *         content:
  *           application/json:

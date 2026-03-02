@@ -65,7 +65,7 @@ export const ShopService = {
     const userEconomy = await mockDb.Economy.findByUserId(userId);
     if (userEconomy.coins < item.price) {
       throw {
-        status: 400,
+        status: 403,
         message: 'Fondos insuficientes.',
         required: item.price,
         currentBalance: userEconomy.coins,

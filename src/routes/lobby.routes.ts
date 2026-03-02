@@ -9,23 +9,6 @@ const router = Router();
 
 router.use(authenticate);
 
-{
-    "message": "Sala creada exitosamente. Listo para conexión WebSocket.",
-    "lobby": {
-        "_id": "db_id_12345",
-        "hostId": "user_123",
-        "name": "Mi Super Partida",
-        "maxPlayers": 4,
-        "engine": "Classic",
-        "isPrivate": false,
-        "lobbyCode": "NGPN",
-        "status": "waiting",
-        "players": [
-            "user_123"
-        ],
-        "createdAt": "2026-03-02T14:59:44.829Z"
-    }
-}
 /**
  * @swagger
  * /api/lobbies:
