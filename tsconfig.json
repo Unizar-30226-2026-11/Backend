@@ -12,7 +12,6 @@
     "skipLibCheck": true,                      // Acelera la compilación omitiendo tipos de librerías
     "forceConsistentCasingInFileNames": true,
 
-    /* Reglas de estilo que ya tenías (¡muy buenas!) */
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
