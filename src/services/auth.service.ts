@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 const mockDb = {
   User: {
     findOne: async (query: any) => null, // Simula que no encuentra usuarios duplicados por defecto
-    create: async (data: any) => ({ id: 'new_user_123', ...data }),
+    create: async (data: any) => ({ id: 'u_123', ...data }),
   },
 };
 
