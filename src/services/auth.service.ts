@@ -2,19 +2,19 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-// Simulación de la base de datos
-const mockDb = {
-  User: {
-    findOne: async (query: any) => null, // Simula que no encuentra usuarios duplicados por defecto
-    create: async (data: any) => ({ id: 'u_123', ...data }),
-  },
-};
+import { prisma } from "../lib/prisma"
+
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
   findUserByEmailOrUsername: async (email: string, username: string) => {
-    return await mockDb.User.findOne({
-      $or: [{ email }, { username }],
+    return await prisma.user.findFirst({
+      where: { 
+        OR: [
+          { email: email },
+          { username: username }
+        ],
+      },
     });
   },
 
@@ -27,14 +27,16 @@ export const AuthService = {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(passwordRaw, saltRounds);
 
-    const newUser = await mockDb.User.create({
-      email,
-      username,
-      password: hashedPassword,
+    const newUser = await prisma.user.create({
+      data: {
+        email,
+        username,
+        password: hashedPassword,
+      }
     });
 
     return {
-      id: newUser.id,
+      id: `u_${newUser.id_user}`,
       username: newUser.username,
       email: newUser.email,
     };
@@ -43,16 +45,11 @@ export const AuthService = {
   // Encapsula la búsqueda, comparación de contraseñas y generación del token JWT
   loginUser: async (email: string, passwordRaw: string) => {
     // Buscar al usuario
-    let user = await mockDb.User.findOne({ email });
+    const user = await prisma.user.findUnique({ where: { email } });
 
     // Simulamos encontrar un usuario para que el flujo de login funcione
     if (!user) {
-      user = {
-        id: 'user_123',
-        username: 'PlayerOne',
-        email: email,
-        password: await bcrypt.hash('password123', 10),
-      };
+      return null;
     }
 
     // Comparar contraseña
@@ -64,14 +61,15 @@ export const AuthService = {
     // Generar el token JWT
     const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
     const token = jwt.sign(
-      { id: user.id, username: user.username },
+      { id: `u_${user.id_user}`, username: user.username },
       secretKey,
       { expiresIn: '24h' },
     );
 
     return {
       token,
-      user: { id: user.id, username: user.username },
+      user: { id: `u_${user.id_user}`, 
+      username: user.username},
     };
   },
 };

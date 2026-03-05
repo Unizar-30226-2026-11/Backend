@@ -5,10 +5,137 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
+  url      =  env("DATABASE_URL")
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum User_States {
+  DISCONNECTED
+  CONNECTED
+  UNKNOWN
+  IN_GAME
+}
+
+enum Friendship_States {
+  PENDING
+  FRIEND
+  BLOCKED
+}
+
+enum Rarity {
+  COMMON
+  UNCOMMON
+  SPECIAL
+  EPIC
+  LEGENDARY
+}
+
+model User {
+  id_user        Int         @id @default(autoincrement())
+  username       String      @unique
+  email          String      @unique
+  password       String
+  coins          Int         @default(0)
+  exp_level      Int         @default(0)
+  progress_level Int         @default(0)
+  state          User_States @default(UNKNOWN)
+  personal_state String? // Para añadir 
+
+  my_cards UserCard[]
+  my_deck  Deck[]
+  games    UserGameStats[]
+
+  friends_sent     Friendships[] @relation("Enviadas")
+  friends_received Friendships[] @relation("Recibidas")
+}
+
+model UserCard {
+  id_user_card Int @id @default(autoincrement())
+  id_user      Int
+  id_card      Int
+
+  user User @relation(fields: [id_user], references: [id_user])
+
+  // Un UserCard (una carta física del usuario) puede estar en varios mazos
+  card       Cards      @relation(fields: [id_card], references: [id_card])
+  deck_cards DeckCard[]
+
+  @@index([id_user])
+}
+
+model Deck {
+  id_deck Int    @id @default(autoincrement())
+  name    String @default("Nuevo Mazo")
+  id_user Int
+  user    User   @relation(fields: [id_user], references: [id_user])
+
+  // Las cartas que componen este mazo específico
+  cards DeckCard[]
+}
+
+// Tabla intermedia para que una carta de mi inventario esté en un mazo
+model DeckCard {
+  id_deck      Int
+  id_user_card Int
+
+  deck      Deck     @relation(fields: [id_deck], references: [id_deck])
+  user_card UserCard @relation(fields: [id_user_card], references: [id_user_card])
+
+  @@id([id_deck, id_user_card])
+}
+
+model Cards {
+  id_card       Int        @id @default(autoincrement())
+  title         String     @unique
+  rarity        Rarity     @default(COMMON)
+  id_collection Int
+  collection    Collection @relation(fields: [id_collection], references: [id_collection])
+
+  // Relación con los inventarios de los usuarios
+  owners UserCard[]
+}
+
+model Collection {
+  id_collection Int     @id @default(autoincrement())
+  name          String  @unique
+  description   String?
+  releaseDate   DateTime @default(now())
+  cards         Cards[]
+}
+
+model Friendships {
+  id_user_1 Int
+  id_user_2 Int
+
+  user_1 User @relation("Enviadas", fields: [id_user_1], references: [id_user])
+  user_2 User @relation("Recibidas", fields: [id_user_2], references: [id_user])
+
+  state          Friendship_States
+  beggining_date DateTime          @default(now())
+
+  @@id([id_user_1, id_user_2])
+}
+
+model Games_log {
+  id_game        Int      @id @default(autoincrement())
+  duration       Int
+  beggining_date DateTime @default(now())
+
+  participants UserGameStats[]
+}
+
+model UserGameStats {
+  points Int // Los puntos de ESTE usuario en ESTA partida
+  place  Int // El puesto de ESTE usuario en ESTA partida
+
+  id_user Int
+  id_game Int
+  user    User      @relation(fields: [id_user], references: [id_user])
+  game    Games_log @relation(fields: [id_game], references: [id_game])
+
+  @@id([id_user, id_game]) // Clave primaria compuesta
 }

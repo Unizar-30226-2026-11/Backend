@@ -1,5 +1,5 @@
 import app from './app';
-// import { prisma } from './lib/prisma';
+import { prisma } from './lib/prisma';
 // import { redisClient, connectRedis } from './lib/redis';
 
 const PORT = process.env.PORT || 3000;
@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 async function bootstrap() {
   try {
     // Conectar Prisma
-    // await prisma.$connect();
+    await prisma.$connect();
     // console.log('✅ Base de datos (Prisma) lista.');
 
     // Conectar Redis

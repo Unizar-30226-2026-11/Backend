@@ -1,76 +1,71 @@
-// services/collection.service.ts
-
-// Simulación de la base de datos para las colecciones (Metadata global)
-const mockDb = {
-  Collection: {
-    findAll: async () => [
-      {
-        id: 'col_base',
-        name: 'Set Base Clásico',
-        releaseDate: '2023-01-01',
-        totalCards: 150,
-      },
-      {
-        id: 'col_vamp',
-        name: 'Sombras Vampíricas',
-        releaseDate: '2023-10-31',
-        totalCards: 50,
-      },
-    ],
-    findById: async (id: string) => {
-      if (id === 'col_base')
-        return { id: 'col_base', name: 'Set Base Clásico' };
-      if (id === 'col_vamp')
-        return { id: 'col_vamp', name: 'Sombras Vampíricas' };
-      return null;
-    },
-  },
-  Card: {
-    findByCollectionId: async (collectionId: string) => {
-      if (collectionId === 'col_base') {
-        return [
-          {
-            id: 'c_001',
-            name: 'Golpe de Espada',
-            rarity: 'common',
-            type: 'attack',
-          },
-          {
-            id: 'c_002',
-            name: 'Escudo de Roble',
-            rarity: 'common',
-            type: 'defense',
-          },
-        ];
-      }
-      if (collectionId === 'col_vamp') {
-        return [
-          {
-            id: 'c_v01',
-            name: 'Mordisco Letal',
-            rarity: 'rare',
-            type: 'attack',
-          },
-        ];
-      }
-      return [];
-    },
-  },
-};
+import { prisma } from "../lib/prisma";
 
 export const CollectionService = {
-  // Obtiene todas las expansiones disponibles
+
+  // Obtiene todas las colecciones disponibles
   getAllCollections: async () => {
-    return await mockDb.Collection.findAll();
+    
+    const collections = await prisma.collection.findMany({
+      include:{
+        _count: {
+          select: {cards : true}
+        }
+      }
+    });
+
+    const mappedCollections = collections.map( collection =>({
+      id: `col_${collection.id_collection}`,
+      name: collection.name,
+      description: collection.description,
+      release_date: collection.releaseDate,
+      total_cards: collection._count.cards
+    }));
+
+    return { collections: mappedCollections };
   },
 
   // Busca una colección específica por su ID
-  getCollectionById: async (id: string) => {
-    return await mockDb.Collection.findById(id);
+  getCollectionById: async (col_id: string) => {
+    const id_collection = parseInt(col_id.replace('col_', ''));
+
+    const collection = await prisma.collection.findUnique({
+      where: { id_collection }
+    });
+
+    if (!collection) return null;
+
+    return {
+      id: `col_${collection.id_collection}`,
+      name: collection.name
+    };
   },
 
   // Obtiene el catálogo de cartas de una colección
-  getCardsByCollection: async (collectionId: string) => {
-    return await mockDb.Card.findByCollectionId(collectionId);
+  getCardsByCollection: async (col_id: string) => {
+
+    const id_collection = parseInt(col_id.replace('col_', ''));
+
+    // Buscamos la colección e incluimos su lista de cartas genéricas
+    const collection = await prisma.collection.findUnique({
+      where: { id_collection },
+      include: { cards: true }
+    });
+
+    if (!collection) return null;
+
+    return {
+      collection: {
+        id: `col_${collection.id_collection}`,
+        name: collection.name
+      },
+
+      cards: collection.cards.map(card => ({
+        id: `c_${card.id_card}`,
+        name: card.title,        
+        type: "Standard",        
+        rarity: card.rarity
+      }))
+    };
+
   },
 };
