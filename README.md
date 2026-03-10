@@ -14,7 +14,7 @@ A las tecnologías base que ya teníamos, hemos sumado herramientas críticas pa
 [![Docker Badge](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff&style=for-the-badge)](https://www.docker.com/)
 [![ESLint Badge](https://img.shields.io/badge/ESLint-4B32C3?logo=eslint&logoColor=fff&style=for-the-badge)](https://eslint.org/)
 [![Prettier Badge](https://img.shields.io/badge/Prettier-F7B93E?logo=prettier&logoColor=fff&style=for-the-badge)](https://prettier.io/)
-
+[![Jest Badge](https://img.shields.io/badge/Jest-C21325?logo=jest&logoColor=fff&style=for-the-badge)](https://jestjs.io/)
 [![JWT Badge](https://img.shields.io/badge/JWT-000000?logo=jsonwebtokens&logoColor=fff&style=for-the-badge)](https://jwt.io/)
 [![WebSockets Badge](https://img.shields.io/badge/WebSockets-010101?logo=websocket&logoColor=fff&style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 [![AES-256 Badge](https://img.shields.io/badge/AES--256-4B8BBE?style=for-the-badge)](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard)
@@ -47,10 +47,26 @@ src/
  ├── models/         # Definiciones de tipos e interfaces TS
  ├── routes/         # Definición de endpoints
  ├── services/       # Lógica de negocio pura (Servicios de juego)
+ │    └── __tests__/ # Pruebas de integración de los servicios
  ├── app.ts          # Configuración de Express
  └── index.ts        # Punto de entrada y Bootstrap del sistema
 
 ```
+
+---
+
+## 🧪 Pruebas Automatizadas (Testing)
+
+El proyecto cuenta con una suite de pruebas de integración utilizando **Jest**. Las pruebas siguen un enfoque "sandbox", creando y destruyendo datos temporales contra la base de datos real para garantizar la fiabilidad de los servicios.
+
+Para ejecutar las pruebas:
+1. Asegúrate de tener el contenedor de la base de datos local corriendo (`docker compose up -d`).
+2. Ejecuta el comando de pruebas:
+   ```bash
+   npm run test
+   ```
+
+> **Aviso:** Las pruebas utilizan la variable de entorno `DATABASE_URL` local. No se recomienda ejecutar la suite apuntando a la base de datos de producción en Supabase.
 
 ---
 
@@ -123,7 +139,7 @@ Una vez que el servidor esté corriendo, puedes explorar todos los endpoints dis
 | `npm run build`  | Compila el proyecto a JavaScript plano.                        |
 | `npm run lint`   | Analiza el código en busca de errores de estilo.               |
 | `npm run format` | Formatea el código automáticamente usando Prettier.            |
-
+| `npm run test`   | Ejecuta la suite de pruebas de integración con Jest.           |
 ---
 
 > **Nota para desarrolladores:** Recuerda que para cumplir con el **RNF-4**, cualquier dato sensible debe ser gestionado a través del servicio de cifrado antes de ser almacenado.

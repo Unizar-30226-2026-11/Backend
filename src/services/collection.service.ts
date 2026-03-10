@@ -13,6 +13,8 @@ export const CollectionService = {
       }
     });
 
+    if (collections == null ) return null
+
     const mappedCollections = collections.map( collection =>({
       id: `col_${collection.id_collection}`,
       name: collection.name,
@@ -24,48 +26,86 @@ export const CollectionService = {
     return { collections: mappedCollections };
   },
 
-  // Busca una colección específica por su ID
-  getCollectionById: async (col_id: string) => {
-    const id_collection = parseInt(col_id.replace('col_', ''));
+  // Busca una (o unas) coleccion específica por su ID
+  getCollectionById: async (col_ids: string | string[]) => {
 
-    const collection = await prisma.collection.findUnique({
-      where: { id_collection }
+    const isArrayInput = Array.isArray(col_ids);
+    const idsToProcess = isArrayInput ? col_ids : [col_ids];
+
+    const numericIds = idsToProcess.map(id => parseInt(id.replace('col_', '')));
+
+    const collections = await prisma.collection.findMany({
+      where: { 
+        id_collection: { in: numericIds}
+      },
+      include: {
+        _count: {
+          select: { cards: true }
+        }
+      }
     });
 
-    if (!collection) return null;
+    if (!collections || collections.length === 0) return null;
+
+    const formattedCollections = collections.map(collection => {
+    
+      const formattedDate = collection.releaseDate 
+      ? collection.releaseDate.toISOString().split('T')[0] 
+      : null;
+
+      return {
+        id: `col_${collection.id_collection}`,
+        name: collection.name,
+        description: collection.description,
+        releaseDate: formattedDate,
+        totalCards: collection._count.cards
+      }
+    });
+
 
     return {
-      id: `col_${collection.id_collection}`,
-      name: collection.name
+      collections: formattedCollections
     };
   },
 
-  // Obtiene el catálogo de cartas de una colección
-  getCardsByCollection: async (col_id: string) => {
+  // Obtiene el catálogo de cartas de una (o unas) colección
+  getCardsByCollection: async (col_ids: string | string []) => {
 
-    const id_collection = parseInt(col_id.replace('col_', ''));
+    const isArrayInput = Array.isArray(col_ids);
+    const idsToProcess = isArrayInput ? col_ids : [col_ids];
+
+    const numericIds = idsToProcess.map(id => parseInt(id.replace('col_', '')));
 
     // Buscamos la colección e incluimos su lista de cartas genéricas
-    const collection = await prisma.collection.findUnique({
-      where: { id_collection },
+    const collections = await prisma.collection.findMany({
+      where: { 
+        id_collection: { in: numericIds } 
+      },
       include: { cards: true }
     });
 
-    if (!collection) return null;
+    if (!collections || collections.length === 0) return null;
 
-    return {
-      collection: {
-        id: `col_${collection.id_collection}`,
-        name: collection.name
-      },
+    return collections.map( collection => {
 
-      cards: collection.cards.map(card => ({
-        id: `c_${card.id_card}`,
-        name: card.title,        
-        type: "Standard",        
-        rarity: card.rarity
-      }))
-    };
+      const collection_id = `col_${collection.id_collection}`;
 
+      return {
+        collection: {
+          id: collection_id,
+          name: collection.name
+        },
+        // Mapeamos las cartas dándoles el formato compuesto
+        cards: collection.cards.map(card => {
+
+          return {
+            id: `${collection_id}_card_${card.id_card}`,
+            name: card.title,        
+            type: "Standard", // De momento al no estar fijada esta logica no existe el campo y por eso esta hardcodeado.
+            rarity: card.rarity
+          };
+        })
+      };
+    });
   },
 };

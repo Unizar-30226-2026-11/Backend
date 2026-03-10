@@ -5,6 +5,7 @@ import { Friendship_States  } from "@prisma/client";
 
 export const FriendService = {
 
+  // Obtener lista de amigos de un usuario
   getConfirmedFriends: async (u_id: string) => {
 
     const id_user = parseInt(u_id.replace('u_', ''));
@@ -54,6 +55,7 @@ export const FriendService = {
     }));
   },
 
+  // Comprobar la relacion entre dos usuarios. Devuelve un enum de Friendship_States.
   checkRelationshipStatus: async (u_id: string, target_u_id: string) => {
     const id_user_1 = parseInt(u_id.replace('u_', ''));
     const id_user_2 = parseInt(target_u_id.replace('u_', ''));
@@ -72,6 +74,7 @@ export const FriendService = {
     return friendship.state
   },
 
+  // Crea una peticion de amistad pendiente del 1er al 2o usuario
   createFriendRequest: async (from_u_id: string, to_u_id: string) => {
 
     const id_from_u = parseInt(from_u_id.replace('u_', ''));
@@ -92,21 +95,29 @@ export const FriendService = {
     };
   },
 
-  findRequestById: async (req_id: string) => {
-    // Limpiamos el prefijo y dividimos por el guion bajo
-    const parts = req_id.replace('r_', '').split('_');
+  // Busca una o varias solicitudes a partir de su id compuesto req_(id_usuario_1)_(id_usuario_2)
+  findRequestById: async (req_id: string | string []) => {
 
-    if (parts.length !== 2) return null;
+    const isArray = Array.isArray(req_id);
+    const ids = isArray ? req_id : [req_id];
 
-    const id_user_1 = parseInt(parts[0]);
-    const id_user_2 = parseInt(parts[1]);
+    const validConditions = ids.reduce((acc: any[], currentId: string) => {
+      const parts = currentId.replace('req_', '').split('_');
+      
+      if (parts.length === 2) {
+        acc.push({
+          id_user_1: parseInt(parts[0]),
+          id_user_2: parseInt(parts[1])
+        });
+      }
+      return acc;
+    }, []);
 
-    const request = await prisma.friendships.findUnique({
+    if (validConditions.length === 0 || validConditions === null) return null;
+
+    const requests = await prisma.friendships.findMany({
       where: {
-        id_user_1_id_user_2: {
-          id_user_1: id_user_1,
-          id_user_2: id_user_2
-        }
+        OR: validConditions
       },
       include: {
         user_1: true,
@@ -114,49 +125,61 @@ export const FriendService = {
       }
     });
 
-    if (!request) return null;
-
-    return {
+    const formattedRequests = requests.map(request => ({
       id: `req_${request.id_user_1}_${request.id_user_2}`,
       fromUserId: `u_${request.id_user_1}`,
       toUserId: `u_${request.id_user_2}`,
       status: request.state,
       createdAt: request.beggining_date
-    }
+    }));
+
+    return  formattedRequests;
 
   },
 
-  acceptFriendRequest: async (req_id: string) => {
-    const parts = req_id.replace('r_', '').split('_');
+  // Acepta una o varias solicitudes a partir de su id compuesto req_(id_usuario_1)_(id_usuario_2)
+  acceptFriendRequest: async (req_id: string | string[]) => {
+    const ids = Array.isArray(req_id) ? req_id : [req_id];
 
-    if (parts.length !== 2) return null;
+    const validConditions = ids.reduce((acc: any[], currentId: string) => {
+      const parts = currentId.replace('req_', '').split('_');
 
-    const id_user_1 = parseInt(parts[0]);
-    const id_user_2 = parseInt(parts[1]);
+      if (parts.length === 2) {
+        acc.push({
+          id_user_1: parseInt(parts[0]),
+          id_user_2: parseInt(parts[1])
+        });
+      }
+      return acc;
+    }, []);
 
-    await prisma.friendships.update({
+    if (validConditions.length === 0 || validConditions === null) return false;
+
+    const result = await prisma.friendships.updateMany({
       where: {
-        id_user_1_id_user_2: {
-          id_user_1: id_user_1,
-          id_user_2: id_user_2
-        }
+        OR: validConditions
       },
       data: { state: Friendship_States.FRIEND }
     });
 
-    return;
+    return result.count > 0;
   },
 
-  removeFriend: async (u_id: string, f_id: string) => {
+  
+  removeFriend: async (u_id: string, f_id: string | string []) => {
 
     const id_user = parseInt(u_id.replace('u_', ''));
-    const id_user_friend = parseInt(f_id.replace('u_', ''));
+    const f_ids_array = Array.isArray(f_id) ? f_id : [f_id];
+
+    const friend_ids = f_ids_array.map(id => parseInt(id.replace('u_', '')));
+
+    if (friend_ids.length === 0) return false;
 
     const result = await prisma.friendships.deleteMany({
       where:{
         OR: [
-          { id_user_1: id_user, id_user_2: id_user_friend },
-          { id_user_1: id_user_friend, id_user_2: id_user }
+          { id_user_1: id_user, id_user_2: { in: friend_ids } },
+          { id_user_1: { in: friend_ids }, id_user_2: id_user }
         ]
       }
     })
@@ -164,25 +187,30 @@ export const FriendService = {
     return result.count > 0;
   },
 
-  rejectFriendRequest: async (req_id: string) => {
-    const parts = req_id.replace('r_', '').split('_');
+  // Rechaza una o varias solicitudes a partir de su id compuesto req_(id_usuario_1)_(id_usuario_2)
+  rejectFriendRequest: async (req_id: string | string []) => {
+    const ids = Array.isArray(req_id) ? req_id : [req_id];
 
-    if (parts.length !== 2) return null;
+    const validConditions = ids.reduce((acc: any[], currentId: string) => {
+      const parts = currentId.replace('req_', '').split('_');
 
-    const id_user_1 = parseInt(parts[0]);
-    const id_user_2 = parseInt(parts[1]);
-
-    const result = await prisma.friendships.delete({
-      where:{
-        id_user_1_id_user_2: {
-          id_user_1: id_user_1,
-          id_user_2: id_user_2
-        }
+      if (parts.length === 2) {
+        acc.push({
+          id_user_1: parseInt(parts[0]),
+          id_user_2: parseInt(parts[1])
+        });
       }
-    })
+      return acc;
+    }, []);
 
-    if (!result) return false;
+    if (validConditions.length === 0 || validConditions === null) return false;
 
-    return true;
+    const result = await prisma.friendships.deleteMany({
+      where: {
+        OR: validConditions
+      }
+    });
+
+    return result.count > 0;
   },
 };
