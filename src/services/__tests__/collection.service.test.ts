@@ -12,6 +12,7 @@ describe('CollectionService - Pruebas Funciones', () => {
 
     beforeAll( async () => {
 
+        // Por si falla el test y no se borra la coleccion de una ejecución anterior.
         await prisma.collection.deleteMany({
             where: { name: "Coleccion_Test" }
         });

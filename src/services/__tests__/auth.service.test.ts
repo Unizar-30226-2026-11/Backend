@@ -12,7 +12,10 @@ describe('AuthService - Pruebas Funciones', () => {
     let password_test: string = "test_password123"
 
     beforeAll( async () => {
-
+        // Limpieza Preventiva
+        await prisma.user.deleteMany({
+            where: { email: email_test }
+        });
     })
 
     beforeEach( () => {

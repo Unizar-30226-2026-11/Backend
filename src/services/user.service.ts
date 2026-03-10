@@ -159,36 +159,61 @@ export const UserService = {
 
   },
 
-  updateDeck: async (d_id: string, name: string, cardsIds: string[]) => {
-    const id_deck = parseInt(d_id.replace('d_', ''));
+  updateDeck: async (d_id: string | string [], name: string, cardsIds: string[]) => {
+
+    const isArray = Array.isArray(d_id);
+    const ids = isArray ? d_id : [d_id as string];
+    const ids_decks = ids.map(id => parseInt(id.replace('d_', ''))).filter(id => !isNaN(id));
+
+    if (ids_decks.length === 0) throw new Error("IDs de mazo inválidos.");
+
     const numericCardsIds = cardsIds.map(id => parseInt(id.replace('c_', '')));
 
-    const existingDeck = await prisma.deck.findUnique({ where: { id_deck } });
-    if (!existingDeck) throw new Error("Mazo no encontrado.");
+    const existingDecks = await prisma.deck.findMany({ 
+      where: { id_deck: { in: ids_decks } } 
+    });
 
-    const deckCardsData = await getPhysicalCardsForDeck(existingDeck.id_user, numericCardsIds);
+    if (existingDecks.length === 0) throw new Error("Mazos no encontrados.");
+    
 
-    const [_, updatedDeck] = await prisma.$transaction([
-      prisma.deckCard.deleteMany({ where: { id_deck } }),
-      prisma.deck.update({
-        where: { id_deck },
-        data: { name: name, cards: { create: deckCardsData } }
-      })
-    ]);
+    const transactionOperations = [];
 
-    return { id: d_id, name: updatedDeck.name, cardIds: cardsIds };
+    for (const deck of existingDecks) {
+      // Obtenemos las cartas físicas para el dueño de este mazo en particular
+      const deckCardsData = await getPhysicalCardsForDeck(deck.id_user, numericCardsIds);
+
+      // Añadimos el borrado de cartas viejas
+      transactionOperations.push(
+        prisma.deckCard.deleteMany({ where: { id_deck: deck.id_deck } })
+      );
+
+      // Añadimos la actualización del mazo y la creación de las nuevas cartas
+      transactionOperations.push(
+        prisma.deck.update({
+          where: { id_deck: deck.id_deck },
+          data: { name: name, cards: { create: deckCardsData } }
+        })
+      );
+    }
+
+    await prisma.$transaction(transactionOperations);
+
+    const result = ids.map(id => ({ id, name, cardIds: cardsIds }));
+
+    return (isArray ? result : result[0]) as any;
   },
 
-  deleteDeck: async (d_id: string) => {
+  deleteDeck: async (d_id: string | string []) => {
 
-    const id_deck = parseInt(d_id.replace('d_', ''));
+    const ids = Array.isArray(d_id) ? d_id : [d_id as string];
+    const ids_decks = ids.map(id => parseInt(id.replace('d_', ''))).filter(id => !isNaN(id));
 
     await prisma.$transaction([
       prisma.deckCard.deleteMany({ 
-        where: { id_deck } 
+        where: { id_deck: {in: ids_decks} } 
       }),
-      prisma.deck.delete({ 
-        where: { id_deck } 
+      prisma.deck.deleteMany({ 
+        where: { id_deck: {in: ids_decks} }
       })
     ]);
 

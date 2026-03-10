@@ -18,18 +18,36 @@ describe('FriendService - Pruebas Funciones', () => {
 
         describe('Búsqueda de Amigos. -> getConfirmedFriends() ', () => {
 
-            test('Usuario Existente:', () => {
+            test('Usuario Existente:', async () => {
 
-
+                const resultado = await FriendService.getConfirmedFriends("u_1");
+                    
+                expect(resultado).toBeDefined();
+                expect(resultado[0]).toEqual(expect.arrayContaining([
+                    expect.objectContaining({
+                        id: expect.stringMatching(/^u_\d+$/),
+                        username: expect.stringMatching(/.+/),
+                        status: expect.stringMatching(/^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/) 
+                    })
+                ]));
             });
 
-            test('Usuario Inexistente:', () => {
+            test('Usuario Inexistente:', async () => {
 
+                const resultado = await FriendService.getConfirmedFriends("u_999999");
+                    
+                expect(resultado).toHaveLength(0);
                 
             });
 
-            test('Campos Incorrectos:', () => {
+            test('Campos Vacíos:', async () => {
 
+                await expect(FriendService.getConfirmedFriends("")).rejects.toThrow(); 
+            });
+
+            test('Campos Incorrectos:', async () => {
+
+                await expect(FriendService.getConfirmedFriends("usuarioPrueba")).rejects.toThrow(); 
                 
             });
         });
