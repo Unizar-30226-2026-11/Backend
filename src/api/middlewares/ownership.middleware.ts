@@ -1,8 +1,8 @@
 // middlewares/ownership.middleware.ts
 import { NextFunction, Response } from 'express';
 
-import { ShopService, UserService } from '../services';
-import { AuthenticatedRequest } from '../types';
+import { ShopService, UserService } from '../../services';
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const isDeckOwner = async (
   req: AuthenticatedRequest,

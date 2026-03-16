@@ -1,8 +1,8 @@
 // controllers/collection.controller.ts
 import { Response } from 'express';
 
-import { CollectionService } from '../services';
-import { AuthenticatedRequest } from '../types';
+import { CollectionService } from '../../services';
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const getCollections = async (
   req: AuthenticatedRequest,

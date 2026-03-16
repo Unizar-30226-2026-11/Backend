@@ -2,18 +2,14 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-import { prisma } from "../lib/prisma"
-
+import { prisma } from '../infrastructure/prisma';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
   findUserByEmailOrUsername: async (email: string, username: string) => {
     return await prisma.user.findFirst({
-      where: { 
-        OR: [
-          { email: email },
-          { username: username }
-        ],
+      where: {
+        OR: [{ email: email }, { username: username }],
       },
     });
   },
@@ -32,7 +28,7 @@ export const AuthService = {
         email,
         username,
         password: hashedPassword,
-      }
+      },
     });
 
     return {
@@ -68,8 +64,7 @@ export const AuthService = {
 
     return {
       token,
-      user: { id: `u_${user.id_user}`, 
-      username: user.username},
+      user: { id: `u_${user.id_user}`, username: user.username },
     };
   },
 };

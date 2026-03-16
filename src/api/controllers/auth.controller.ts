@@ -1,7 +1,7 @@
 // controllers/auth.controller.ts
 import { Request, Response } from 'express';
 
-import { AuthService } from '../services';
+import { AuthService } from '../../services';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {

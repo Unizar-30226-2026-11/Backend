@@ -49,7 +49,7 @@ const options = {
       },
     },
   },
-  apis: ['./src/routes/*.ts'], // Aquí es donde Swagger buscará los comentarios para documentar
+  apis: ['./src/api/routes/*.ts'], // Aquí es donde Swagger buscará los comentarios para documentar
 };
 
 export const swaggerSpec = swaggerJSDoc(options);

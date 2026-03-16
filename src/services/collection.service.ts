@@ -1,24 +1,22 @@
-import { prisma } from "../lib/prisma";
+import { prisma } from '../infrastructure/prisma';
 
 export const CollectionService = {
-
   // Obtiene todas las colecciones disponibles
   getAllCollections: async () => {
-    
     const collections = await prisma.collection.findMany({
-      include:{
+      include: {
         _count: {
-          select: {cards : true}
-        }
-      }
+          select: { cards: true },
+        },
+      },
     });
 
-    const mappedCollections = collections.map( collection =>({
+    const mappedCollections = collections.map((collection) => ({
       id: `col_${collection.id_collection}`,
       name: collection.name,
       description: collection.description,
       release_date: collection.releaseDate,
-      total_cards: collection._count.cards
+      total_cards: collection._count.cards,
     }));
 
     return { collections: mappedCollections };
@@ -29,26 +27,25 @@ export const CollectionService = {
     const id_collection = parseInt(col_id.replace('col_', ''));
 
     const collection = await prisma.collection.findUnique({
-      where: { id_collection }
+      where: { id_collection },
     });
 
     if (!collection) return null;
 
     return {
       id: `col_${collection.id_collection}`,
-      name: collection.name
+      name: collection.name,
     };
   },
 
   // Obtiene el catálogo de cartas de una colección
   getCardsByCollection: async (col_id: string) => {
-
     const id_collection = parseInt(col_id.replace('col_', ''));
 
     // Buscamos la colección e incluimos su lista de cartas genéricas
     const collection = await prisma.collection.findUnique({
       where: { id_collection },
-      include: { cards: true }
+      include: { cards: true },
     });
 
     if (!collection) return null;
@@ -56,16 +53,15 @@ export const CollectionService = {
     return {
       collection: {
         id: `col_${collection.id_collection}`,
-        name: collection.name
+        name: collection.name,
       },
 
-      cards: collection.cards.map(card => ({
+      cards: collection.cards.map((card) => ({
         id: `c_${card.id_card}`,
-        name: card.title,        
-        type: "Standard",        
-        rarity: card.rarity
-      }))
+        name: card.title,
+        type: 'Standard',
+        rarity: card.rarity,
+      })),
     };
-
   },
 };

@@ -2,7 +2,7 @@
 import { NextFunction, Response } from 'express';
 import jwt, { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 
-import { AuthenticatedRequest } from '../types';
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const authenticate = (
   req: AuthenticatedRequest,
