@@ -1,8 +1,8 @@
 // controllers/friend.controller.ts
 import { Response } from 'express';
 
-import { FriendService } from '../services';
-import { AuthenticatedRequest } from '../types';
+import { FriendService } from '../../services';
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const getFriends = async (
   req: AuthenticatedRequest,

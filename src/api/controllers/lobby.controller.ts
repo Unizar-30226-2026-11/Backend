@@ -1,8 +1,8 @@
 // controllers/lobby.controller.ts
 import { Response } from 'express';
 
-import { LobbyService } from '../services';
-import { AuthenticatedRequest } from '../types';
+import { LobbyService } from '../../services';
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const createLobby = async (
   req: AuthenticatedRequest,

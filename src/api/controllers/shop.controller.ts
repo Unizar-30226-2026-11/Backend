@@ -1,9 +1,9 @@
 // controllers/shop.controller.ts
 import { Response } from 'express';
 
-import { ShopService } from '../services/shop.service';
-import { AuthenticatedRequest } from '../types';
-import { LockManager } from '../utils/lockManager';
+import { ShopService } from '../../services/shop.service';
+import { AuthenticatedRequest } from '../../shared/types';
+import { LockManager } from '../../shared/utils/lockManager';
 
 export const getShopItems = async (
   req: AuthenticatedRequest,

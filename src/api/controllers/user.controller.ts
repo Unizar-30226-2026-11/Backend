@@ -1,8 +1,8 @@
 // controllers/user.controller.ts
 import { Response } from 'express';
 
-import { UserService } from '../services';
-import { AuthenticatedRequest } from '../types';
+import { UserService } from '../../services';
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const getProfile = async (
   req: AuthenticatedRequest,

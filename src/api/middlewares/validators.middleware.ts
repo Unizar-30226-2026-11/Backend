@@ -1,8 +1,12 @@
 // middlewares/validators.middleware.ts
 import { NextFunction, Request, Response } from 'express';
 
-import { ID_PREFIXES, ID_SAFE_REGEX, LOBBY_CODE_REGEX } from '../constants';
-import { AuthenticatedRequest } from '../types';
+import {
+  ID_PREFIXES,
+  ID_SAFE_REGEX,
+  LOBBY_CODE_REGEX,
+} from '../../shared/constants';
+import { AuthenticatedRequest } from '../../shared/types';
 
 // Mapa interno para saber qué prefijo corresponde a cada parámetro
 const PARAM_PREFIX_MAP: Record<string, string> = {

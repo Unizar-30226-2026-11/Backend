@@ -1,6 +1,6 @@
 import app from './app';
-import { prisma } from './lib/prisma';
-// import { redisClient, connectRedis } from './lib/redis';
+import { prisma } from './infrastructure/prisma';
+// import { redisClient, connectRedis } from './infrastructure/redis';
 
 const PORT = process.env.PORT || 3000;
 
