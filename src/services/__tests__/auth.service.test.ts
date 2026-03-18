@@ -1,5 +1,5 @@
 import { AuthService} from '../auth.service';
-import { prisma } from '../../lib/prisma';
+import { prisma } from '../../infrastructure/prisma';
 import 'dotenv/config';
 
 describe('AuthService - Pruebas Funciones', () => {

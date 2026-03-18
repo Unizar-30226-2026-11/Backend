@@ -1,5 +1,5 @@
 import { FriendService} from '../friend.service';
-import { prisma } from '../../lib/prisma';
+import { prisma } from '../../infrastructure/prisma';
 import { Friendship_States  } from "@prisma/client";
 import 'dotenv/config';
 

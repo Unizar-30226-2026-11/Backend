@@ -127,7 +127,7 @@ npm run dev
 
 Una vez que el servidor esté corriendo, puedes explorar todos los endpoints disponibles y probarlos directamente desde la interfaz de Swagger:
 
-🔗 **[http://localhost:3000/api-docs](https://www.google.com/search?q=http://localhost:3000/api-docs)**
+🔗 **[http://localhost:3000/api-docs](http://localhost:3000/api-docs)**
 
 ---
 

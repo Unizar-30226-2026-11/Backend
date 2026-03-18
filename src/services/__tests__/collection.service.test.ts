@@ -1,5 +1,5 @@
 import { CollectionService} from '../collection.service';
-import { prisma } from '../../lib/prisma';
+import { prisma } from '../../infrastructure/prisma';
 import 'dotenv/config';
 
 //

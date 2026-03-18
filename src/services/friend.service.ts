@@ -1,6 +1,6 @@
 // services/friend.service.ts
 
-import { prisma } from "../lib/prisma";
+import { prisma } from "../infrastructure/prisma";
 import { Friendship_States  } from "@prisma/client";
 
 export const FriendService = {

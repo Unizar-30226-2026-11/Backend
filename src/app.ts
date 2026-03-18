@@ -5,8 +5,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 
-import { swaggerSpec } from './config/swagger';
-import router from './routes';
+import { swaggerSpec } from './api/config/swagger';
+import router from './api/routes';
 
 // Cargar variables de entorno
 dotenv.config();

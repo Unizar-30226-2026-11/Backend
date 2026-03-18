@@ -2,7 +2,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-import { prisma } from "../lib/prisma"
+import { prisma } from "../infrastructure/prisma"
 
 
 export const AuthService = {
