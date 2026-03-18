@@ -33,7 +33,6 @@ export const UserService = {
       select: { 
         id_user: true,
         username: true,
-        email: true,
       }
     })
     
@@ -59,9 +58,9 @@ export const UserService = {
     return {balance: user.coins};
   },
 
-  getUserInventory: async (u_id: string) => {
-    return { inventory: [] };                       // No se a que se refiere esto ahora mismo la verdad, creo que pertenece a redis al ser durante partidas
-  },
+  //getUserInventory: async (u_id: string) => {
+  //  return { inventory: [] };                       // No se a que se refiere esto ahora mismo la verdad, creo que pertenece a redis al ser durante partidas
+  //},
 
   getUserCards: async (u_id: string) => {
     const id_user = parseInt(u_id.replace('u_', ''));
@@ -114,7 +113,7 @@ export const UserService = {
 
   getDeckById: async (d_id: string) => {
     
-    const id_deck = parseInt(d_id.replace('u_', ''));
+    const id_deck = parseInt(d_id.replace('d_', ''));
     
     const deck = await prisma.deck.findUnique({
       where: { id_deck },
@@ -208,7 +207,7 @@ export const UserService = {
     const ids = Array.isArray(d_id) ? d_id : [d_id as string];
     const ids_decks = ids.map(id => parseInt(id.replace('d_', ''))).filter(id => !isNaN(id));
 
-    await prisma.$transaction([
+    const resultado = await prisma.$transaction([
       prisma.deckCard.deleteMany({ 
         where: { id_deck: {in: ids_decks} } 
       }),
@@ -216,8 +215,8 @@ export const UserService = {
         where: { id_deck: {in: ids_decks} }
       })
     ]);
-
-    return true;
+    
+    return resultado[1].count > 0;
   },
 };
 

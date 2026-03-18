@@ -88,6 +88,10 @@ export const FriendService = {
       }
     });
 
+    if(newFriendship == null){
+      return null;
+    }
+     
     return {
       id: `req_${newFriendship.id_user_1}_${newFriendship.id_user_2}`,
       fromUserId: `u_${newFriendship.id_user_1}`,
@@ -192,7 +196,7 @@ export const FriendService = {
     const ids = Array.isArray(req_id) ? req_id : [req_id];
 
     const validConditions = ids.reduce((acc: any[], currentId: string) => {
-      const parts = currentId.replace('req_', '').split('_');
+    const parts = currentId.replace('req_', '').split('_');
 
       if (parts.length === 2) {
         acc.push({
