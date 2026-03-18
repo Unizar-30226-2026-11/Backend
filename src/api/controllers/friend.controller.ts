@@ -3,6 +3,8 @@ import { Response } from 'express';
 
 import { FriendService } from '../../services';
 import { AuthenticatedRequest } from '../../shared/types';
+import { Friendship_States  } from "@prisma/client";
+
 
 export const getFriends = async (
   req: AuthenticatedRequest,
@@ -62,14 +64,14 @@ export const sendRequest = async (
       targetUserId,
     );
 
-    if (relationshipStatus === 'friends') {
+    if (relationshipStatus === Friendship_States.FRIEND) {
       res
         .status(400)
         .json({ message: 'Este usuario ya está en tu lista de amigos.' });
       return;
     }
 
-    if (relationshipStatus === 'pending') {
+    if (relationshipStatus === Friendship_States.PENDING) {
       res.status(400).json({
         message:
           'Ya existe una solicitud de amistad pendiente con este usuario.',
@@ -113,7 +115,7 @@ export const respondToRequest = async (
     }
 
     // Verificar que la solicitud pertenece al usuario autenticado (él es el receptor)
-    if (request.toUserId !== userId) {
+    if (request[0].toUserId !== userId) {
       res.status(403).json({
         message: 'No tienes permiso para responder a esta solicitud.',
       });
@@ -124,9 +126,7 @@ export const respondToRequest = async (
     if (action === 'accept') {
       // Toda la lógica de negocio (cambiar estado y crear amistad) ocurre dentro del servicio
       await FriendService.acceptFriendRequest(
-        requestId,
-        request.fromUserId,
-        request.toUserId,
+        requestId
       );
       res
         .status(200)
