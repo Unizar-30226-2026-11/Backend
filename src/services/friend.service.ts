@@ -1,37 +1,34 @@
 // services/friend.service.ts
 
-import { prisma } from "../infrastructure/prisma";
-import { Friendship_States  } from "@prisma/client";
+import { prisma } from '../infrastructure/prisma';
+import { Friendship_States } from '@prisma/client';
 
 export const FriendService = {
-
   // Obtener lista de amigos de un usuario
   getConfirmedFriends: async (u_id: string) => {
-
     const id_user = parseInt(u_id.replace('u_', ''));
 
     const friendships = await prisma.friendships.findMany({
       where: {
         state: Friendship_States.FRIEND,
-        OR: [
-          {id_user_1: id_user},
-          {id_user_2: id_user}
-        ],
+        OR: [{ id_user_1: id_user }, { id_user_2: id_user }],
       },
       include: {
         user_1: true,
-        user_2: true
-      }
+        user_2: true,
+      },
     });
 
-    return friendships.map(friendship => {
-    
-      const friend = (friendship.id_user_1 === id_user ? friendship.user_2 : friendship.user_1);
+    return friendships.map((friendship) => {
+      const friend =
+        friendship.id_user_1 === id_user
+          ? friendship.user_2
+          : friendship.user_1;
 
       return {
         id: `u_${friend.id_user}`,
         username: friend.username,
-        status: friend.state
+        status: friend.state,
       };
     });
   },
@@ -43,15 +40,15 @@ export const FriendService = {
     const pending = await prisma.friendships.findMany({
       where: {
         id_user_2: id_user,
-        state: Friendship_States.PENDING
-      }
+        state: Friendship_States.PENDING,
+      },
     });
 
-    return pending.map( friendship => ({
+    return pending.map((friendship) => ({
       id: `req_${friendship.id_user_1}_${friendship.id_user_2}`,
       fromUserId: `u_${friendship.id_user_1}`,
       toUserId: `u_${friendship.id_user_2}`,
-      createdAt: friendship.beggining_date
+      createdAt: friendship.beggining_date,
     }));
   },
 
@@ -63,20 +60,19 @@ export const FriendService = {
     const friendship = await prisma.friendships.findFirst({
       where: {
         OR: [
-          {id_user_1: id_user_1, id_user_2: id_user_2},
-          {id_user_2: id_user_2, id_user_1: id_user_1}
+          { id_user_1: id_user_1, id_user_2: id_user_2 },
+          { id_user_2: id_user_2, id_user_1: id_user_1 },
         ],
-      }
+      },
     });
 
     if (!friendship) return null;
 
-    return friendship.state
+    return friendship.state;
   },
 
   // Crea una peticion de amistad pendiente del 1er al 2o usuario
   createFriendRequest: async (from_u_id: string, to_u_id: string) => {
-
     const id_from_u = parseInt(from_u_id.replace('u_', ''));
     const id_to_u = parseInt(to_u_id.replace('u_', ''));
 
@@ -84,34 +80,33 @@ export const FriendService = {
       data: {
         id_user_1: id_from_u,
         id_user_2: id_to_u,
-        state: Friendship_States.PENDING
-      }
+        state: Friendship_States.PENDING,
+      },
     });
 
-    if(newFriendship == null){
+    if (newFriendship == null) {
       return null;
     }
-     
+
     return {
       id: `req_${newFriendship.id_user_1}_${newFriendship.id_user_2}`,
       fromUserId: `u_${newFriendship.id_user_1}`,
-      toUserId: `u_${newFriendship.id_user_2}`
+      toUserId: `u_${newFriendship.id_user_2}`,
     };
   },
 
   // Busca una o varias solicitudes a partir de su id compuesto req_(id_usuario_1)_(id_usuario_2)
-  findRequestById: async (req_id: string | string []) => {
-
+  findRequestById: async (req_id: string | string[]) => {
     const isArray = Array.isArray(req_id);
     const ids = isArray ? req_id : [req_id];
 
     const validConditions = ids.reduce((acc: any[], currentId: string) => {
       const parts = currentId.replace('req_', '').split('_');
-      
+
       if (parts.length === 2) {
         acc.push({
           id_user_1: parseInt(parts[0]),
-          id_user_2: parseInt(parts[1])
+          id_user_2: parseInt(parts[1]),
         });
       }
       return acc;
@@ -121,24 +116,23 @@ export const FriendService = {
 
     const requests = await prisma.friendships.findMany({
       where: {
-        OR: validConditions
+        OR: validConditions,
       },
       include: {
         user_1: true,
-        user_2: true
-      }
+        user_2: true,
+      },
     });
 
-    const formattedRequests = requests.map(request => ({
+    const formattedRequests = requests.map((request) => ({
       id: `req_${request.id_user_1}_${request.id_user_2}`,
       fromUserId: `u_${request.id_user_1}`,
       toUserId: `u_${request.id_user_2}`,
       status: request.state,
-      createdAt: request.beggining_date
+      createdAt: request.beggining_date,
     }));
 
-    return  formattedRequests;
-
+    return formattedRequests;
   },
 
   // Acepta una o varias solicitudes a partir de su id compuesto req_(id_usuario_1)_(id_usuario_2)
@@ -151,7 +145,7 @@ export const FriendService = {
       if (parts.length === 2) {
         acc.push({
           id_user_1: parseInt(parts[0]),
-          id_user_2: parseInt(parts[1])
+          id_user_2: parseInt(parts[1]),
         });
       }
       return acc;
@@ -161,47 +155,45 @@ export const FriendService = {
 
     const result = await prisma.friendships.updateMany({
       where: {
-        OR: validConditions
+        OR: validConditions,
       },
-      data: { state: Friendship_States.FRIEND }
+      data: { state: Friendship_States.FRIEND },
     });
 
     return result.count > 0;
   },
 
-  
-  removeFriend: async (u_id: string, f_id: string | string []) => {
-
+  removeFriend: async (u_id: string, f_id: string | string[]) => {
     const id_user = parseInt(u_id.replace('u_', ''));
     const f_ids_array = Array.isArray(f_id) ? f_id : [f_id];
 
-    const friend_ids = f_ids_array.map(id => parseInt(id.replace('u_', '')));
+    const friend_ids = f_ids_array.map((id) => parseInt(id.replace('u_', '')));
 
     if (friend_ids.length === 0) return false;
 
     const result = await prisma.friendships.deleteMany({
-      where:{
+      where: {
         OR: [
           { id_user_1: id_user, id_user_2: { in: friend_ids } },
-          { id_user_1: { in: friend_ids }, id_user_2: id_user }
-        ]
-      }
-    })
+          { id_user_1: { in: friend_ids }, id_user_2: id_user },
+        ],
+      },
+    });
 
     return result.count > 0;
   },
 
   // Rechaza una o varias solicitudes a partir de su id compuesto req_(id_usuario_1)_(id_usuario_2)
-  rejectFriendRequest: async (req_id: string | string []) => {
+  rejectFriendRequest: async (req_id: string | string[]) => {
     const ids = Array.isArray(req_id) ? req_id : [req_id];
 
     const validConditions = ids.reduce((acc: any[], currentId: string) => {
-    const parts = currentId.replace('req_', '').split('_');
+      const parts = currentId.replace('req_', '').split('_');
 
       if (parts.length === 2) {
         acc.push({
           id_user_1: parseInt(parts[0]),
-          id_user_2: parseInt(parts[1])
+          id_user_2: parseInt(parts[1]),
         });
       }
       return acc;
@@ -211,8 +203,8 @@ export const FriendService = {
 
     const result = await prisma.friendships.deleteMany({
       where: {
-        OR: validConditions
-      }
+        OR: validConditions,
+      },
     });
 
     return result.count > 0;
