@@ -39,22 +39,6 @@ export const getBalance = async (
   }
 };
 
-export const getInventory = async (
-  req: AuthenticatedRequest,
-  res: Response,
-): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const inventory = await UserService.getUserInventory(userId);
-
-    res.status(200).json({ inventory });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: 'Error al obtener el inventario de comodines.' });
-  }
-};
-
 export const searchUsers = async (
   req: AuthenticatedRequest,
   res: Response,

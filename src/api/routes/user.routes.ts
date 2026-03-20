@@ -5,7 +5,6 @@ import {
   createDeck,
   deleteDeck,
   getBalance,
-  getInventory,
   getOwnedCards,
   getProfile,
   getUserDecks,
@@ -109,51 +108,6 @@ router.get('/profile', getProfile);
  *               $ref: '#/components/schemas/Error'
  */
 router.get('/balance', getBalance);
-
-/**
- * @swagger
- * /api/users/inventory:
- *   get:
- *     summary: Obtener el inventario de comodines del usuario autenticado
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Inventario de comodines del usuario
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 inventory:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       itemId:
- *                         type: string
- *                         example: item_wildcard_001
- *                       name:
- *                         type: string
- *                         example: Comodín de ataque
- *                       quantity:
- *                         type: integer
- *                         example: 3
- *       401:
- *         description: No autenticado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Error interno del servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.get('/inventory', getInventory);
 
 /**
  * @swagger
