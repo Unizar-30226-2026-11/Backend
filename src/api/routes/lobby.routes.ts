@@ -1,7 +1,12 @@
 // routes/lobby.routes.ts
 import { Router } from 'express';
 
-import { createLobby, getLobbyByCode, getPublicLobbies } from '../controllers';
+import {
+  createLobby,
+  getLobbyByCode,
+  getPublicLobbies,
+  joinLobby,
+} from '../controllers';
 import { validateCreateLobbyBody, validateIdParam } from '../middlewares';
 import { authenticate } from '../middlewares/auth.middleware';
 
@@ -224,5 +229,50 @@ router.get('/', getPublicLobbies);
  *         description: La sala no existe
  */
 router.get('/:lobbyCode', validateIdParam('lobbyCode'), getLobbyByCode);
+
+/**
+ * @swagger
+ * /api/lobbies/{lobbyCode}/join:
+ *   post:
+ *     summary: Solicitar acceso a una sala y obtener el token de WebSocket
+ *     tags: [Lobbies]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: lobbyCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *           pattern: '^[A-Z0-9]{4,6}$'
+ *         description: Código alfanumérico de la sala (4-6 caracteres)
+ *         example: A1B2
+ *     responses:
+ *       200:
+ *         description: Token de conexión WebSocket generado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Ticket de conexión WebSocket generado exitosamente.
+ *                 wsToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 lobbyCode:
+ *                   type: string
+ *                   example: A1B2
+ *       400:
+ *         description: Código de sala con formato inválido
+ *       403:
+ *         description: La sala está llena
+ *       404:
+ *         description: La sala no existe
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post('/:lobbyCode/join', validateIdParam('lobbyCode'), joinLobby);
 
 export default router;

@@ -4,13 +4,15 @@ import { Router } from 'express';
 import {
   createDeck,
   deleteDeck,
+  deleteUser,
   getBalance,
-  getInventory,
   getOwnedCards,
   getProfile,
   getUserDecks,
   searchUsers,
   updateDeck,
+  updateProfile,
+  updateStatus,
 } from '../controllers';
 import {
   authenticate,
@@ -18,6 +20,8 @@ import {
   isDeckOwner,
   validateDeckBody,
   validateIdParam,
+  validateStatusBody,
+  validateUsernameBody,
 } from '../middlewares';
 
 const router = Router();
@@ -34,27 +38,14 @@ router.use(authenticate);
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Perfil del usuario
+ *         description: Perfil del usuario obtenido con éxito
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 profile:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                       example: u_abc123
- *                     username:
- *                       type: string
- *                       example: jugador42
- *                     email:
- *                       type: string
- *                       example: jugador@ejemplo.com
- *                     createdAt:
- *                       type: string
- *                       format: date-time
+ *                   $ref: '#/components/schemas/UserProfile'
  *       401:
  *         description: No autenticado
  *         content:
@@ -67,6 +58,52 @@ router.use(authenticate);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *   put:
+ *     summary: Actualizar el nombre de usuario (username)
+ *     description: Permite al usuario cambiar su nombre público. El nuevo nombre será validado por formato y disponibilidad.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 20
+ *                 pattern: '^[a-zA-Z0-9_]+$'
+ *                 example: nuevo_jugador_99
+ *     responses:
+ *       200:
+ *         description: Nombre de usuario actualizado correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Nombre de usuario actualizado.
+ *                 user:
+ *                   $ref: '#/components/schemas/UserProfile'
+ *       400:
+ *         description: Formato de nombre inválido o nombre ya en uso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: No autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Error interno del servidor
  *         content:
@@ -75,6 +112,105 @@ router.use(authenticate);
  *               $ref: '#/components/schemas/Error'
  */
 router.get('/profile', getProfile);
+router.put('/profile', validateUsernameBody, updateProfile);
+
+/**
+ * @swagger
+ * /api/users/status:
+ *   patch:
+ *     summary: Actualizar estado de presencia y privacidad
+ *     description: Permite al usuario cambiar su visibilidad ante otros jugadores. El estado "INVISIBLE" permite jugar apareciendo como desconectado para la lista de amigos.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [ONLINE, AWAY, BUSY, INVISIBLE]
+ *                 description: |
+ *                   Estados permitidos:
+ *                   - ONLINE: Visible y disponible.
+ *                   - AWAY: Ausente temporalmente.
+ *                   - BUSY: No molestar (bloqueo de notificaciones).
+ *                   - INVISIBLE: Aparece como desconectado.
+ *                 example: INVISIBLE
+ *     responses:
+ *       200:
+ *         description: Estado actualizado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Ahora tu estado es INVISIBLE
+ *                 status:
+ *                   type: string
+ *                   example: INVISIBLE
+ *       400:
+ *         description: Estado proporcionado no válido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: No autorizado - Token inválido o ausente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.patch('/status', validateStatusBody, updateStatus);
+
+/**
+ * @swagger
+ * /api/users:
+ *   delete:
+ *     summary: Eliminar cuenta de usuario de forma permanente
+ *     description: Elimina el perfil del usuario autenticado y realiza una limpieza en cascada de todos sus recursos asociados (mazos, estadísticas y preferencias). Esta acción es irreversible.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Usuario y recursos asociados eliminados correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Tu cuenta y todos tus datos han sido eliminados permanentemente.
+ *       401:
+ *         description: No autorizado - Token inválido o expirado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error crítico al intentar eliminar la cuenta
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.delete('/', deleteUser);
 
 /**
  * @swagger
@@ -109,51 +245,6 @@ router.get('/profile', getProfile);
  *               $ref: '#/components/schemas/Error'
  */
 router.get('/balance', getBalance);
-
-/**
- * @swagger
- * /api/users/inventory:
- *   get:
- *     summary: Obtener el inventario de comodines del usuario autenticado
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Inventario de comodines del usuario
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 inventory:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       itemId:
- *                         type: string
- *                         example: item_wildcard_001
- *                       name:
- *                         type: string
- *                         example: Comodín de ataque
- *                       quantity:
- *                         type: integer
- *                         example: 3
- *       401:
- *         description: No autenticado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Error interno del servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.get('/inventory', getInventory);
 
 /**
  * @swagger

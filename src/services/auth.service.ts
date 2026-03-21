@@ -2,18 +2,14 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-import { prisma } from "../infrastructure/prisma"
-
+import { prisma } from '../infrastructure/prisma';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
   findUserByEmailOrUsername: async (email: string, username: string) => {
     const resultado = await prisma.user.findFirst({
-      where: { 
-        OR: [
-          { email: email },
-          { username: username }
-        ],
+      where: {
+        OR: [{ email: email }, { username: username }],
       },
     });
 
@@ -27,12 +23,16 @@ export const AuthService = {
       exp_level: resultado.exp_level,
       progress_level: resultado.progress_level,
       state: resultado.state,
-      personal: resultado.personal_state
-    }
+      personal: resultado.personal_state,
+    };
   },
 
   // Encapsula la lógica de hashear la contraseña y guardar al usuario
-  registerUser: async (email: string, username: string, passwordRaw: string) => {
+  registerUser: async (
+    email: string,
+    username: string,
+    passwordRaw: string,
+  ) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(passwordRaw, saltRounds);
 
@@ -41,7 +41,7 @@ export const AuthService = {
         email,
         username,
         password: hashedPassword,
-      }
+      },
     });
 
     return {
@@ -76,9 +76,9 @@ export const AuthService = {
 
     return {
       token,
-      user: { 
-        id: `u_${user.id_user}`, 
-        username: user.username
+      user: {
+        id: `u_${user.id_user}`,
+        username: user.username,
       },
     };
   },

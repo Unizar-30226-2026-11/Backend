@@ -1,10 +1,9 @@
 // controllers/friend.controller.ts
+import { Friendship_States } from '@prisma/client';
 import { Response } from 'express';
 
 import { FriendService } from '../../services';
 import { AuthenticatedRequest } from '../../shared/types';
-import { Friendship_States  } from "@prisma/client";
-
 
 export const getFriends = async (
   req: AuthenticatedRequest,
@@ -125,9 +124,7 @@ export const respondToRequest = async (
     // Procesar la acción (Aceptar o Rechazar)
     if (action === 'accept') {
       // Toda la lógica de negocio (cambiar estado y crear amistad) ocurre dentro del servicio
-      await FriendService.acceptFriendRequest(
-        requestId
-      );
+      await FriendService.acceptFriendRequest(requestId);
       res
         .status(200)
         .json({ message: 'Solicitud de amistad aceptada. Ahora son amigos.' });

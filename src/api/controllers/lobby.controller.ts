@@ -89,3 +89,56 @@ export const getLobbyByCode = async (
       .json({ message: 'Error al buscar la información de la sala.' });
   }
 };
+
+export const joinLobby = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { lobbyCode } = req.params;
+
+    // 1. Obtener la sala para validar que existe
+    const lobby = await LobbyService.getLobbyByCode(lobbyCode);
+
+    if (!lobby) {
+      res
+        .status(404)
+        .json({ message: 'La sala solicitada no existe o ya ha terminado.' });
+      return;
+    }
+
+    // 2. Verificar si la sala ya está llena
+    if (lobby.players.length >= lobby.maxPlayers) {
+      res.status(403).json({
+        message: 'La sala está llena. No se pueden unir más jugadores.',
+      });
+      return;
+    }
+
+    // 3. Generar el token de conexión para el WebSocket
+    // Se recomienda una vida muy corta (2 minutos) ya que solo se valida al conectar
+    const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
+    const wsToken = jwt.sign(
+      {
+        id: userId,
+        username: req.user!.username,
+        lobbyCode,
+      },
+      secretKey,
+      { expiresIn: '2m' }, // Expira rápido
+    );
+
+    // 4. Retornar el token al cliente
+    res.status(200).json({
+      message: 'Ticket de conexión WebSocket generado exitosamente.',
+      wsToken,
+      lobbyCode,
+    });
+  } catch (error) {
+    console.error('Error in joinLobby:', error);
+    res
+      .status(500)
+      .json({ message: 'Error interno al solicitar unirse a la sala.' });
+  }
+};
