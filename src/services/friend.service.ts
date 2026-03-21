@@ -1,7 +1,8 @@
 // services/friend.service.ts
 
-import { prisma } from '../infrastructure/prisma';
 import { Friendship_States } from '@prisma/client';
+
+import { prisma } from '../infrastructure/prisma';
 
 export const FriendService = {
   // Obtener lista de amigos de un usuario

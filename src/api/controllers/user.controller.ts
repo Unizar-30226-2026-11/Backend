@@ -25,6 +25,67 @@ export const getProfile = async (
   }
 };
 
+export const updateProfile = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { username } = req.body;
+
+    const updatedUser = await UserService.updateUserProfile(userId, username);
+
+    if (!updatedUser) {
+      res.status(404).json({ message: 'Usuario no encontrado.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Nombre de usuario actualizado.',
+      user: updatedUser,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error al actualizar el perfil.' });
+  }
+};
+
+export const updateStatus = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { status } = req.body;
+
+    // El servicio se encarga de persistir el estado y notificar vía WebSockets si es necesario
+    await UserService.updatePresence(userId, status);
+
+    res.status(200).json({
+      message: `Ahora tu estado es: ${status}`,
+      status,
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: 'Error al cambiar el estado de presencia.' });
+  }
+};
+
+export const deleteUser = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+
+    await UserService.deleteUser(userId);
+
+    res.status(200).json({ message: 'Cuenta eliminada con éxito.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error interno al eliminar el usuario.' });
+  }
+};
+
 export const getBalance = async (
   req: AuthenticatedRequest,
   res: Response,

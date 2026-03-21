@@ -25,6 +25,44 @@ export const UserService = {
     };
   },
 
+  /**
+   * Actualiza los datos básicos del perfil (Nombre de usuario).
+   */
+  updateUserProfile: async (u_id: string, username: string) => {
+    // 1. Limpiar el prefijo 'u_' para obtener el ID numérico de la DB.
+    // 2. Verificar si el 'username' ya está en uso por otro usuario (Unique constraint check).
+    // 3. Si el nombre existe, lanzar una excepción controlada (ej: throw new Error('USERNAME_TAKEN')).
+    // 4. Realizar el 'update' en la tabla 'user' mediante Prisma.
+    // 5. Retornar el objeto del usuario actualizado o el perfil formateado.
+  },
+
+  /**
+   * Gestiona el estado de visibilidad y presencia social.
+   */
+  updatePresence: async (u_id: string, status: string) => {
+    // 1. Limpiar el prefijo 'u_' del ID.
+    // 2. Validar que el 'status' pertenece al enum permitido (ONLINE, AWAY, BUSY, INVISIBLE).
+    // 3. Actualizar el campo de estado en la base de datos.
+    // 4. LÓGICA DE PRIVACIDAD: Si el estado es 'INVISIBLE', el sistema debe marcar
+    //    internamente que no se emitan eventos de WebSocket (como 'user_connected') a los amigos.
+    // 5. Retornar el nuevo estado para confirmar la operación.
+  },
+
+  /**
+   * Realiza un borrado total de la cuenta y sus dependencias.
+   */
+  deleteUser: async (u_id: string) => {
+    // 1. Limpiar el prefijo 'u_' del ID.
+    // 2. USAR UNA TRANSACCIÓN (prisma.$transaction): Es crítico para asegurar que
+    //    si falla el borrado de un mazo, no se borre el usuario a medias.
+    // 3. LIMPIEZA EN CASCADA MANUAL (si no está definida en la DB):
+    //    a. Eliminar asociaciones de cartas del usuario (UserCards).
+    //    b. Eliminar todos los mazos (Decks) vinculados al ID.
+    //    c. Eliminar registros de amistad o solicitudes pendientes.
+    // 4. Eliminar el registro principal en la tabla 'user'.
+    // 5. Opcional: Registrar el evento en logs de auditoría antes de finalizar.
+  },
+
   searchUsers: async (query: string) => {
     const users = await prisma.user.findMany({
       where: {

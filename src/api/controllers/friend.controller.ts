@@ -1,9 +1,9 @@
 // controllers/friend.controller.ts
+import { Friendship_States } from '@prisma/client';
 import { Response } from 'express';
 
 import { FriendService } from '../../services';
 import { AuthenticatedRequest } from '../../shared/types';
-import { Friendship_States } from '@prisma/client';
 
 export const getFriends = async (
   req: AuthenticatedRequest,

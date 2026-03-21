@@ -191,3 +191,55 @@ export const validateCreateLobbyBody = (
 
   next();
 };
+
+/**
+ * Valida el cuerpo de la petición al actualizar el nombre de usuario.
+ */
+export const validateUsernameBody = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const { username } = req.body;
+  const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
+
+  // Verificación de existencia y tipo
+  if (!username || typeof username !== 'string') {
+    res.status(400).json({
+      message: 'El nombre de usuario es obligatorio y debe ser un texto.',
+    });
+    return;
+  }
+
+  const trimmedUsername = username.trim();
+
+  // Verificación de formato y longitud (3-20 caracteres, alfanumérico)
+  if (!USERNAME_REGEX.test(trimmedUsername)) {
+    res.status(400).json({
+      message:
+        'El nombre de usuario debe tener entre 3 y 20 caracteres y solo contener letras, números o guiones bajos.',
+    });
+    return;
+  }
+
+  // Actualizamos el body con el valor limpio
+  req.body.username = trimmedUsername;
+  next();
+};
+
+export const validateStatusBody = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const { status } = req.body;
+  const ALLOWED_STATUSES = ['ONLINE', 'AWAY', 'BUSY', 'INVISIBLE'];
+
+  if (!status || !ALLOWED_STATUSES.includes(status)) {
+    res.status(400).json({
+      message: `Estado no válido. Opciones: ${ALLOWED_STATUSES.join(', ')}`,
+    });
+    return;
+  }
+  next();
+};
