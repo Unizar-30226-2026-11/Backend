@@ -1,15 +1,15 @@
-import { Rarity, Friendship_States } from '@prisma/client';
+import { Friendship_States, Rarity } from '@prisma/client';
 import bcrypt from 'bcrypt';
-import { prisma } from "../src/lib/prisma";
+
+import { prisma } from '../src/infrastructure/prisma';
 //
 //  Actualmente con datos de Ejemplo para poder realizar pruebas
 //
 //
 
 async function main() {
-
   const SALT_ROUNDS = 10;
-  const DEFAULT_PASSWORD = 'password123';     // Contraseña para todos los usuarios de prueba
+  const DEFAULT_PASSWORD = 'password123'; // Contraseña para todos los usuarios de prueba
   const hashedBasePassword = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
 
   console.log('--- Limpiando base de datos ---');
@@ -23,8 +23,8 @@ async function main() {
   await prisma.collection.deleteMany();
   await prisma.user.deleteMany();
 
-  console.log('--- Creando Colecciones y Cartas ---');  // 12 Colecciones x 12 Cartas = 144 cartas en total
-  
+  console.log('--- Creando Colecciones y Cartas ---'); // 12 Colecciones x 12 Cartas = 144 cartas en total
+
   const rarities: Rarity[] = [
     ...Array(5).fill(Rarity.COMMON),
     ...Array(3).fill(Rarity.UNCOMMON),
@@ -61,7 +61,7 @@ async function main() {
       data: {
         username: `Jugador${i}`,
         email: `jugador${i}@ejemplo.com`,
-        password: hashedBasePassword,                           
+        password: hashedBasePassword,
       },
     });
     users.push(user);
@@ -75,7 +75,10 @@ async function main() {
     });
 
     // Añadir 5 cartas extra aleatorias (instancias únicas adicionales)
-    const extraCards = allCards.slice(48).sort(() => 0.5 - Math.random()).slice(0, 5);
+    const extraCards = allCards
+      .slice(48)
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 5);
     await prisma.userCard.createMany({
       data: extraCards.map((card) => ({
         id_user: user.id_user,
@@ -106,18 +109,17 @@ async function main() {
       data: {
         id_user_1: users[i].id_user,
         id_user_2: users[i + 1].id_user,
-        state: Friendship_States.FRIEND
+        state: Friendship_States.FRIEND,
       },
     });
   }
 
   console.log('--- Generando 15 Partidas Multijugador (4-8 jugadores) ---');
   for (let i = 0; i < 15; i++) {
-
     // Definir duracion aleatoria entre 60 y 115 minutos
 
     const duration = Math.floor(Math.random() * 60) + 45;
-    
+
     // Crear la partida
     const game = await prisma.games_log.create({
       data: {
@@ -134,7 +136,6 @@ async function main() {
     // Crear las estadísticas para cada participante
     // El puesto (place) se asigna del 1 al numParticipants
     for (let j = 0; j < participants.length; j++) {
-
       await prisma.userGameStats.create({
         data: {
           id_game: game.id_game,
