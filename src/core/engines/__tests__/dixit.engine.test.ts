@@ -39,7 +39,7 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
     });
 
     expect(state.phase).toBe('SUBMISSION');
-    expect(state.currentRound.clue).toBe('Un viaje espacial');
+    expect((state.currentRound as any).clue).toBe('Un viaje espacial');
 
     // 3. FASE: ENVÍO DE CARTAS (P2, P3 y P4 intentan engañar)
     state = DixitEngine.transition(state, {
@@ -117,7 +117,7 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
     expect(state.discardPile).toEqual(expect.arrayContaining([10, 20, 30, 40]));
 
     // El narrador debe haber rotado al siguiente jugador
-    expect(state.currentRound.storytellerId).toBe('P2');
+    expect((state.currentRound as any).storytellerId).toBe('P2');
 
     // Todos deben haber robado una carta nueva para tener 6 otra vez
     expect(state.hands['P1']).toHaveLength(6);

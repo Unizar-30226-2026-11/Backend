@@ -29,12 +29,12 @@ export class DixitEngine {
    */
   static transition(currentState: GameState, action: GameAction): GameState {
     // Clonación profunda para garantizar la inmutabilidad
-    const state = JSON.parse(JSON.stringify(currentState)) as GameState;
+    const state = structuredClone(currentState);
 
     // 1. Acciones de Inicialización y Configuración Global
     if (action.type === 'INIT_GAME') {
-      return this.handleInitGame(state as any, action);
-      // Usamos 'as any' temporalmente aquí porque el estado inicial puede venir vacío
+      return this.handleInitGame(state, action);
+      // Se podría utilizar 'as any' temporalmente aquí porque el estado inicial puede venir vacío
     }
 
     if (action.type === 'CHANGE_MODE') {
@@ -72,7 +72,7 @@ export class DixitEngine {
    * Inicializa la partida, el mazo global, y arranca el primer modo de juego.
    */
   private static handleInitGame(
-    state: GameState,
+    state: Partial<GameState>,
     action: ActionInitGame,
   ): GameState {
     const allCardIds: number[] = action.payload.deck;
@@ -111,7 +111,8 @@ export class DixitEngine {
     state.mode = 'STANDARD';
 
     // Delegamos la creación de la `currentRound` a la estrategia inicial
-    return this.strategies[state.mode].handleNextRound(state);
+    const readyState = state as GameState;
+    return this.strategies[state.mode].handleNextRound(readyState);
   }
 
   /**
