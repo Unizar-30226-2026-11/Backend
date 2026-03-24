@@ -34,6 +34,9 @@ export const UserService = {
     // 3. Si el nombre existe, lanzar una excepción controlada (ej: throw new Error('USERNAME_TAKEN')).
     // 4. Realizar el 'update' en la tabla 'user' mediante Prisma.
     // 5. Retornar el objeto del usuario actualizado o el perfil formateado.
+
+    const id_user = parseInt(u_id.replace('u_', ''));
+
   },
 
   /**
@@ -46,6 +49,8 @@ export const UserService = {
     // 4. LÓGICA DE PRIVACIDAD: Si el estado es 'INVISIBLE', el sistema debe marcar
     //    internamente que no se emitan eventos de WebSocket (como 'user_connected') a los amigos.
     // 5. Retornar el nuevo estado para confirmar la operación.
+
+
   },
 
   /**
@@ -61,6 +66,8 @@ export const UserService = {
     //    c. Eliminar registros de amistad o solicitudes pendientes.
     // 4. Eliminar el registro principal en la tabla 'user'.
     // 5. Opcional: Registrar el evento en logs de auditoría antes de finalizar.
+
+
   },
 
   searchUsers: async (query: string) => {
