@@ -9,7 +9,12 @@ import { GameModeStrategy } from './core.strategy';
 
 export class StellaStrategy implements GameModeStrategy {
   /**
-   * Enrutador específico de las acciones del modo Stella.
+   * Enrutador principal de las acciones del modo Stella.
+   * Recibe el estado actual y la acción, y delega a la función correspondiente
+   * para calcular y devolver el nuevo estado.
+   * * @param state Estado actual del juego
+   * @param action Acción disparada por un jugador o el sistema
+   * @returns El nuevo estado del juego actualizado
    */
   public transition(state: GameState, action: GameAction): GameState {
     const stellaState = state as StellaGameState;
@@ -22,9 +27,10 @@ export class StellaStrategy implements GameModeStrategy {
       case 'NEXT_ROUND':
         return this.handleNextRound(stellaState);
 
-      // Resiliencia: Evaluamos si la caída de un jugador avanza la ronda
       case 'DISCONNECT_PLAYER':
       case 'RECONNECT_PLAYER':
+        // Si un jugador se conecta o desconecta, evaluamos si la fase debe avanzar
+        // (por ejemplo, si estábamos esperando a ese único jugador para continuar).
         this.checkPhaseAdvancement(stellaState);
         return stellaState;
 
@@ -38,14 +44,17 @@ export class StellaStrategy implements GameModeStrategy {
   // ==========================================
 
   /**
-   * Fase 1: Los jugadores envían en secreto las cartas que asocian con la palabra.
+   * Gestiona la fase de marcado donde los jugadores seleccionan en secreto
+   * qué cartas asocian con la palabra de la ronda.
    */
   private handleMarks(
     state: StellaGameState,
     action: ActionStellaSubmitMarks,
   ): GameState {
+    // Validar que el jugador no esté desconectado
     this.validatePlayerActive(state, action.playerId);
 
+    // Validaciones de fase y estado del jugador
     if (state.phase !== 'STELLA_MARKING') {
       throw new Error('No es el momento de marcar cartas.');
     }
@@ -53,12 +62,13 @@ export class StellaStrategy implements GameModeStrategy {
       throw new Error('Ya has enviado tus marcas.');
     }
 
+    // Validaciones de la cantidad de marcas permitidas
     const marks = action.payload.cardIds;
     if (marks.length < 1 || marks.length > 10) {
       throw new Error('Debes marcar entre 1 y 10 cartas.');
     }
 
-    // Validar que las cartas marcadas están en la mesa
+    // Comprobar que todas las cartas marcadas existen actualmente en la mesa
     const invalidMarks = marks.filter(
       (id) => !state.currentRound.boardCards.includes(id),
     );
@@ -66,14 +76,17 @@ export class StellaStrategy implements GameModeStrategy {
       throw new Error('Has marcado cartas que no están en la mesa.');
     }
 
+    // Guardar las marcas del jugador
     state.currentRound.playerMarks[action.playerId] = marks;
 
+    // Verificar si todos han marcado para avanzar de fase
     this.checkPhaseAdvancement(state);
     return state;
   }
 
   /**
-   * Fase 2: Turnos para revelar marcas intentando coincidir con otros.
+   * Gestiona la fase de revelación donde el jugador activo (Scout) revela
+   * una de sus cartas marcadas para comprobar coincidencias con otros jugadores.
    */
   private handleReveal(
     state: StellaGameState,
@@ -81,6 +94,7 @@ export class StellaStrategy implements GameModeStrategy {
   ): GameState {
     this.validatePlayerActive(state, action.playerId);
 
+    // Validaciones de turno y estado
     if (state.phase !== 'STELLA_REVEAL') {
       throw new Error('No es la fase de revelación.');
     }
@@ -94,6 +108,7 @@ export class StellaStrategy implements GameModeStrategy {
     const cardId = action.payload.cardId;
     const playerMarks = state.currentRound.playerMarks[action.playerId];
 
+    // Validar la jugada
     if (!playerMarks.includes(cardId)) {
       throw new Error('No puedes revelar una carta que no marcaste.');
     }
@@ -101,34 +116,38 @@ export class StellaStrategy implements GameModeStrategy {
       throw new Error('Esta carta ya fue revelada.');
     }
 
-    // Añadimos la carta a las reveladas
+    // Añadir la carta al pool de cartas reveladas en la ronda
     state.currentRound.revealedCards.push(cardId);
 
-    // Comprobar cuántos OTROS jugadores (activos y no caídos) marcaron esta carta
-    const otherPlayers = state.players.filter(
-      (p) => p !== action.playerId && !state.disconnectedPlayers.includes(p),
-    );
-
+    // Comprobar coincidencias con TODOS los demás jugadores (activos y caídos)
+    const otherPlayers = state.players.filter((p) => p !== action.playerId);
     const matches = otherPlayers.filter((pId) =>
       state.currentRound.playerMarks[pId]?.includes(cardId),
     );
 
     if (matches.length === 0) {
-      // CAÍDA (Fall): Nadie más la marcó. El jugador se cae.
+      // CAÍDA: Nadie más marcó la carta. El jugador pierde el derecho a seguir puntuando.
       state.currentRound.fallenPlayers.push(action.playerId);
     } else {
-      // CHISPA (Spark): Hay coincidencia. En un motor completo, aquí registrarías
-      // los puntos temporales (ej: 2 pts por chispa, 3 pts por super chispa).
-      // Por simplicidad en este engine, sumamos los puntos directamente al marcador.
-      const points = matches.length === 1 ? 3 : 2; // Super Chispa = 3, Chispa = 2
+      // CHISPA / SUPER CHISPA: Hubo coincidencias con otros jugadores.
+      const totalInvolved = matches.length + 1;
+      // 3 puntos si solo coinciden 2 jugadores (Super Chispa), 2 puntos si son más (Chispa)
+      const points = totalInvolved === 2 ? 3 : 2;
 
-      state.scores[action.playerId] += points;
-      matches.forEach((matchId) => {
-        state.scores[matchId] += points;
+      const involvedPlayers = [action.playerId, ...matches];
+
+      involvedPlayers.forEach((pId) => {
+        // 1. Registramos el acierto para el cálculo de penalizaciones (ej. castigo "En la Oscuridad")
+        state.currentRound.successfulMarks[pId] += 1;
+
+        // 2. Sumamos puntos temporales SOLO si el jugador NO ha caído previamente
+        if (!state.currentRound.fallenPlayers.includes(pId)) {
+          state.currentRound.roundScores[pId] += points;
+        }
       });
     }
 
-    // Tras revelar (o caerse), pasamos el turno al siguiente jugador válido
+    // Pasar el turno al siguiente jugador elegible y comprobar si la ronda terminó
     this.passScoutTurn(state);
     this.checkPhaseAdvancement(state);
 
@@ -139,27 +158,47 @@ export class StellaStrategy implements GameModeStrategy {
   // FLUJO Y TURNOS
   // ==========================================
 
+  /**
+   * Evalúa si se cumplen las condiciones para cambiar de fase (de Marcado a Revelación,
+   * o de Revelación a Puntuación/Fin de partida) y aplica las transiciones.
+   */
   private checkPhaseAdvancement(state: StellaGameState): void {
     const activePlayers = state.players.filter(
       (p) => !state.disconnectedPlayers.includes(p),
     );
 
+    // TRANSICIÓN DE MARCADO -> REVELACIÓN
     if (state.phase === 'STELLA_MARKING') {
-      // ¿Han marcado todos los jugadores activos?
       const allMarked = activePlayers.every(
         (pId) => state.currentRound.playerMarks[pId] !== undefined,
       );
 
       if (allMarked && activePlayers.length > 1) {
         state.phase = 'STELLA_REVEAL';
-
-        // En Stella real, empieza quien tiene más marcas. Por simplicidad,
-        // cogemos al primer jugador activo.
         state.currentRound.currentScoutId = activePlayers[0];
+
+        // Calcular quién está "En la Oscuridad" (el jugador que ha hecho más marcas en solitario)
+        let maxMarks = -1;
+        let playersWithMaxMarks: string[] = [];
+
+        for (const pId of activePlayers) {
+          const marksCount = state.currentRound.playerMarks[pId]?.length || 0;
+          if (marksCount > maxMarks) {
+            maxMarks = marksCount;
+            playersWithMaxMarks = [pId];
+          } else if (marksCount === maxMarks) {
+            playersWithMaxMarks.push(pId);
+          }
+        }
+
+        // Si hay un único jugador con más marcas que el resto, se le asigna el estado "En la oscuridad"
+        state.currentRound.inTheDarkPlayerId =
+          playersWithMaxMarks.length === 1 ? playersWithMaxMarks[0] : null;
       }
-    } else if (state.phase === 'STELLA_REVEAL') {
-      // La ronda termina cuando todos los activos se han caído,
-      // o han revelado todas sus cartas.
+    }
+    // TRANSICIÓN DE REVELACIÓN -> PUNTUACIÓN / FIN DE PARTIDA
+    else if (state.phase === 'STELLA_REVEAL') {
+      // La ronda termina si todos han caído o si todos han revelado todas sus marcas
       const isRoundOver = activePlayers.every((pId) => {
         const hasFallen = state.currentRound.fallenPlayers.includes(pId);
         const marks = state.currentRound.playerMarks[pId] || [];
@@ -170,9 +209,23 @@ export class StellaStrategy implements GameModeStrategy {
       });
 
       if (isRoundOver) {
-        // En Stella, la partida dura 4 rondas exactamente.
-        // Si tienes un contador de rondas, lo evaluarías aquí.
-        // Simulamos condición de victoria a 30 puntos como en Dixit normal para este ejemplo.
+        // APLICAR PENALIZACIÓN DE "EN LA OSCURIDAD"
+        const inTheDarkId = state.currentRound.inTheDarkPlayerId;
+        // Si el jugador "en la oscuridad" ha caído, pierde tantos puntos como aciertos haya tenido
+        if (
+          inTheDarkId &&
+          state.currentRound.fallenPlayers.includes(inTheDarkId)
+        ) {
+          const penalty = state.currentRound.successfulMarks[inTheDarkId] || 0;
+          state.currentRound.roundScores[inTheDarkId] -= penalty;
+        }
+
+        // VOLCAR PUNTOS TEMPORALES AL MARCADOR GLOBAL
+        state.players.forEach((pId) => {
+          state.scores[pId] += state.currentRound.roundScores[pId] || 0;
+        });
+
+        // CONDICIÓN DE VICTORIA (El primer jugador en llegar a 30 puntos gana)
         const gameFinished = Object.values(state.scores).some(
           (score) => score >= 30,
         );
@@ -188,6 +241,10 @@ export class StellaStrategy implements GameModeStrategy {
     }
   }
 
+  /**
+   * Pasa el turno de revelación al siguiente jugador que siga activo,
+   * no haya caído y aún tenga cartas por revelar.
+   */
   private passScoutTurn(state: StellaGameState): void {
     const activePlayers = state.players.filter(
       (p) => !state.disconnectedPlayers.includes(p),
@@ -199,7 +256,7 @@ export class StellaStrategy implements GameModeStrategy {
     let nextIndex = (currentIndex + 1) % activePlayers.length;
     let loopCount = 0;
 
-    // Buscamos al siguiente jugador que no se haya caído y tenga cartas por revelar
+    // Buscar recursivamente (en anillo) al siguiente jugador válido
     while (loopCount < activePlayers.length) {
       const pId = activePlayers[nextIndex];
       const hasFallen = state.currentRound.fallenPlayers.includes(pId);
@@ -208,6 +265,7 @@ export class StellaStrategy implements GameModeStrategy {
         (m) => !state.currentRound.revealedCards.includes(m),
       );
 
+      // Si el jugador no ha caído y tiene cartas sin revelar, es su turno
       if (!hasFallen && hasUnrevealed) {
         state.currentRound.currentScoutId = pId;
         return;
@@ -217,18 +275,22 @@ export class StellaStrategy implements GameModeStrategy {
       loopCount++;
     }
 
-    // Si sale del bucle, nadie más puede jugar (la ronda terminará en checkPhaseAdvancement)
+    // Si nadie cumple las condiciones, ya no hay jugador activo (fin de ronda)
     state.currentRound.currentScoutId = null;
   }
 
   // ==========================================
-  // PREPARACIÓN DE RONDA (HOT-SWAP)
+  // PREPARACIÓN DE RONDA
   // ==========================================
 
+  /**
+   * Prepara el estado para la siguiente ronda: limpia el tablero,
+   * baraja el mazo si es necesario y reinicia los contadores.
+   */
   public handleNextRound(state: GameState): GameState {
     const stellaState = state as StellaGameState;
 
-    // 1. Limpiamos la mesa anterior al descarte (ya sea de Stella o Standard)
+    // Descartar las cartas del tablero de la ronda anterior
     if (stellaState.currentRound) {
       if (
         'boardCards' in stellaState.currentRound &&
@@ -238,10 +300,10 @@ export class StellaStrategy implements GameModeStrategy {
       }
     }
 
-    // 2. Stella requiere exactamente 15 cartas en la mesa.
-    // Lógica de reshuffle si no hay suficientes.
+    // Rellenar y barajar el mazo central si no quedan suficientes cartas (15)
     if (stellaState.centralDeck.length < 15) {
       const newDeck = [...stellaState.centralDeck, ...stellaState.discardPile];
+      // Algoritmo de Fisher-Yates para barajar
       for (let i = newDeck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
@@ -250,13 +312,21 @@ export class StellaStrategy implements GameModeStrategy {
       stellaState.discardPile = [];
     }
 
+    // Extraer 15 nuevas cartas para el tablero
     const newBoard = stellaState.centralDeck.splice(-15);
-
-    // 3. Obtener la palabra clave de la ronda.
-    // En un entorno real, tendrías un mazo de palabras en el payload o base de datos.
+    // Palabra estática de ejemplo para la ronda (Debería ser dinámica idealmente)
     const roundWord = 'Bosque Encantado';
 
-    // 4. Reiniciamos la estructura de la ronda para Stella
+    const roundScores: Record<string, number> = {};
+    const successfulMarks: Record<string, number> = {};
+
+    // Inicializar contadores a 0 para todos los jugadores
+    stellaState.players.forEach((pId) => {
+      roundScores[pId] = 0;
+      successfulMarks[pId] = 0;
+    });
+
+    // Construir la nueva estructura de la ronda
     stellaState.currentRound = {
       word: roundWord,
       boardCards: newBoard,
@@ -264,8 +334,12 @@ export class StellaStrategy implements GameModeStrategy {
       revealedCards: [],
       currentScoutId: null,
       fallenPlayers: [],
+      inTheDarkPlayerId: null,
+      roundScores,
+      successfulMarks,
     };
 
+    // Cambiar la fase a MARCADO para iniciar el nuevo ciclo
     stellaState.phase = 'STELLA_MARKING';
 
     return stellaState;
@@ -275,12 +349,19 @@ export class StellaStrategy implements GameModeStrategy {
   // UTILIDADES
   // ==========================================
 
+  /**
+   * Verifica que el jugador que intenta realizar una acción esté conectado.
+   */
   private validatePlayerActive(state: StellaGameState, playerId: string) {
     if (state.disconnectedPlayers.includes(playerId)) {
       throw new Error('Debes reconectarte antes de realizar una acción.');
     }
   }
 
+  /**
+   * Determina quién ha ganado la partida al final comparando los scores.
+   * Contempla empates asignando a más de un ganador.
+   */
   private determineWinners(state: StellaGameState): void {
     let maxScore = -1;
     let currentWinners: string[] = [];
