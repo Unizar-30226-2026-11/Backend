@@ -1,5 +1,7 @@
 import { prisma } from '../infrastructure/prisma';
 
+import { User_States } from '@prisma/client';
+
 export const UserService = {
   // --- Perfil y Búsqueda ---
   getUserProfile: async (u_id: string) => {
@@ -37,6 +39,32 @@ export const UserService = {
 
     const id_user = parseInt(u_id.replace('u_', ''));
 
+    const user_username = await prisma.user.findUnique({
+      where: { username }
+    });
+
+    if (user_username) {
+      throw new Error('USERNAME_TAKEN')
+    }
+
+    const updated_user = await prisma.user.update({
+      where: { id_user },
+      data: { username },
+      select: {
+        id_user: true,
+        username: true,
+        email: true,
+        exp_level: true,
+        progress_level: true,
+        state: true,
+        personal_state: true,
+      },
+    })
+
+    return {
+      ...updated_user,
+      id: `u_${updated_user.id_user}`,
+    };
   },
 
   /**
@@ -44,13 +72,28 @@ export const UserService = {
    */
   updatePresence: async (u_id: string, status: string) => {
     // 1. Limpiar el prefijo 'u_' del ID.
-    // 2. Validar que el 'status' pertenece al enum permitido (ONLINE, AWAY, BUSY, INVISIBLE).
+    // 2. Validar que el 'status' pertenece al enum permitido (DISCONNECTED, CONNECTED, UNKNOWN, IN_GAME).
     // 3. Actualizar el campo de estado en la base de datos.
     // 4. LÓGICA DE PRIVACIDAD: Si el estado es 'INVISIBLE', el sistema debe marcar
     //    internamente que no se emitan eventos de WebSocket (como 'user_connected') a los amigos.
     // 5. Retornar el nuevo estado para confirmar la operación.
 
+    const id_user = parseInt(u_id.replace('u_', ''));
 
+    if(!Object.values(User_States).includes(status as User_States)){
+      throw new Error('INVALID_STATUS');
+    };
+
+    const updated_user = await prisma.user.update({
+      where: { id_user },
+      data: { 
+        state: status as User_States
+      } 
+    });
+
+    return {
+      new_status: updated_user.state
+    }
   },
 
   /**
@@ -67,7 +110,53 @@ export const UserService = {
     // 4. Eliminar el registro principal en la tabla 'user'.
     // 5. Opcional: Registrar el evento en logs de auditoría antes de finalizar.
 
+    const id_user = parseInt(u_id.replace('u_', ''));
 
+    const user_decks = await prisma.deck.findMany({
+      where: { id_user },
+      select: { id_deck: true }
+    });
+
+    const deck_ids = user_decks.map(d => d.id_deck);
+  
+    const resultado = await prisma.$transaction([
+
+      prisma.userGameStats.deleteMany({
+        where: { id_user },
+      }),
+      
+      prisma.deckCard.deleteMany({
+        where: { 
+          id_deck: { in: deck_ids } 
+        }
+      }),
+
+      prisma.userCard.deleteMany({
+        where: { id_user },
+      }),
+
+      prisma.deck.deleteMany({
+        where: { id_user },
+      }),
+      
+
+      prisma.friendships.deleteMany({
+        where: {
+          OR: [ { id_user_1: id_user }, { id_user_2: id_user } ]
+        }
+      }),
+
+      prisma.user.delete({
+        where: { id_user }
+      })      
+    ]);
+
+    if (resultado){
+      return true;
+    }
+    else{
+      return false;
+    }
   },
 
   searchUsers: async (query: string) => {
