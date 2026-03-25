@@ -1,11 +1,16 @@
 import { UserService } from '../user.service';
+import { User_States } from '@prisma/client';
+import { prisma } from '../../infrastructure/prisma';
 import 'dotenv/config';
 
 describe('UserService - Pruebas Funciones', () => {
   let id_deck_created: string;
   let mazos_a_borrar: string[] = [];
 
+  let id_usuario_a_borrar: string;
+
   beforeAll(async () => {
+
     for (let i = 0; i < 5; i++) {
       let cartas_mazo_prueba = [
         'c_1',
@@ -24,6 +29,42 @@ describe('UserService - Pruebas Funciones', () => {
       );
       mazos_a_borrar.push(resultado.id);
     }
+
+
+    const usuario_test = await prisma.user.create({
+      data: {
+        username: 'UsuarioSacrificable_Full',
+        email: 'full_delete@test.com',
+        password: 'hashed_password',
+        state: 'UNKNOWN',
+      }
+    });
+    id_usuario_a_borrar = `u_${usuario_test.id_user}`;
+
+
+    const carta1 = await prisma.userCard.create({ data: { id_user: usuario_test.id_user, id_card: 1 } });
+    const carta2 = await prisma.userCard.create({ data: { id_user: usuario_test.id_user, id_card: 2 } });
+
+    const mazo = await prisma.deck.create({
+      data: { id_user: usuario_test.id_user, name: 'Mazo Condenado' }
+    });
+
+    await prisma.deckCard.createMany({
+      data: [
+        { id_deck: mazo.id_deck, id_user_card: carta1.id_user_card },
+        { id_deck: mazo.id_deck, id_user_card: carta2.id_user_card },
+      ]
+    });
+
+    await prisma.friendships.create({
+      data: {
+        id_user_1: usuario_test.id_user,
+        id_user_2: 1,
+        state: 'FRIEND'
+      }
+    });
+
+
   });
 
   beforeEach(() => {});
@@ -356,7 +397,99 @@ describe('UserService - Pruebas Funciones', () => {
     });
   });
 
+  describe('Actualizacion y Borrado de Usuarios. ' , () => {
+
+    describe('Actualizacion de nombre de usuario. -> updateUserProfile() ' , () => {
+
+      test('Usuario actualizado con éxito: ' , async () => {
+
+        const resultado = await UserService.updateUserProfile('u_1', 'CambiadoC0Nexito');
+
+        expect(resultado).toBeDefined();
+        expect(resultado).toEqual(
+          expect.objectContaining({
+            id_user: expect.any(Number),
+            username: expect.stringMatching(/.+/),
+            email: expect.stringMatching(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
+            exp_level: expect.any(Number),
+            progress_level: expect.any(Number),
+            state: expect.stringMatching(
+              /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
+            ),
+            personal_state:
+              resultado?.personal_state === null ? null : expect.any(String),
+            id: expect.stringMatching(/^u_\d+$/),
+          }),
+        );
+
+      });
+
+      test('Nombre de usuario ya en uso (USERNAME_TAKEN): ' , async () => {
+        await expect(
+          UserService.updateUserProfile('u_1', 'Jugador5'),
+        ).rejects.toThrow('USERNAME_TAKEN');
+      });
+
+      test('Usuario Inexistente: ' , async () => {
+        await expect(
+          UserService.updateUserProfile('u_999999999', 'noExisto'),
+        ).rejects.toThrow();
+      });
+    });
+
+    describe('Actualizacion del estado de usuario. -> updatePresence()' , () => {
+
+      test('Prueba cambio de estados correcta: ' , async () => {
+        for (const state of Object.values(User_States)){
+          const resultado = await UserService.updatePresence("u_1", String(state));
+
+          expect(resultado).toBeDefined();
+          expect(resultado).toEqual(
+            expect.objectContaining({
+              new_status: expect.stringMatching(/^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/),
+            })
+          )
+        }
+      });
+
+      test('Estado no permitido (INVALID_STATUS)' , async () => {
+        await expect(
+          UserService.updatePresence('u_1', 'desconectado'),
+        ).rejects.toThrow('INVALID_STATUS');
+      });
+
+      test('Usuario Inexistente: ' , async () => {
+        await expect(
+          UserService.updatePresence('u_9999999', 'DISCONNECTED'),
+        ).rejects.toThrow();
+      });
+    });
+
+    describe('Borrado de un usuario. -> deleteUser() ' , () => {
+
+      test('Usuario borrado con éxito: ' , async () => {
+        const resultado = await UserService.deleteUser(id_usuario_a_borrar);
+
+        expect(resultado).toBeDefined();
+        expect(resultado).toBeTruthy();
+      });
+
+      test('Usuario inexistente: ' , async () => {
+        await expect(
+          UserService.deleteUser('u_99999999'),
+        ).rejects.toThrow();
+      });
+
+      test('Entrada Incorrecta: ' , async () => {
+        await expect(
+          UserService.deleteUser('Jugador1'),
+        ).rejects.toThrow();
+      });
+    });
+
+  });
   afterAll(async () => {
+
     let cartas_mazo_prueba = [
       'c_1',
       'c_2',
@@ -371,12 +504,18 @@ describe('UserService - Pruebas Funciones', () => {
       'c_11',
       'c_12',
     ];
+
     let mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
+
     await UserService.updateDeck(
       mazos_a_cambiar,
       'Mazo Principal de JugadorX',
       cartas_mazo_prueba,
     );
+
+
+    await UserService.updateUserProfile('u_1', 'Jugador1');
+
   });
 
   afterEach(() => {});
