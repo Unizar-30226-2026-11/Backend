@@ -30,6 +30,13 @@ describe('UserService - Pruebas Funciones', () => {
       mazos_a_borrar.push(resultado.id);
     }
 
+    const ghostUser = await prisma.user.findUnique({
+      where: { username: 'UsuarioSacrificable_Full' }
+    });
+
+    if (ghostUser) {
+      await UserService.deleteUser(`u_${ghostUser.id_user}`);
+    }
 
     const usuario_test = await prisma.user.create({
       data: {
@@ -515,7 +522,6 @@ describe('UserService - Pruebas Funciones', () => {
 
 
     await UserService.updateUserProfile('u_1', 'Jugador1');
-
   });
 
   afterEach(() => {});
