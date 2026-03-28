@@ -1,0 +1,82 @@
+// src/sockets/lobby.handler.ts
+import { Server } from 'socket.io';
+import { AuthenticatedSocket } from '../../api/middlewares/';
+import { LobbyService } from '../../services/lobby.service';
+import { GameService } from '../../services/game.service';
+import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+
+export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) => {
+  // Extraemos los datos 100% confiables del middleware
+  const lobbyCode = socket.data.lobbyCode;
+  const userId = socket.user?.id;
+
+  if (!lobbyCode || !userId) return; // Salvaguarda
+
+  // 1. UNIRSE AL LOBBY
+  socket.on(CLIENT_EVENTS.LOBBY_JOIN, async () => {
+    try {
+      // Intentamos meter al jugador en Redis
+      const updatedLobby = await LobbyService.joinLobby(lobbyCode, userId);
+
+      // Le unimos a la sala de Socket.io (Room)
+      socket.join(lobbyCode);
+      console.log(`[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`);
+
+      // Emitimos el nuevo estado a TODOS en la sala para que actualicen sus pantallas
+      io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, updatedLobby);
+    } catch (error: any) {
+      socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
+    }
+  });
+
+  // 2. INICIAR PARTIDA (Flujo Real sin Mocks)
+  socket.on(CLIENT_EVENTS.LOBBY_START, async () => {
+    try {
+      // Obtenemos la sala de Redis con todos los jugadores reales
+      const lobby = await LobbyService.getLobbyByCode(lobbyCode);
+      if (!lobby) throw new Error('La sala no existe o ha expirado.');
+
+      // Validamos quién es el host
+      if (lobby.hostId !== userId) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: 'Solo el líder puede empezar la partida.' });
+        return;
+      }
+
+      // Validamos el cupo mínimo antes de llamar al motor (Ej. Dixit requiere 4)
+      if (lobby.players.length < 4) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: 'Se requieren al menos 4 jugadores para iniciar.' });
+        return;
+      }
+
+      console.log(`[Lobby] Partida iniciada en el lobby ${lobbyCode} por el host ${userId}`);
+
+      //Pasamos los datos del lobby a la partida
+      const gameService = new GameService(io);
+      await gameService.initializeGame(lobbyCode, lobby);
+
+      //Avisamos a los clientes para que cambien su pantalla al tablero de juego
+      io.to(lobbyCode).emit(SOCKET_EVENTS.GAME_STARTED, { lobbyCode });
+
+    } catch (error: any) {
+      socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
+    }
+  });
+
+  // 3. DESCONEXIÓN (Intencional o inesperada)
+  socket.on('disconnect', async () => {
+    try {
+      console.log(`[Lobby] ${socket.user?.username} se ha desconectado.`);
+
+      // Sacamos al jugador de la sala en Redis
+      await LobbyService.leaveLobby(lobbyCode, userId);
+
+      // Comprobamos si la sala sigue viva para avisar a los demás
+      const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
+      if (remainingLobby) {
+        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, remainingLobby);
+      }
+    } catch (error) {
+      console.error(`Error procesando desconexión de ${userId}:`, error);
+    }
+  });
+};

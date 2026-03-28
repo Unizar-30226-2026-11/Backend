@@ -4,3 +4,4 @@ export * from './friend.service';
 export * from './lobby.service';
 export * from './shop.service';
 export * from './user.service';
+export * from './game.service';
