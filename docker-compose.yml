@@ -2,7 +2,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15
-    container_name: A_Tale_of_Recognition
+    container_name: A_Tale_of_Recognition_PostgreSQL
     restart: always
     environment:
       # Docker leerá estos valores de el archivo .env local
@@ -14,5 +14,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7
+    container_name: A_Tale_of_Recognition_Redis
+    restart: always
+    
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
 volumes:
   postgres_data:
+  redis_data:
