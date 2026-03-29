@@ -1,6 +1,6 @@
 // src/sockets/lobby.handler.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../../api/middlewares/';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 import { LobbyService } from '../../services/lobby.service';
 import { GameService } from '../../services/game.service';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';

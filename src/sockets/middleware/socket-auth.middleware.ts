@@ -1,4 +1,4 @@
-// src/middlewares/socket-auth.middleware.ts
+// src/sockets/socket-auth.middleware.ts
 import { Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 

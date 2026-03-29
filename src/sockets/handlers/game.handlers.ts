@@ -1,6 +1,6 @@
 // src/sockets/handlers/game.handlers.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../../api/middlewares/socket-auth.middleware';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 import { GameService } from '../../services/game.service';
 import { z } from 'zod';
 

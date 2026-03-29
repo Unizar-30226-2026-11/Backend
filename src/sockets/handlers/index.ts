@@ -5,7 +5,7 @@
 
 // src/sockets/index.ts
 import { Server } from 'socket.io';
-import { authenticateSocket, AuthenticatedSocket } from '../../api/middlewares/socket-auth.middleware';
+import { authenticateSocket, AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 import { registerChatHandlers } from './chat.handler';
 import { registerLobbyHandlers } from './lobby.handler';
 import { registerGameHandlers } from './game.handlers';

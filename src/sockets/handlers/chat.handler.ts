@@ -1,6 +1,6 @@
 // src/sockets/handlers/chat.handler.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../../api/middlewares/socket-auth.middleware';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '../events';
 import { ChatSendPayload, ChatMessageReceivedPayload, ErrorPayload } from '../events/types';
 import { z } from 'zod';
