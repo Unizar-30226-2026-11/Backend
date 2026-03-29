@@ -1,0 +1,231 @@
+asyncapi: 2.6.0
+info:
+  title: PSOFT Game WebSockets API
+  version: 1.0.0
+  description: |
+    Especificación de la API de WebSockets (Socket.IO) para el Lobby, Chat y Juego.
+    Define los eventos que el cliente puede enviar (publish) y recibir (subscribe) del servidor,
+    junto con sus esquemas de datos correspondientes (payloads).
+servers:
+  production:
+    url: localhost:3000
+    protocol: ws
+    description: Endpoint principal de conexiones Socket.IO
+
+channels:
+  # ==========================================
+  # EVENTOS DE SUBIDA (Cliente -> Servidor)
+  # ==========================================
+  client:lobby:join:
+    description: El cliente solicita unirse a un lobby.
+    publish:
+      message:
+        $ref: '#/components/messages/ClientLobbyJoin'
+        
+  client:lobby:leave:
+    description: El cliente abandona el lobby intencionalmente.
+    publish:
+      message:
+        $ref: '#/components/messages/EmptyMessage'
+        
+  client:lobby:start:
+    description: El host del lobby solicita iniciar el juego.
+    publish:
+      message:
+        $ref: '#/components/messages/EmptyMessage'
+        
+  client:game:action:
+    description: El cliente envía una acción de juego al servidor (arquitectura centralizada en el motor).
+    publish:
+      message:
+        $ref: '#/components/messages/ClientGameAction'
+        
+  client:chat:send:
+    description: El cliente envía un mensaje al chat del lobby.
+    publish:
+      message:
+        $ref: '#/components/messages/ClientChatSend'
+
+  # ==========================================
+  # EVENTOS DE BAJADA (Servidor -> Cliente)
+  # ==========================================
+  server:error:
+    description: El servidor emite un evento de error cuando algo falla.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerError'
+        
+  server:lobby:state_updated:
+    description: El servidor emite el estado actualizado del lobby a todos los jugadores en él (ej. cuando alguien entra/sale).
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerLobbyStateUpdated'
+        
+  server:game:state_updated:
+    description: El motor de juego actualiza el estado y emite la "foto" completa de la partida.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerGameStateUpdated'
+        
+  server:game:ended:
+    description: Notificación de que el juego ha terminado.
+    subscribe:
+      message:
+        $ref: '#/components/messages/EmptyMessage'
+        
+  server:chat:message_received:
+    description: Un mensaje de chat ha sido recibido y retransmitido a todos en el lobby.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerChatMessageReceived'
+        
+  game:started:
+    description: Notificación de que la partida ha iniciado oficialmente (generalmente para que el frontend cambie de pantalla a modo de juego).
+    subscribe:
+      message:
+        $ref: '#/components/messages/GameStarted'
+
+components:
+  messages:
+    EmptyMessage:
+      name: EmptyMessage
+      title: Payload Vacio
+      payload:
+        type: object
+        description: No se espera ningún payload o se ignora.
+
+    ClientLobbyJoin:
+      name: ClientLobbyJoin 
+      title: Join Lobby Payload
+      payload:
+        type: object
+        properties:
+          lobbyCode:
+            type: string
+            description: Código alfanumérico de 4 caracteres del lobby
+        required: 
+          - lobbyCode
+
+    ClientGameAction:
+      name: ClientGameAction
+      title: Game Action Payload
+      payload:
+        type: object
+        properties:
+          lobbyCode:
+            type: string
+            description: Código de la sala
+          actionType:
+            type: string
+            enum: [SUBMIT_STORY, PLAY_CARD, VOTE_CARD, USE_POWERUP]
+            description: Tipo de acción que el jugador quiere ejecutar
+          payload:
+            type: object
+            description: Datos específicos de la acción (ID de la carta jugada, pista escrita, etc.)
+        required: 
+          - lobbyCode
+          - actionType
+
+    ClientChatSend:
+      name: ClientChatSend
+      title: Chat Send Payload
+      payload:
+        type: object
+        properties:
+          lobbyCode:
+            type: string
+            maxLength: 4
+            minLength: 4
+          text:
+            type: string
+            maxLength: 255
+            minLength: 1
+            description: Texto del mensaje enviado
+        required: 
+          - lobbyCode
+          - text
+
+    ServerError:
+      name: ServerError
+      title: Error Payload
+      payload:
+        type: object
+        properties:
+          message:
+            type: string
+            description: Mensaje descriptivo del error
+          code:
+            type: string
+            description: Opcional. Código interno de error
+        required: 
+          - message
+
+    ServerLobbyStateUpdated:
+      name: ServerLobbyStateUpdated
+      title: Lobby State Updated
+      payload:
+        type: object
+        description: Objeto que representa el modelo completo actualizado de LobbyService.
+        properties:
+          id: 
+            type: string
+          code:
+            type: string
+          hostId:
+            type: string
+          players:
+            type: array
+            items:
+              type: object
+              properties:
+                id: 
+                  type: string
+                username: 
+                  type: string
+
+    ServerGameStateUpdated:
+      name: ServerGameStateUpdated
+      title: Game State Updated Payload
+      payload:
+        type: object
+        properties:
+          state:
+            type: object
+            description: El JSON completo con el estado de la partida guardado en Redis (GameState completo).
+          lastAction:
+            type: string
+            description: Opcional. Indica la última acción tomada que provocó esta actualización (para animaciones del frontend).
+        required: 
+          - state
+
+    ServerChatMessageReceived:
+      name: ServerChatMessageReceived
+      title: Chat Message Received Payload
+      payload:
+        type: object
+        properties:
+          username:
+            type: string
+            description: Nombre del usuario que mandó el mensaje
+          text:
+            type: string
+            description: Contenido del mensaje original
+          timestamp:
+            type: string
+            format: date-time
+            description: Timestamp ISO-8601 del momento en que el servidor procesó el chat
+        required: 
+          - username
+          - text
+          - timestamp
+
+    GameStarted:
+      name: GameStarted
+      title: Game Started Notification
+      payload:
+        type: object
+        properties:
+          lobbyCode:
+            type: string
+        required: 
+          - lobbyCode
