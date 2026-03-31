@@ -2,7 +2,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15
-    container_name: A_Tale_of_Recognition
+    container_name: A_Tale_of_Recognition_PostgreSQL
     restart: always
     environment:
       # Docker leerá estos valores de el archivo .env local

@@ -386,6 +386,13 @@ export const UserService = {
     const ids_decks = ids
       .map((id) => parseInt(id.replace('d_', '')))
       .filter((id) => !isNaN(id));
+    
+    if (ids_decks.length === 0) return false;
+
+    const existingDecks = await prisma.deck.findMany({
+      where: { id_deck: { in: ids_decks } },
+      select: { id_user: true }
+    });
 
     if (ids_decks.length === 0) return false;
 

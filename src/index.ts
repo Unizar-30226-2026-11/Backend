@@ -14,7 +14,7 @@ async function bootstrap() {
   try {
     // Conectar Prisma
     await prisma.$connect();
-    // console.log('✅ Base de datos (Prisma) lista.');
+    console.log('✅ Base de datos (Prisma) lista.');
 
     // Conectar Redis
     await connectRedis();
