@@ -1,6 +1,6 @@
 import { prisma } from '../infrastructure/prisma';
 
-import { getCachedData, getCachedItem, setCachedData } from '../shared/utils/cache.utils'; 
+import { getCachedData, getCachedItem, setCachedData } from '../shared/utils/cache.utils';
 
 export const CollectionService = {
   // Obtiene todas las colecciones disponibles
@@ -35,7 +35,7 @@ export const CollectionService = {
     const isArrayInput = Array.isArray(col_ids);
     const idsToProcess = isArrayInput ? col_ids : [col_ids];
 
-    
+
     const numericIds = idsToProcess.map((id) =>
       parseInt(id.replace('col_', '')),
     );
@@ -46,18 +46,18 @@ export const CollectionService = {
     for (const id of numericIds) {
 
       const cacheKey = `cache:collection:id:${id}`;
-      
+
       const cached = await getCachedItem<any>(cacheKey);
-      
+
       if (cached) {
         finalCollections.push(cached);
       } else {
         missingIdsInCache.push(id);
       }
-      
+
     }
 
-    if( missingIdsInCache.length == 0){
+    if (missingIdsInCache.length == 0) {
       return { collections: finalCollections };
     }
 
@@ -73,11 +73,11 @@ export const CollectionService = {
     });
 
     if (bbddCollections.length > 0) {
-      for (const collection of bbddCollections){
+      for (const collection of bbddCollections) {
 
         const formattedDate = collection.releaseDate
-        ? collection.releaseDate.toISOString().split('T')[0]
-        : null;
+          ? collection.releaseDate.toISOString().split('T')[0]
+          : null;
 
         const formattedCollection = {
           id: `col_${collection.id_collection}`,
@@ -90,7 +90,7 @@ export const CollectionService = {
         const cacheKey = `cache:collection:id:${collection.id_collection}`;
 
         await setCachedData(cacheKey, formattedCollection, 86400);
-        
+
         finalCollections.push(formattedCollection);
       }
 
@@ -117,11 +117,11 @@ export const CollectionService = {
     const finalCatalogs: any[] = [];
     const missingIdsInCache: number[] = [];
 
-    for (const id of numericIds){
+    for (const id of numericIds) {
 
       const cacheKey = `cache:collection:cards:${id}`;
       const cached = await getCachedItem<any>(cacheKey);
-      
+
       if (cached) {
         finalCatalogs.push(cached);
       } else {
@@ -132,7 +132,7 @@ export const CollectionService = {
     if (missingIdsInCache.length === 0) {
       return finalCatalogs;
     }
-    
+
     // Buscamos la colección e incluimos su lista de cartas genéricas
     const bbddCollections = await prisma.collection.findMany({
       where: {
@@ -141,7 +141,7 @@ export const CollectionService = {
       include: { cards: true },
     });
 
-    if (bbddCollections.length > 0){
+    if (bbddCollections.length > 0) {
 
       for (const collection of bbddCollections) {
 
@@ -155,15 +155,15 @@ export const CollectionService = {
           cards: collection.cards.map((card) => ({
             id: `${collection_id}_card_${card.id_card}`,
             name: card.title,
-            type: 'Standard', 
+            type: 'Standard',
             rarity: card.rarity,
           })),
         };
 
         const cacheKey = `cache:collection:cards:${collection.id_collection}`;
-        
+
         await setCachedData(cacheKey, formattedCatalog, 86400); // 24 Horas
-        
+
         finalCatalogs.push(formattedCatalog);
       };
     }

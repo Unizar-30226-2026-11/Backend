@@ -8,12 +8,12 @@ import { redisClient } from '../../infrastructure/redis';
  * @param expirationSeconds Tiempo de vida en segundos (Por defecto: 1 hora)
  */
 export async function setCachedData<T>(key: string, data: T, expirationSeconds: number = 3600): Promise<void> {
-  try {
-    // Abstraemos el stringify y la sintaxis del tiempo (la fijamos a segundos).
-    await redisClient.set(key, JSON.stringify(data), { EX: expirationSeconds });
-  } catch (error) {
-    console.error(`[Error Caché Redis] Fallo al guardar la clave ${key}:`, error);
-  }
+    try {
+        // Abstraemos el stringify y la sintaxis del tiempo (la fijamos a segundos).
+        await redisClient.set(key, JSON.stringify(data), { EX: expirationSeconds });
+    } catch (error) {
+        console.error(`[Error Caché Redis] Fallo al guardar la clave ${key}:`, error);
+    }
 }
 
 /**
@@ -23,31 +23,31 @@ export async function setCachedData<T>(key: string, data: T, expirationSeconds: 
  * @param expirationSeconds Tiempo de vida en Redis en segundos (Por defecto 1 hora)
  * @returns El dato tipado, ya sea de Redis o de la BD.
  */
-export async function getCachedData<T>( key: string, dbQuery: () => Promise<T | null>, expirationSeconds: number = 3600): Promise<T | null> {
-  
-  try{
+export async function getCachedData<T>(key: string, dbQuery: () => Promise<T | null>, expirationSeconds: number = 3600): Promise<T | null> {
 
-    // Intento de lectura en caché (CACHÉ HIT)
-    const cachedData = await redisClient.get(key);
+    try {
 
-    if (cachedData) {
-      return JSON.parse(cachedData) as T;  // Si existe lo devolvemos en el tipo de dato original.
+        // Intento de lectura en caché (CACHÉ HIT)
+        const cachedData = await redisClient.get(key);
+
+        if (cachedData) {
+            return JSON.parse(cachedData) as T;  // Si existe lo devolvemos en el tipo de dato original.
+        }
+
+        const newData = await dbQuery();        // Hay fallo de caché hay que ir a PostreSQL
+
+        if (newData) {                          // Guardamos en redis si se encontró algo en la llamada              
+            await setCachedData(key, newData, expirationSeconds);
+        }
+
+        return newData;
+
+    } catch (error) {
+
+        console.error(`[Error Caché Redis] Fallo al operar con la clave ${key}:`, error);
+        return await dbQuery();
     }
 
-    const newData = await dbQuery();        // Hay fallo de caché hay que ir a PostreSQL
-
-    if (newData) {                          // Guardamos en redis si se encontró algo en la llamada              
-      await setCachedData(key, newData, expirationSeconds);
-    }
-
-    return newData;
-
-  } catch (error) {
-
-    console.error(`[Error Caché Redis] Fallo al operar con la clave ${key}:`, error);
-    return await dbQuery();
-  }
-  
 }
 
 /**
@@ -57,19 +57,19 @@ export async function getCachedData<T>( key: string, dbQuery: () => Promise<T | 
  * @returns El objeto parseado si existe, o null si hay un Cache Miss o fallo de conexión.
  */
 export async function getCachedItem<T>(key: string): Promise<T | null> {
-  try {
-    // Intento de lectura en caché (CACHÉ HIT)
-    const cached = await redisClient.get(key);
+    try {
+        // Intento de lectura en caché (CACHÉ HIT)
+        const cached = await redisClient.get(key);
 
-    if (cached) {
-      return JSON.parse(cached) as T;  // Si existe lo devolvemos en el tipo de dato original.
+        if (cached) {
+            return JSON.parse(cached) as T;  // Si existe lo devolvemos en el tipo de dato original.
+        }
+        return null;
+
+    } catch (error) {
+        console.error(`[Error Caché Redis] Fallo al leer la clave ${key}:`, error);
+        return null;
     }
-    return null;
-    
-  } catch (error) {
-    console.error(`[Error Caché Redis] Fallo al leer la clave ${key}:`, error);
-    return null;
-  }
 }
 
 /**
@@ -80,8 +80,8 @@ export async function getCachedItem<T>(key: string): Promise<T | null> {
  */
 export async function invalidateCache(key: string): Promise<void> {
     try {
-    await redisClient.del(key);
-  } catch (error) {
-    console.error(`[Error Caché Redis] Fallo al invalidar la clave ${key}:`, error);
-  }
+        await redisClient.del(key);
+    } catch (error) {
+        console.error(`[Error Caché Redis] Fallo al invalidar la clave ${key}:`, error);
+    }
 }

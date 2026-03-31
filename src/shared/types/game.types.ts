@@ -45,6 +45,18 @@ export interface Vote {
   targetCardId: number;
 }
 
+/**
+ * Define un modificador temporal aplicado a un jugador (Ej: Bonus aleatorio de cartas).
+ */
+export interface ModifierData {
+  /** Tipo de modificador (preparado para escalar a más tipos en el futuro) */
+  type: 'HAND_LIMIT';
+  /** Valor del modificador (Ej: +2 o -1 cartas permitidas en mano) */
+  value: number;
+  /** Turnos restantes antes de que el modificador desaparezca */
+  turnsLeft: number;
+}
+
 // ==========================================
 // ESTRUCTURAS DE RONDA
 // ==========================================
@@ -118,6 +130,15 @@ interface BaseGameState {
   centralDeck: number[];
   /** Pila de descartes (cartas ya jugadas que se pueden reciclar si el mazo central se agota) */
   discardPile: number[];
+  /** Registro de visitas a casillas especiales. { ID_Casilla: [IDs_Jugadores_En_Orden] } */
+  boardRegistry: Record<number, string[]>;
+  /** Modificadores activos temporales. { ID_Jugador: Datos_Modificador } */
+  activeModifiers: Record<string, ModifierData>;
+
+  /** Indica si hay una estrella fugaz activa en pantalla */
+  isStarActive: boolean;
+  /** Timestamp en milisegundos de cuándo debe desaparecer la estrella */
+  starExpiresAt: number;
 }
 
 /**
@@ -178,6 +199,19 @@ export interface ActionChangeMode {
   payload: { mode: GameMode };
 }
 
+/** Acción enviada por el jugador más rápido al clicar la estrella */
+export interface ActionClaimStar {
+  type: 'CLAIM_STAR';
+  playerId: string;
+}
+
+/** Enviada cuando un jugador elige a su víctima para el duelo de dados */
+export interface ActionResolveDuel {
+  type: 'RESOLVE_DUEL';
+  playerId: string;
+  payload: { targetId: string };
+}
+
 // Acciones Standard (Exclusivas de las mecánicas Dixit clásico)
 
 /** Acción enviada por el cuentacuentos con su carta seleccionada y la pista */
@@ -224,6 +258,8 @@ export type GameAction =
   | ActionReconnect
   | ActionNextRound
   | ActionChangeMode
+  | ActionClaimStar
+  | ActionResolveDuel
   | ActionSendStory
   | ActionSubmitCard
   | ActionCastVote

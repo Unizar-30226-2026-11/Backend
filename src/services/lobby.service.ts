@@ -3,7 +3,7 @@
 
 
 
-import { redisClient } from '../infrastructure/redis'; // Importamos el client de Redis para posibles operaciones relacionadas con lobbies (cacheo, locks, etc.)
+import { LobbyRedisRepository } from '../repositories/lobby.repository';; // Importamos el client de Redis para posibles operaciones relacionadas con lobbies (cacheo, locks, etc.)
 
 
 
@@ -32,6 +32,7 @@ export const LobbyService = {
     isPrivate: boolean;
   }) => {
     const lobbyCode = generateLobbyCode();
+
     const newLobbyData = {
       ...data,
       lobbyCode,
@@ -39,16 +40,7 @@ export const LobbyService = {
       players: [data.hostId],
     };
 
-    // Guardamos la sala en Redis como texto plano (JSON)
-    //Le ponemos expiración de 2 horas para que no ocupe memoria infinita si la gente abandona
-    await redisClient.set(`lobby:${lobbyCode}`, JSON.stringify(newLobbyData), {
-      EX: 7200
-    });
-
-    // 2. Si es pública, guardamos el código en un conjunto (Set) de Redis
-    if (!data.isPrivate) {
-      await redisClient.sAdd('public_lobbies', lobbyCode);
-    }
+    await LobbyRedisRepository.save(lobbyCode, newLobbyData);
 
     return newLobbyData;
   },
@@ -58,43 +50,18 @@ export const LobbyService = {
    * Cuando un jugador envíe por Socket el evento 'joinLobby', 
    * el Socket llamará a esta función para comprobar si la sala no está llena.
    */
-  findByCode: async (code: string) => {
-    // Buscamos la sala directamente por su clave
-    const lobbyStr = await redisClient.get(`lobby:${code}`);
-    if (!lobbyStr) return null;
-    return JSON.parse(lobbyStr);
-  },
 
   //Elías: lo añado porque en el controller de lobby me daba error porque lo usaba y no existía 
   getLobbyByCode: async (code: string) => {
-    const lobbyStr = await redisClient.get(`lobby:${code}`);
-    if (!lobbyStr) return null;
-    return JSON.parse(lobbyStr);
+    return await LobbyRedisRepository.findByCode(code);
   },
 
   /**
    * GET PUBLIC LOBBIES: Listar salas públicas
    */
-  findPublic: async (searchQuery?: string) => {
+  getPublicLobbies: async (searchQuery?: string) => {
     // Obtenemos todos los códigos del Set de salas públicas
-    const codes = await redisClient.sMembers('public_lobbies');
-    let lobbies = [];
-
-    // Reconstruimos la lista leyendo cada sala
-    for (const code of codes) {
-      const lobby = await LobbyService.findByCode(code);
-      if (lobby && lobby.status === 'waiting') {
-        lobbies.push(lobby);
-      }
-    }
-
-    // Filtramos si el usuario buscó algo por nombre
-    if (searchQuery) {
-      lobbies = lobbies.filter((l) =>
-        l.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    return lobbies;
+    return await LobbyRedisRepository.searchPublic(searchQuery);
   },
 
 
@@ -110,43 +77,54 @@ export const LobbyService = {
   //Función para que un jugador se una a una sala (se llamará desde el Socket cuando alguien envíe el evento 'joinLobby')
   joinLobby: async (code: string, userId: string) => {
     //Buscamos la sala
-    const lobbyStr = await redisClient.get(`lobby:${code}`);
-    if (!lobbyStr) throw new Error('Sala no encontrada');
-
-    const lobby = JSON.parse(lobbyStr);
+    const lobby = await LobbyRedisRepository.findByCode(code);
+    if (!lobby) throw new Error('LOBBY_NOT_FOUND');
+    if (lobby.players.length >= lobby.maxPlayers) throw new Error('LOBBY_FULL');
 
     //Comprobamos si hay hueco y si no está ya dentro
-    if (lobby.players.length >= lobby.maxPlayers) throw new Error('La sala está llena');
     if (lobby.players.includes(userId)) return lobby; // Ya estaba dentro
 
     //Se añade al jugador
     lobby.players.push(userId);
 
     //Guardamos la sala actualizada en Redis
-    await redisClient.set(`lobby:${code}`, JSON.stringify(lobby), { EX: 7200 });
-
+    await LobbyRedisRepository.save(code, lobby);
     return lobby;
   },
 
+  /**
+   * Elimina un jugador de la sala (cuando abandona antes de empezar).
+   */
   //Si alguien cierra la pestaña, el socket avisa a los demás al instante para que desaparezca de sus pantallas.
   leaveLobby: async (code: string, userId: string) => {
-    const lobbyStr = await redisClient.get(`lobby:${code}`);
-    if (!lobbyStr) return;
-
-    const lobby = JSON.parse(lobbyStr);
+    const lobby = await LobbyRedisRepository.findByCode(code);
+    if (!lobby) return;
 
     // Filtramos al jugador para sacarlo del array
-    lobby.players = lobby.players.filter((id: string) => id !== userId);
-
+    lobby.players = (lobby.players as string[]).filter((id: string) => id !== userId);
     // Si la sala se queda vacía, la borramos de Redis
     if (lobby.players.length === 0) {
-      await redisClient.del(`lobby:${code}`);
-      await redisClient.sRem('public_lobbies', code);
+      await LobbyRedisRepository.remove(code);
     } else {
       // Si no, guardamos la sala actualizada
-      await redisClient.set(`lobby:${code}`, JSON.stringify(lobby), { EX: 7200 });
+      await LobbyRedisRepository.save(code, lobby);
     }
+  },
+
+
+
+
+
+
+  /**
+     * Cambia el estado de la sala.
+     */
+  updateStatus: async (code: string, status: 'playing' | 'finished') => {
+    const lobby = await LobbyRedisRepository.findByCode(code);
+    if (!lobby) throw new Error('LOBBY_NOT_FOUND');
+
+    lobby.status = status;
+    await LobbyRedisRepository.save(code, lobby);
+    return lobby;
   }
-
-
 };

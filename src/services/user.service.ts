@@ -2,7 +2,7 @@ import { prisma } from '../infrastructure/prisma';
 
 import { User_States } from '@prisma/client';
 
-import { getCachedData, invalidateCache } from '../shared/utils/cache.utils'; 
+import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
 
 export const UserService = {
   // --- Perfil y Búsqueda ---
@@ -88,15 +88,15 @@ export const UserService = {
 
     const id_user = parseInt(u_id.replace('u_', ''));
 
-    if(!Object.values(User_States).includes(status as User_States)){
+    if (!Object.values(User_States).includes(status as User_States)) {
       throw new Error('INVALID_STATUS');
     };
 
     const updated_user = await prisma.user.update({
       where: { id_user },
-      data: { 
+      data: {
         state: status as User_States
-      } 
+      }
     });
 
     await invalidateCache(`cache:user:profile:${u_id}`);    // Borramos la caché
@@ -128,16 +128,16 @@ export const UserService = {
     });
 
     const deck_ids = user_decks.map(d => d.id_deck);
-  
+
     const resultado = await prisma.$transaction([
 
       prisma.userGameStats.deleteMany({
         where: { id_user },
       }),
-      
+
       prisma.deckCard.deleteMany({
-        where: { 
-          id_deck: { in: deck_ids } 
+        where: {
+          id_deck: { in: deck_ids }
         }
       }),
 
@@ -148,20 +148,20 @@ export const UserService = {
       prisma.deck.deleteMany({
         where: { id_user },
       }),
-      
+
 
       prisma.friendships.deleteMany({
         where: {
-          OR: [ { id_user_1: id_user }, { id_user_2: id_user } ]
+          OR: [{ id_user_1: id_user }, { id_user_2: id_user }]
         }
       }),
 
       prisma.user.delete({
         where: { id_user }
-      })      
+      })
     ]);
 
-    if (resultado){
+    if (resultado) {
       // Destruimos todos los rastros del usuario en Redis
       await invalidateCache(`cache:user:profile:${u_id}`);
       await invalidateCache(`cache:user:economy:${u_id}`);
@@ -170,7 +170,7 @@ export const UserService = {
 
       return true;
     }
-    else{
+    else {
       return false;
     }
   },
@@ -287,7 +287,7 @@ export const UserService = {
           (deck_card) => `c_${deck_card.user_card.id_card}`,
         ),
       }; // Extraemos el id_card genérico a partir del id_user_card
-    });    
+    });
   },
 
   createDeck: async (u_id: string, name: string, cardsIds: string[]) => {
@@ -367,7 +367,7 @@ export const UserService = {
 
     await prisma.$transaction(transactionOperations);
 
-    
+
     // Invalidamos los mazos individuales que han cambiado
     for (const stringId of ids) {
       await invalidateCache(`cache:deck:${stringId}`);
@@ -394,6 +394,13 @@ export const UserService = {
       select: { id_user: true }
     });
 
+    if (ids_decks.length === 0) return false;
+
+    const existingDecks = await prisma.deck.findMany({
+      where: { id_deck: { in: ids_decks } },
+      select: { id_user: true }
+    });
+
     const resultado = await prisma.$transaction([
       prisma.deckCard.deleteMany({
         where: { id_deck: { in: ids_decks } },
@@ -408,7 +415,7 @@ export const UserService = {
       for (const stringId of ids) {
         await invalidateCache(`cache:deck:${stringId}`);
       }
-      
+
       // 2. Si logramos saber de quién eran, actualizamos su vista principal
       if (existingDecks.length > 0) {
         const ownerId = existingDecks[0].id_user;

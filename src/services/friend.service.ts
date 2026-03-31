@@ -173,8 +173,8 @@ export const FriendService = {
       data: { state: Friendship_States.FRIEND },
     });
 
-    if(result.count > 0){
-      for(const request of validRequests){
+    if (result.count > 0) {
+      for (const request of validRequests) {
         // Borramos la caché de amigos de ambos
         await invalidateCache(`cache:friends:confirmed:u_${request.id_user_1}`);
         await invalidateCache(`cache:friends:confirmed:u_${request.id_user_2}`);
@@ -241,7 +241,7 @@ export const FriendService = {
     // 6. Invalidar la caché de pendientes del receptor
     if (result.count > 0) {
       for (const cond of validConditions) {
-         await invalidateCache(`cache:friends:pending:u_${cond.id_user_2}`);
+        await invalidateCache(`cache:friends:pending:u_${cond.id_user_2}`);
       }
     }
 
