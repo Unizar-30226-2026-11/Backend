@@ -27,9 +27,7 @@ export const connectRedis = async () => {
   }
 };
 
-// ==========================================
 // REPOSITORIO DE ESTADO DEL JUEGO
-// ==========================================
 
 //Esto encapsula la lectura/escritura del JSON de la partida para que el Service quede limpio.
 export const GameRepository = {

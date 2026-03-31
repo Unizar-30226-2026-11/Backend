@@ -479,7 +479,7 @@ Es un servicio **stateless** que actúa de capa de acceso a datos del lobby en R
 | `create(data)` | Genera un código aleatorio de 4 chars, guarda el lobby en Redis y, si es público, lo añade al Set `public_lobbies` |
 | `findByCode(code)` | Lee y deserializa el lobby de Redis por su código |
 | `getLobbyByCode(code)` | Alias de `findByCode` (equivalentes) |
-| `findPublic(searchQuery?)` | Lista todas las salas públicas con estado `"waiting"` del Set de Redis, filtrando opcionalmente por nombre |
+| `getPublicLobbies(searchQuery?)` | Lista todas las salas públicas con estado `"waiting"` del Set de Redis, filtrando opcionalmente por nombre |
 | `joinLobby(code, userId)` | Añade al jugador al array `players` si hay hueco y aún no está dentro |
 | `leaveLobby(code, userId)` | Elimina al jugador del array `players`; si la sala queda vacía, la elimina de Redis |
 

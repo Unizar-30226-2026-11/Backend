@@ -4,53 +4,62 @@ import { Friendship_States } from '@prisma/client';
 
 import { prisma } from '../infrastructure/prisma';
 
+import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
+
 export const FriendService = {
   // Obtener lista de amigos de un usuario
   getConfirmedFriends: async (u_id: string) => {
-    const id_user = parseInt(u_id.replace('u_', ''));
 
-    const friendships = await prisma.friendships.findMany({
-      where: {
-        state: Friendship_States.FRIEND,
-        OR: [{ id_user_1: id_user }, { id_user_2: id_user }],
-      },
-      include: {
-        user_1: true,
-        user_2: true,
-      },
-    });
+    return getCachedData(`cache:friends:confirmed:${u_id}`, async () => {
 
-    return friendships.map((friendship) => {
-      const friend =
-        friendship.id_user_1 === id_user
-          ? friendship.user_2
-          : friendship.user_1;
+      const id_user = parseInt(u_id.replace('u_', ''));
 
-      return {
-        id: `u_${friend.id_user}`,
-        username: friend.username,
-        status: friend.state,
-      };
+      const friendships = await prisma.friendships.findMany({
+        where: {
+          state: Friendship_States.FRIEND,
+          OR: [{ id_user_1: id_user }, { id_user_2: id_user }],
+        },
+        include: {
+          user_1: true,
+          user_2: true,
+        },
+      });
+
+      return friendships.map((friendship) => {
+        const friend =
+          friendship.id_user_1 === id_user
+            ? friendship.user_2
+            : friendship.user_1;
+
+        return {
+          id: `u_${friend.id_user}`,
+          username: friend.username,
+          status: friend.state,
+        };
+      });
     });
   },
 
   // Obtener solicitudes enviadas hacia el usuario (pendientes de aceptar)
   getPendingRequests: async (u_id: string) => {
-    const id_user = parseInt(u_id.replace('u_', ''));
 
-    const pending = await prisma.friendships.findMany({
-      where: {
-        id_user_2: id_user,
-        state: Friendship_States.PENDING,
-      },
+    return getCachedData(`cache:friends:pending:${u_id}`, async () => {
+      const id_user = parseInt(u_id.replace('u_', ''));
+
+      const pending = await prisma.friendships.findMany({
+        where: {
+          id_user_2: id_user,
+          state: Friendship_States.PENDING,
+        },
+      });
+
+      return pending.map((friendship) => ({
+        id: `req_${friendship.id_user_1}_${friendship.id_user_2}`,
+        fromUserId: `u_${friendship.id_user_1}`,
+        toUserId: `u_${friendship.id_user_2}`,
+        createdAt: friendship.beggining_date,
+      }));
     });
-
-    return pending.map((friendship) => ({
-      id: `req_${friendship.id_user_1}_${friendship.id_user_2}`,
-      fromUserId: `u_${friendship.id_user_1}`,
-      toUserId: `u_${friendship.id_user_2}`,
-      createdAt: friendship.beggining_date,
-    }));
   },
 
   // Comprobar la relacion entre dos usuarios. Devuelve un enum de Friendship_States.
@@ -88,6 +97,9 @@ export const FriendService = {
     if (newFriendship == null) {
       return null;
     }
+
+    // Invalidar la caché de pendientes del receptor
+    await invalidateCache(`cache:friends:pending:${to_u_id}`);
 
     return {
       id: `req_${newFriendship.id_user_1}_${newFriendship.id_user_2}`,
@@ -140,7 +152,7 @@ export const FriendService = {
   acceptFriendRequest: async (req_id: string | string[]) => {
     const ids = Array.isArray(req_id) ? req_id : [req_id];
 
-    const validConditions = ids.reduce((acc: any[], currentId: string) => {
+    const validRequests = ids.reduce((acc: any[], currentId: string) => {
       const parts = currentId.replace('req_', '').split('_');
 
       if (parts.length === 2) {
@@ -152,14 +164,24 @@ export const FriendService = {
       return acc;
     }, []);
 
-    if (validConditions.length === 0 || validConditions === null) return false;
+    if (validRequests.length === 0 || validRequests === null) return false;
 
     const result = await prisma.friendships.updateMany({
       where: {
-        OR: validConditions,
+        OR: validRequests,
       },
       data: { state: Friendship_States.FRIEND },
     });
+
+    if (result.count > 0) {
+      for (const request of validRequests) {
+        // Borramos la caché de amigos de ambos
+        await invalidateCache(`cache:friends:confirmed:u_${request.id_user_1}`);
+        await invalidateCache(`cache:friends:confirmed:u_${request.id_user_2}`);
+        // Borramos la caché de pendientes del que la recibió
+        await invalidateCache(`cache:friends:pending:u_${request.id_user_2}`);
+      }
+    }
 
     return result.count > 0;
   },
@@ -180,6 +202,14 @@ export const FriendService = {
         ],
       },
     });
+
+    // Invalidar la caché de amigos de ambos
+    if (result.count > 0) {
+      await invalidateCache(`cache:friends:confirmed:${u_id}`);
+      for (const id of friend_ids) {
+        await invalidateCache(`cache:friends:confirmed:u_${id}`);
+      }
+    }
 
     return result.count > 0;
   },
@@ -207,6 +237,13 @@ export const FriendService = {
         OR: validConditions,
       },
     });
+
+    // 6. Invalidar la caché de pendientes del receptor
+    if (result.count > 0) {
+      for (const cond of validConditions) {
+        await invalidateCache(`cache:friends:pending:u_${cond.id_user_2}`);
+      }
+    }
 
     return result.count > 0;
   },

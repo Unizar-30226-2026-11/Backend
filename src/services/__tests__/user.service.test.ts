@@ -30,6 +30,13 @@ describe('UserService - Pruebas Funciones', () => {
       mazos_a_borrar.push(resultado.id);
     }
 
+    const ghostUser = await prisma.user.findUnique({
+      where: { username: 'UsuarioSacrificable_Full' }
+    });
+
+    if (ghostUser) {
+      await UserService.deleteUser(`u_${ghostUser.id_user}`);
+    }
 
     const usuario_test = await prisma.user.create({
       data: {
@@ -67,7 +74,7 @@ describe('UserService - Pruebas Funciones', () => {
 
   });
 
-  beforeEach(() => {});
+  beforeEach(() => { });
 
   describe('Sistema de Búsqueda de usuarios', () => {
     describe('Búsqueda de un solo usuario por ID. ', () => {
@@ -397,11 +404,11 @@ describe('UserService - Pruebas Funciones', () => {
     });
   });
 
-  describe('Actualizacion y Borrado de Usuarios. ' , () => {
+  describe('Actualizacion y Borrado de Usuarios. ', () => {
 
-    describe('Actualizacion de nombre de usuario. -> updateUserProfile() ' , () => {
+    describe('Actualizacion de nombre de usuario. -> updateUserProfile() ', () => {
 
-      test('Usuario actualizado con éxito: ' , async () => {
+      test('Usuario actualizado con éxito: ', async () => {
 
         const resultado = await UserService.updateUserProfile('u_1', 'CambiadoC0Nexito');
 
@@ -424,23 +431,23 @@ describe('UserService - Pruebas Funciones', () => {
 
       });
 
-      test('Nombre de usuario ya en uso (USERNAME_TAKEN): ' , async () => {
+      test('Nombre de usuario ya en uso (USERNAME_TAKEN): ', async () => {
         await expect(
           UserService.updateUserProfile('u_1', 'Jugador5'),
         ).rejects.toThrow('USERNAME_TAKEN');
       });
 
-      test('Usuario Inexistente: ' , async () => {
+      test('Usuario Inexistente: ', async () => {
         await expect(
           UserService.updateUserProfile('u_999999999', 'noExisto'),
         ).rejects.toThrow();
       });
     });
 
-    describe('Actualizacion del estado de usuario. -> updatePresence()' , () => {
+    describe('Actualizacion del estado de usuario. -> updatePresence()', () => {
 
-      test('Prueba cambio de estados correcta: ' , async () => {
-        for (const state of Object.values(User_States)){
+      test('Prueba cambio de estados correcta: ', async () => {
+        for (const state of Object.values(User_States)) {
           const resultado = await UserService.updatePresence("u_1", String(state));
 
           expect(resultado).toBeDefined();
@@ -452,35 +459,35 @@ describe('UserService - Pruebas Funciones', () => {
         }
       });
 
-      test('Estado no permitido (INVALID_STATUS)' , async () => {
+      test('Estado no permitido (INVALID_STATUS)', async () => {
         await expect(
           UserService.updatePresence('u_1', 'desconectado'),
         ).rejects.toThrow('INVALID_STATUS');
       });
 
-      test('Usuario Inexistente: ' , async () => {
+      test('Usuario Inexistente: ', async () => {
         await expect(
           UserService.updatePresence('u_9999999', 'DISCONNECTED'),
         ).rejects.toThrow();
       });
     });
 
-    describe('Borrado de un usuario. -> deleteUser() ' , () => {
+    describe('Borrado de un usuario. -> deleteUser() ', () => {
 
-      test('Usuario borrado con éxito: ' , async () => {
+      test('Usuario borrado con éxito: ', async () => {
         const resultado = await UserService.deleteUser(id_usuario_a_borrar);
 
         expect(resultado).toBeDefined();
         expect(resultado).toBeTruthy();
       });
 
-      test('Usuario inexistente: ' , async () => {
+      test('Usuario inexistente: ', async () => {
         await expect(
           UserService.deleteUser('u_99999999'),
         ).rejects.toThrow();
       });
 
-      test('Entrada Incorrecta: ' , async () => {
+      test('Entrada Incorrecta: ', async () => {
         await expect(
           UserService.deleteUser('Jugador1'),
         ).rejects.toThrow();
@@ -515,8 +522,7 @@ describe('UserService - Pruebas Funciones', () => {
 
 
     await UserService.updateUserProfile('u_1', 'Jugador1');
-
   });
 
-  afterEach(() => {});
+  afterEach(() => { });
 });

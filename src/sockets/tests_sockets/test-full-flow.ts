@@ -17,7 +17,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import { io, Socket } from 'socket.io-client';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../infrastructure/prisma';
-import { connectRedis, redisClient } from '../../infrastructure/redis';
+import { connectRedis } from '../../infrastructure/redis';
+import { LobbyRedisRepository } from '../../repositories/lobby.repository';
 
 const BACKEND_URL = 'http://localhost:3000';
 const LOBBY_CODE = 'FLOW'; // Sala de prueba
@@ -56,7 +57,7 @@ async function setupTestLobby() {
         players: [hostId, 'u_901', 'u_902', 'u_903'] // 4 Jugadores para cumplir el mínimo
     };
 
-    await redisClient.set(`lobby:${LOBBY_CODE}`, JSON.stringify(mockLobby), { EX: 60 });
+    await LobbyRedisRepository.save(LOBBY_CODE, { ...mockLobby, lobbyCode: LOBBY_CODE });
     console.log(`✅ Lobby ${LOBBY_CODE} inyectado en Redis con 4 jugadores.`);
 
     return token;

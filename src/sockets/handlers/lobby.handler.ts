@@ -2,7 +2,8 @@
 import { Server } from 'socket.io';
 import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 import { LobbyService } from '../../services/lobby.service';
-import { GameService } from '../../services/game.service';
+import { GameService, SocketEmission } from '../../services/game.service';
+import { GameRedisRepository } from '../../repositories/game.repository';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
 
 export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) => {
@@ -51,8 +52,13 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
       console.log(`[Lobby] Partida iniciada en el lobby ${lobbyCode} por el host ${userId}`);
 
       //Pasamos los datos del lobby a la partida
-      const gameService = new GameService(io);
-      await gameService.initializeGame(lobbyCode, lobby);
+      const gameService = new GameService(GameRedisRepository);
+      const emissions = await gameService.initializeGame(lobbyCode, lobby);
+
+      // Ejecutamos las emisiones devueltas por el service
+      for (const { room, event, data } of emissions) {
+        io.to(room).emit(event, data);
+      }
 
       //Avisamos a los clientes para que cambien su pantalla al tablero de juego
       io.to(lobbyCode).emit(SOCKET_EVENTS.GAME_STARTED, { lobbyCode });

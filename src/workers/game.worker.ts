@@ -120,5 +120,5 @@ export const initializeGameWorker = (io: Server) => {
         console.error(`[Worker] Fallo en timer de ${job?.data.lobbyCode}:`, err);
     });
 
-    console.log('⏱️  Game Worker (BullMQ) inicializado y vigilando turnos AFK.');
+    console.log('Game Worker (BullMQ) inicializado y vigilando turnos AFK.');
 };

@@ -14,5 +14,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: redis_stack_server
+    restart: always
+    ports:
+      - "6379:6379"
+      # - "8001:8001" # Descomentar para usar RedisInsight UI
+    volumes:
+      - redis_data:/data
+
 volumes:
   postgres_data:
+  redis_data:

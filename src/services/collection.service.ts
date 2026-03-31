@@ -1,27 +1,33 @@
 import { prisma } from '../infrastructure/prisma';
 
+import { getCachedData, getCachedItem, setCachedData } from '../shared/utils/cache.utils';
+
 export const CollectionService = {
   // Obtiene todas las colecciones disponibles
   getAllCollections: async () => {
-    const collections = await prisma.collection.findMany({
-      include: {
-        _count: {
-          select: { cards: true },
+
+    return getCachedData('cache:collections:all', async () => {
+
+      const collections = await prisma.collection.findMany({
+        include: {
+          _count: {
+            select: { cards: true },
+          },
         },
-      },
-    });
+      });
 
-    if (collections == null) return null;
+      if (collections == null) return null;
 
-    const mappedCollections = collections.map((collection) => ({
-      id: `col_${collection.id_collection}`,
-      name: collection.name,
-      description: collection.description,
-      release_date: collection.releaseDate,
-      total_cards: collection._count.cards,
-    }));
+      const mappedCollections = collections.map((collection) => ({
+        id: `col_${collection.id_collection}`,
+        name: collection.name,
+        description: collection.description,
+        release_date: collection.releaseDate,
+        total_cards: collection._count.cards,
+      }));
 
-    return { collections: mappedCollections };
+      return { collections: mappedCollections };
+    }, 86400); // 24 horas (86400s) 
   },
 
   // Busca una (o unas) coleccion específica por su ID
@@ -29,13 +35,35 @@ export const CollectionService = {
     const isArrayInput = Array.isArray(col_ids);
     const idsToProcess = isArrayInput ? col_ids : [col_ids];
 
+
     const numericIds = idsToProcess.map((id) =>
       parseInt(id.replace('col_', '')),
     );
 
-    const collections = await prisma.collection.findMany({
+    const finalCollections: any[] = [];
+    const missingIdsInCache: number[] = [];
+
+    for (const id of numericIds) {
+
+      const cacheKey = `cache:collection:id:${id}`;
+
+      const cached = await getCachedItem<any>(cacheKey);
+
+      if (cached) {
+        finalCollections.push(cached);
+      } else {
+        missingIdsInCache.push(id);
+      }
+
+    }
+
+    if (missingIdsInCache.length == 0) {
+      return { collections: finalCollections };
+    }
+
+    const bbddCollections = await prisma.collection.findMany({
       where: {
-        id_collection: { in: numericIds },
+        id_collection: { in: missingIdsInCache }, // Solo se buscan los que no estaban ya en caché
       },
       include: {
         _count: {
@@ -44,24 +72,36 @@ export const CollectionService = {
       },
     });
 
-    if (!collections || collections.length === 0) return null;
+    if (bbddCollections.length > 0) {
+      for (const collection of bbddCollections) {
 
-    const formattedCollections = collections.map((collection) => {
-      const formattedDate = collection.releaseDate
-        ? collection.releaseDate.toISOString().split('T')[0]
-        : null;
+        const formattedDate = collection.releaseDate
+          ? collection.releaseDate.toISOString().split('T')[0]
+          : null;
 
-      return {
-        id: `col_${collection.id_collection}`,
-        name: collection.name,
-        description: collection.description,
-        releaseDate: formattedDate,
-        totalCards: collection._count.cards,
-      };
-    });
+        const formattedCollection = {
+          id: `col_${collection.id_collection}`,
+          name: collection.name,
+          description: collection.description,
+          releaseDate: formattedDate,
+          totalCards: collection._count.cards,
+        }
+
+        const cacheKey = `cache:collection:id:${collection.id_collection}`;
+
+        await setCachedData(cacheKey, formattedCollection, 86400);
+
+        finalCollections.push(formattedCollection);
+      }
+
+    };
+
+    if (finalCollections.length === 0) {
+      return null;
+    }
 
     return {
-      collections: formattedCollections,
+      collections: finalCollections,
     };
   },
 
@@ -74,34 +114,64 @@ export const CollectionService = {
       parseInt(id.replace('col_', '')),
     );
 
+    const finalCatalogs: any[] = [];
+    const missingIdsInCache: number[] = [];
+
+    for (const id of numericIds) {
+
+      const cacheKey = `cache:collection:cards:${id}`;
+      const cached = await getCachedItem<any>(cacheKey);
+
+      if (cached) {
+        finalCatalogs.push(cached);
+      } else {
+        missingIdsInCache.push(id);
+      }
+    }
+
+    if (missingIdsInCache.length === 0) {
+      return finalCatalogs;
+    }
+
     // Buscamos la colección e incluimos su lista de cartas genéricas
-    const collections = await prisma.collection.findMany({
+    const bbddCollections = await prisma.collection.findMany({
       where: {
-        id_collection: { in: numericIds },
+        id_collection: { in: missingIdsInCache },
       },
       include: { cards: true },
     });
 
-    if (!collections || collections.length === 0) return null;
+    if (bbddCollections.length > 0) {
 
-    return collections.map((collection) => {
-      const collection_id = `col_${collection.id_collection}`;
+      for (const collection of bbddCollections) {
 
-      return {
-        collection: {
-          id: collection_id,
-          name: collection.name,
-        },
-        // Mapeamos las cartas dándoles el formato compuesto
-        cards: collection.cards.map((card) => {
-          return {
+        const collection_id = `col_${collection.id_collection}`;
+
+        const formattedCatalog = {
+          collection: {
+            id: collection_id,
+            name: collection.name,
+          },
+          cards: collection.cards.map((card) => ({
             id: `${collection_id}_card_${card.id_card}`,
             name: card.title,
-            type: 'Standard', // De momento al no estar fijada esta logica no existe el campo y por eso esta hardcodeado.
+            type: 'Standard',
             rarity: card.rarity,
-          };
-        }),
+          })),
+        };
+
+        const cacheKey = `cache:collection:cards:${collection.id_collection}`;
+
+        await setCachedData(cacheKey, formattedCatalog, 86400); // 24 Horas
+
+        finalCatalogs.push(formattedCatalog);
       };
-    });
-  },
-};
+    }
+
+    if (finalCatalogs.length === 0) {
+      return null;
+    }
+
+    return finalCatalogs;
+  }
+};  

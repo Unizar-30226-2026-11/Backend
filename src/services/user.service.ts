@@ -2,29 +2,35 @@ import { prisma } from '../infrastructure/prisma';
 
 import { User_States } from '@prisma/client';
 
+import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
+
 export const UserService = {
   // --- Perfil y Búsqueda ---
   getUserProfile: async (u_id: string) => {
-    const id_user = parseInt(u_id.replace('u_', ''));
-    const user = await prisma.user.findUnique({
-      where: { id_user },
-      select: {
-        id_user: true,
-        username: true,
-        email: true,
-        exp_level: true,
-        progress_level: true,
-        state: true,
-        personal_state: true,
-      },
+
+    return getCachedData(`cache:user:profile:${u_id}`, async () => {
+
+      const id_user = parseInt(u_id.replace('u_', ''));
+      const user = await prisma.user.findUnique({
+        where: { id_user },
+        select: {
+          id_user: true,
+          username: true,
+          email: true,
+          exp_level: true,
+          progress_level: true,
+          state: true,
+          personal_state: true,
+        },
+      });
+
+      if (!user) return null;
+
+      return {
+        ...user,
+        id: `u_${user.id_user}`,
+      };
     });
-
-    if (!user) return null;
-
-    return {
-      ...user,
-      id: `u_${user.id_user}`,
-    };
   },
 
   /**
@@ -43,7 +49,7 @@ export const UserService = {
       where: { username }
     });
 
-    if (user_username) {
+    if (user_username && user_username.id_user !== id_user) {
       throw new Error('USERNAME_TAKEN')
     }
 
@@ -60,6 +66,8 @@ export const UserService = {
         personal_state: true,
       },
     })
+
+    await invalidateCache(`cache:user:profile:${u_id}`);   // Borramos la caché
 
     return {
       ...updated_user,
@@ -80,16 +88,18 @@ export const UserService = {
 
     const id_user = parseInt(u_id.replace('u_', ''));
 
-    if(!Object.values(User_States).includes(status as User_States)){
+    if (!Object.values(User_States).includes(status as User_States)) {
       throw new Error('INVALID_STATUS');
     };
 
     const updated_user = await prisma.user.update({
       where: { id_user },
-      data: { 
+      data: {
         state: status as User_States
-      } 
+      }
     });
+
+    await invalidateCache(`cache:user:profile:${u_id}`);    // Borramos la caché
 
     return {
       new_status: updated_user.state
@@ -118,16 +128,16 @@ export const UserService = {
     });
 
     const deck_ids = user_decks.map(d => d.id_deck);
-  
+
     const resultado = await prisma.$transaction([
 
       prisma.userGameStats.deleteMany({
         where: { id_user },
       }),
-      
+
       prisma.deckCard.deleteMany({
-        where: { 
-          id_deck: { in: deck_ids } 
+        where: {
+          id_deck: { in: deck_ids }
         }
       }),
 
@@ -138,23 +148,29 @@ export const UserService = {
       prisma.deck.deleteMany({
         where: { id_user },
       }),
-      
+
 
       prisma.friendships.deleteMany({
         where: {
-          OR: [ { id_user_1: id_user }, { id_user_2: id_user } ]
+          OR: [{ id_user_1: id_user }, { id_user_2: id_user }]
         }
       }),
 
       prisma.user.delete({
         where: { id_user }
-      })      
+      })
     ]);
 
-    if (resultado){
+    if (resultado) {
+      // Destruimos todos los rastros del usuario en Redis
+      await invalidateCache(`cache:user:profile:${u_id}`);
+      await invalidateCache(`cache:user:economy:${u_id}`);
+      await invalidateCache(`cache:user:cards:${u_id}`);
+      await invalidateCache(`cache:user:decks:${u_id}`);
+
       return true;
     }
-    else{
+    else {
       return false;
     }
   },
@@ -179,88 +195,99 @@ export const UserService = {
   // --- Economía e Inventario ---
 
   getUserEconomy: async (u_id: string) => {
-    const id_user = parseInt(u_id.replace('u_', ''));
-    const user = await prisma.user.findUnique({
-      where: { id_user },
-      select: { coins: true },
+    return getCachedData(`cache:user:economy:${u_id}`, async () => {
+      const id_user = parseInt(u_id.replace('u_', ''));
+      const user = await prisma.user.findUnique({
+        where: { id_user },
+        select: { coins: true },
+      });
+
+      if (!user) {
+        return null;
+      }
+
+      return { balance: user.coins };
     });
-
-    if (!user) {
-      return null;
-    }
-
-    return { balance: user.coins };
   },
 
   getUserCards: async (u_id: string) => {
-    const id_user = parseInt(u_id.replace('u_', ''));
 
-    const userCards = await prisma.userCard.findMany({
-      where: { id_user },
-      include: { card: true }, // Traemos los detalles de la carta
+    return getCachedData(`cache:user:cards:${u_id}`, async () => {
+
+      const id_user = parseInt(u_id.replace('u_', ''));
+
+      const userCards = await prisma.userCard.findMany({
+        where: { id_user },
+        include: { card: true }, // Traemos los detalles de la carta
+      });
+
+      // Contamos las instancias de cada carta
+      const cardCounts: Record<number, { name: string; quantity: number }> = {};
+
+      userCards.forEach((u_card) => {
+        if (!cardCounts[u_card.id_card]) {
+          cardCounts[u_card.id_card] = { name: u_card.card.title, quantity: 0 };
+        }
+        cardCounts[u_card.id_card].quantity += 1;
+      });
+
+      return Object.entries(cardCounts).map(([cardId, data]) => ({
+        cardId: `c_${cardId}`,
+        name: data.name,
+        quantity: data.quantity,
+      }));
     });
-
-    // Contamos las instancias de cada carta
-    const cardCounts: Record<number, { name: string; quantity: number }> = {};
-
-    userCards.forEach((u_card) => {
-      if (!cardCounts[u_card.id_card]) {
-        cardCounts[u_card.id_card] = { name: u_card.card.title, quantity: 0 };
-      }
-      cardCounts[u_card.id_card].quantity += 1;
-    });
-
-    return Object.entries(cardCounts).map(([cardId, data]) => ({
-      cardId: `c_${cardId}`,
-      name: data.name,
-      quantity: data.quantity,
-    }));
   },
 
   // --- Mazos (Decks) ---
 
   getUserDecks: async (u_id: string) => {
-    const id_user = parseInt(u_id.replace('u_', ''));
 
-    const decks = await prisma.deck.findMany({
-      where: { id_user },
-      include: {
-        cards: {
-          include: { user_card: true },
+    return getCachedData(`cache:user:decks:${u_id}`, async () => {
+      const id_user = parseInt(u_id.replace('u_', ''));
+
+      const decks = await prisma.deck.findMany({
+        where: { id_user },
+        include: {
+          cards: {
+            include: { user_card: true },
+          },
         },
-      },
-    });
+      });
 
-    return decks.map((deck) => ({
-      id: `d_${deck.id_deck}`,
-      name: deck.name,
-      cardIds: deck.cards.map(
-        (deck_card) => `c_${deck_card.user_card.id_card}`,
-      ),
-    })); // Extraemos el id_card genérico a partir del id_user_card
+      return decks.map((deck) => ({
+        id: `d_${deck.id_deck}`,
+        name: deck.name,
+        cardIds: deck.cards.map(
+          (deck_card) => `c_${deck_card.user_card.id_card}`,
+        ),
+      })); // Extraemos el id_card genérico a partir del id_user_card
+    });
   },
 
   getDeckById: async (d_id: string) => {
-    const id_deck = parseInt(d_id.replace('d_', ''));
+    return getCachedData(`cache:deck:${d_id}`, async () => {
+      const id_deck = parseInt(d_id.replace('d_', ''));
 
-    const deck = await prisma.deck.findUnique({
-      where: { id_deck },
-      include: {
-        cards: {
-          include: { user_card: true },
+      const deck = await prisma.deck.findUnique({
+        where: { id_deck },
+        include: {
+          cards: {
+            include: { user_card: true },
+          },
         },
-      },
+      });
+
+      if (!deck) return null;
+
+      return {
+        id: `d_${deck.id_deck}`,
+        name: deck.name,
+        cardIds: deck.cards.map(
+          (deck_card) => `c_${deck_card.user_card.id_card}`,
+        ),
+      }; // Extraemos el id_card genérico a partir del id_user_card
     });
-
-    if (!deck) return null;
-
-    return {
-      id: `d_${deck.id_deck}`,
-      name: deck.name,
-      cardIds: deck.cards.map(
-        (deck_card) => `c_${deck_card.user_card.id_card}`,
-      ),
-    }; // Extraemos el id_card genérico a partir del id_user_card
   },
 
   createDeck: async (u_id: string, name: string, cardsIds: string[]) => {
@@ -284,6 +311,8 @@ export const UserService = {
       },
     });
 
+    await invalidateCache(`cache:user:decks:${u_id}`);
+
     return {
       id: `d_${newDeck.id_deck}`,
       name: newDeck.name,
@@ -291,11 +320,7 @@ export const UserService = {
     };
   },
 
-  updateDeck: async (
-    d_id: string | string[],
-    name: string,
-    cardsIds: string[],
-  ) => {
+  updateDeck: async (d_id: string | string[], name: string, cardsIds: string[]) => {
     const isArray = Array.isArray(d_id);
     const ids = isArray ? d_id : [d_id as string];
     const ids_decks = ids
@@ -313,6 +338,9 @@ export const UserService = {
     });
 
     if (existingDecks.length === 0) throw new Error('Mazos no encontrados.');
+
+    // Se selecciona el id del dueño para invalidar su lista de mazos en caché
+    const ownerId = existingDecks[0].id_user;
 
     const transactionOperations = [];
 
@@ -339,6 +367,15 @@ export const UserService = {
 
     await prisma.$transaction(transactionOperations);
 
+
+    // Invalidamos los mazos individuales que han cambiado
+    for (const stringId of ids) {
+      await invalidateCache(`cache:deck:${stringId}`);
+    }
+
+    //Invalidamos la vista de "Todos mis mazos" del dueño
+    await invalidateCache(`cache:user:decks:u_${ownerId}`);
+
     const result = ids.map((id) => ({ id, name, cardIds: cardsIds }));
 
     return (isArray ? result : result[0]) as any;
@@ -350,6 +387,13 @@ export const UserService = {
       .map((id) => parseInt(id.replace('d_', '')))
       .filter((id) => !isNaN(id));
 
+    if (ids_decks.length === 0) return false;
+
+    const existingDecks = await prisma.deck.findMany({
+      where: { id_deck: { in: ids_decks } },
+      select: { id_user: true }
+    });
+
     const resultado = await prisma.$transaction([
       prisma.deckCard.deleteMany({
         where: { id_deck: { in: ids_decks } },
@@ -358,6 +402,19 @@ export const UserService = {
         where: { id_deck: { in: ids_decks } },
       }),
     ]);
+
+    if (resultado[1].count > 0) {
+      // 1. Borramos la caché de los mazos individuales que acaban de desaparecer
+      for (const stringId of ids) {
+        await invalidateCache(`cache:deck:${stringId}`);
+      }
+
+      // 2. Si logramos saber de quién eran, actualizamos su vista principal
+      if (existingDecks.length > 0) {
+        const ownerId = existingDecks[0].id_user;
+        await invalidateCache(`cache:user:decks:u_${ownerId}`);
+      }
+    }
 
     return resultado[1].count > 0;
   },

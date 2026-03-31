@@ -36,8 +36,10 @@
     "morgan": "^1.10.1",
     "pg": "^8.19.0",
     "redis": "^5.11.0",
+    "redis-om": "^0.4.7",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "stack": "^0.1.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.3.6"
