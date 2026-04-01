@@ -5,6 +5,8 @@ import {
   ID_PREFIXES,
   ID_SAFE_REGEX,
   LOBBY_CODE_REGEX,
+  LOBBY_MAX_PLAYERS,
+  LOBBY_MIN_PLAYERS,
 } from '../../shared/constants';
 import { AuthenticatedRequest } from '../../shared/types';
 
@@ -170,10 +172,14 @@ export const validateCreateLobbyBody = (
     return;
   }
 
-  if (typeof maxPlayers !== 'number' || maxPlayers < 3 || maxPlayers > 6) {
-    res
-      .status(400)
-      .json({ message: 'El número de jugadores debe ser entre 3 y 6.' });
+  if (
+    typeof maxPlayers !== 'number' ||
+    maxPlayers < LOBBY_MIN_PLAYERS ||
+    maxPlayers > LOBBY_MAX_PLAYERS
+  ) {
+    res.status(400).json({
+      message: `El número de jugadores debe ser entre ${LOBBY_MIN_PLAYERS} y ${LOBBY_MAX_PLAYERS}.`,
+    });
     return;
   }
 

@@ -14,7 +14,11 @@ export const LobbyRedisRepository = {
     */
     async findByCode(lobbyCode: string) {
         const lobby = await lobbyRepository.fetch(lobbyCode);
-        return lobby.lobbyCode ? lobby : null;
+        if (!lobby || !lobby.lobbyCode) {
+            return null;
+        }
+
+        return lobby;
     },
 
     /**

@@ -8,6 +8,9 @@ export const ID_SAFE_REGEX = /^[a-zA-Z0-9_]+$/;
 // Añadimos el regex específico para salas
 export const LOBBY_CODE_REGEX = /^[A-Z0-9]{4,6}$/;
 
+export const LOBBY_MIN_PLAYERS = 3;
+export const LOBBY_MAX_PLAYERS = 6;
+
 /**
  * Opcional: Si IDs siempre tienen una longitud fija (ej: u_ + 10 caracteres)
  */

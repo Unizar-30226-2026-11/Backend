@@ -7,6 +7,7 @@ import {
   GameMode,
   GameState,
 } from '../../shared/types';
+import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import {
   GameModeStrategy,
   StandardStrategy,
@@ -78,8 +79,10 @@ export class DixitEngine {
     const allCardIds: number[] = action.payload.deck;
     const players = state.players || []; // Asumimos que los jugadores ya están en el lobby
 
-    if (players.length < 4) {
-      throw new Error('Se requieren al menos 4 jugadores para iniciar.');
+    if (players.length < LOBBY_MIN_PLAYERS) {
+      throw new Error(
+        `Se requieren al menos ${LOBBY_MIN_PLAYERS} jugadores para iniciar.`,
+      );
     }
     if (!allCardIds || allCardIds.length < players.length * 6) {
       throw new Error('Mazo insuficiente para la cantidad de jugadores.');
