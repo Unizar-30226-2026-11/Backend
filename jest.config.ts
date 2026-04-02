@@ -6,10 +6,17 @@ const { createDefaultPreset } = require('ts-jest');
 const tsJestTransformCfg = createDefaultPreset().transform;
 
 const config: Config = {
+  
   testEnvironment: "node",
   transform: {
     ...tsJestTransformCfg,
   },
+
+  roots: ['<rootDir>/src'],
+  testMatch: [
+    "**/__tests__/**/*.+(ts|tsx|js)",     // Busca en cualquier carpeta __tests__
+    "**/?(*.)+(spec|test).+(ts|tsx|js)"   // Y cualquier archivo que termine en .test.ts o .spec.ts
+  ],
 };
 
 module.exports = config;

@@ -134,7 +134,7 @@ export class GameService {
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
-    const engine: IGameEngine = this.getEngine(currentState.lobbyCode);
+    const engine: IGameEngine = this.getEngine();
 
     const oldPhase = currentState.phase;
     const previousScores = { ...currentState.scores };
@@ -242,21 +242,14 @@ export class GameService {
     });
 
     // Si nadie la pulsa, se desactiva al terminar la duración
-    setTimeout(async () => {
-      const currentState = await this.redisRepo.getGame(gameId);
-      if (currentState && currentState.isStarActive && Date.now() >= currentState.starExpiresAt) {
-        currentState.isStarActive = false;
-        await this.redisRepo.saveGame(gameId, currentState);
-        // Esta emisión interna diferida la producimos vía el método público
-        // para que el handler pueda suscribirse si lo necesita.
-        // En la práctica queda delegada aquí como efecto secundario controlado.
-        this._deferredEmitCallback?.({
-          room: gameId,
-          event: 'star_expired',
-          data: {}
-        });
+    await gameTimeoutsQueue.add(
+      'star-expiration',
+      { gameId },
+      { 
+        delay: movement.duration, 
+        removeOnComplete: true 
       }
-    }, movement.duration);
+    );
 
     return emissions;
   }
@@ -288,9 +281,8 @@ export class GameService {
     ];
   }
 
-  private getEngine(lobbyCode: string): IGameEngine {
-    // Aquí podrías consultar qué tipo de partida es. Por defecto:
-    // return type === 'STELLA' ? StellaEngine : DixitEngine;
+  private getEngine(): IGameEngine {
+    // DixitEngine es el motor universal del juego.
     return DixitEngine;
   }
 
@@ -333,6 +325,7 @@ export class GameService {
       side: startSide // Enviamos el lado para que el frontend rote el gráfico
     };
   }
+
 
   //
   //  CASILLAS DEL TABLERO
@@ -377,7 +370,7 @@ export class GameService {
         currentPos === SPECIAL_SQUARES.BONUS_RANDOM_3 ||
         currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
       ) {
-        emissions.push(...this.applyRandomCardBonus(state, pId));
+        emissions.push(...this.applyRandomBonus(state, pId));
       }
 
       // SHUFFLE
@@ -475,6 +468,7 @@ export class GameService {
     state.discardPile.push(...currentHand);
 
     const newHand: number[] = [];
+    const emissions: SocketEmission[] = [];
 
     // Robar cartas una a una asegurando que el mazo nunca se acabe
     for (let i = 0; i < handSize; i++) {
@@ -486,6 +480,12 @@ export class GameService {
         // Convertimos el descarte barajado en el nuevo mazo central
         state.centralDeck = this.shuffleArray(state.discardPile);
         state.discardPile = [];
+
+        emissions.push({
+          room: state.lobbyCode,
+          event: 'server:game:deck_reshuffled',
+          data: {}
+        });
       }
 
       const card = state.centralDeck.pop();
@@ -496,24 +496,43 @@ export class GameService {
 
     state.hands[pId] = newHand;
 
-    return [
-      {
-        room: pId,
-        event: 'private_hand_updated',
-        data: { hand: newHand }
-      },
-      {
-        room: state.lobbyCode,
-        event: 'server:game:special_event',
-        data: { pId, effect: 'SHUFFLE' }
-      }
-    ];
+    emissions.push({
+      room: pId,
+      event: 'server:game:private_hand',
+      data: { hand: newHand }
+    });
+
+    emissions.push({
+      room: state.lobbyCode,
+      event: 'server:game:special_event',
+      data: { pId, effect: 'SHUFFLE' }
+    });
+
+    return emissions;
   }
 
   /**
    * Efecto Bonus Aleatorio: Modifica el límite de cartas durante 2 rondas.
    */
-  private applyRandomCardBonus(state: GameState, pId: string): SocketEmission[] {
+  private applyRandomBonus(state: GameState, pId: string): SocketEmission[] {
+
+
+    if (state.mode === 'STELLA') {
+
+      // Definir qué hace el Bonus en Stella.
+      
+      return [{
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { 
+          pId, 
+          effect: 'STELLA_BONUS_PLACEHOLDER', 
+          message: '¡Casilla Bonus de Stella en construcción!' 
+        }
+      }];
+    }
+
+
     const amount = (Math.floor(Math.random() * 3) + 1);
     const isPositive = Math.random() > 0.5;
     const finalAmount = isPositive ? amount : -amount;
