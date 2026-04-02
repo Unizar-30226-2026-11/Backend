@@ -10,7 +10,7 @@ export const GameRedisRepository = {
         const data = await gameRepository.fetch(gameId);
 
         // Si el objeto recuperado no tiene ID, es que no existe en Redis
-        if (!data || !data.gameId) return null;
+        if (!data || !data.lobbyCode) return null;
 
         // Convertimos los strings de Redis en los tipos reales de TS
         return {

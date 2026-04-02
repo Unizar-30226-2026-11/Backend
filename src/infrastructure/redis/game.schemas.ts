@@ -18,7 +18,7 @@ const lobbySchema = new Schema('lobby', {
 
 
 const gameStateSchema = new Schema('game_state', {
-    gameId: { type: 'string' },      // Usaremos el lobbyCode como ID
+    lobbyCode: { type: 'string' },      // Usaremos el lobbyCode como ID
     mode: { type: 'string' },        // 'STANDARD' | 'STELLA'
     phase: { type: 'string' },
     status: { type: 'string' },
