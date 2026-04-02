@@ -5,6 +5,8 @@ import { LobbyService } from '../../services/lobby.service';
 import { GameService, SocketEmission } from '../../services/game.service';
 import { GameRedisRepository } from '../../repositories/game.repository';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
+
 
 export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) => {
   // Extraemos los datos 100% confiables del middleware
@@ -44,8 +46,8 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
       }
 
       // Validamos el cupo mínimo antes de llamar al motor (Ej. Dixit requiere 4)
-      if (lobby.players.length < 4) {
-        socket.emit(SERVER_EVENTS.ERROR, { message: 'Se requieren al menos 4 jugadores para iniciar.' });
+      if (lobby.players.length < LOBBY_MIN_PLAYERS) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: 'Se requieren al menos ${LOBBY_MIN_PLAYERS} jugadores para iniciar.' });
         return;
       }
 
