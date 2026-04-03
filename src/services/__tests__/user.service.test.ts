@@ -1,18 +1,19 @@
-import { UserService } from '../user.service';
-import { User_States } from '@prisma/client';
-import { prisma } from '../../infrastructure/prisma';
 import 'dotenv/config';
+
+import { User_States } from '@prisma/client';
+
+import { prisma } from '../../infrastructure/prisma';
+import { UserService } from '../user.service';
 
 describe('UserService - Pruebas Funciones', () => {
   let id_deck_created: string;
-  let mazos_a_borrar: string[] = [];
+  const mazos_a_borrar: string[] = [];
 
   let id_usuario_a_borrar: string;
 
   beforeAll(async () => {
-
     for (let i = 0; i < 5; i++) {
-      let cartas_mazo_prueba = [
+      const cartas_mazo_prueba = [
         'c_1',
         'c_2',
         'c_3',
@@ -31,7 +32,7 @@ describe('UserService - Pruebas Funciones', () => {
     }
 
     const ghostUser = await prisma.user.findUnique({
-      where: { username: 'UsuarioSacrificable_Full' }
+      where: { username: 'UsuarioSacrificable_Full' },
     });
 
     if (ghostUser) {
@@ -44,37 +45,38 @@ describe('UserService - Pruebas Funciones', () => {
         email: 'full_delete@test.com',
         password: 'hashed_password',
         state: 'UNKNOWN',
-      }
+      },
     });
     id_usuario_a_borrar = `u_${usuario_test.id_user}`;
 
-
-    const carta1 = await prisma.userCard.create({ data: { id_user: usuario_test.id_user, id_card: 1 } });
-    const carta2 = await prisma.userCard.create({ data: { id_user: usuario_test.id_user, id_card: 2 } });
+    const carta1 = await prisma.userCard.create({
+      data: { id_user: usuario_test.id_user, id_card: 1 },
+    });
+    const carta2 = await prisma.userCard.create({
+      data: { id_user: usuario_test.id_user, id_card: 2 },
+    });
 
     const mazo = await prisma.deck.create({
-      data: { id_user: usuario_test.id_user, name: 'Mazo Condenado' }
+      data: { id_user: usuario_test.id_user, name: 'Mazo Condenado' },
     });
 
     await prisma.deckCard.createMany({
       data: [
         { id_deck: mazo.id_deck, id_user_card: carta1.id_user_card },
         { id_deck: mazo.id_deck, id_user_card: carta2.id_user_card },
-      ]
+      ],
     });
 
     await prisma.friendships.create({
       data: {
         id_user_1: usuario_test.id_user,
         id_user_2: 1,
-        state: 'FRIEND'
-      }
+        state: 'FRIEND',
+      },
     });
-
-
   });
 
-  beforeEach(() => { });
+  beforeEach(() => {});
 
   describe('Sistema de Búsqueda de usuarios', () => {
     describe('Búsqueda de un solo usuario por ID. ', () => {
@@ -253,7 +255,7 @@ describe('UserService - Pruebas Funciones', () => {
 
     describe('Creacion de Mazos. -> createDeck() ', () => {
       test('Mazo creado con éxito:', async () => {
-        let cartas_mazo_prueba = [
+        const cartas_mazo_prueba = [
           'c_1',
           'c_2',
           'c_3',
@@ -281,7 +283,7 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Campos Incorrectos:', async () => {
-        let cartas_mazo_prueba = [
+        const cartas_mazo_prueba = [
           'c_1',
           'c_2',
           'c_3',
@@ -300,7 +302,7 @@ describe('UserService - Pruebas Funciones', () => {
 
     describe('Actualización de Mazos. -> updateDeck() ', () => {
       test('Un solo mazo cambiado con éxito:', async () => {
-        let cartas_mazo_prueba = [
+        const cartas_mazo_prueba = [
           'c_3',
           'c_2',
           'c_7',
@@ -327,7 +329,7 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Varios mazos cambiados con éxito:', async () => {
-        let cartas_mazo_prueba = [
+        const cartas_mazo_prueba = [
           'c_12',
           'c_11',
           'c_10',
@@ -341,7 +343,7 @@ describe('UserService - Pruebas Funciones', () => {
           'c_2',
           'c_1',
         ];
-        let mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
+        const mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
         const resultado = await UserService.updateDeck(
           mazos_a_cambiar,
           'De Prueba Reorganizado',
@@ -363,7 +365,7 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Campos Incorrectos:', async () => {
-        let cartas_mazo_prueba = [
+        const cartas_mazo_prueba = [
           'c_1',
           'c_2',
           'c_3',
@@ -405,12 +407,12 @@ describe('UserService - Pruebas Funciones', () => {
   });
 
   describe('Actualizacion y Borrado de Usuarios. ', () => {
-
     describe('Actualizacion de nombre de usuario. -> updateUserProfile() ', () => {
-
       test('Usuario actualizado con éxito: ', async () => {
-
-        const resultado = await UserService.updateUserProfile('u_1', 'CambiadoC0Nexito');
+        const resultado = await UserService.updateUserProfile(
+          'u_1',
+          'CambiadoC0Nexito',
+        );
 
         expect(resultado).toBeDefined();
         expect(resultado).toEqual(
@@ -428,7 +430,6 @@ describe('UserService - Pruebas Funciones', () => {
             id: expect.stringMatching(/^u_\d+$/),
           }),
         );
-
       });
 
       test('Nombre de usuario ya en uso (USERNAME_TAKEN): ', async () => {
@@ -445,17 +446,21 @@ describe('UserService - Pruebas Funciones', () => {
     });
 
     describe('Actualizacion del estado de usuario. -> updatePresence()', () => {
-
       test('Prueba cambio de estados correcta: ', async () => {
         for (const state of Object.values(User_States)) {
-          const resultado = await UserService.updatePresence("u_1", String(state));
+          const resultado = await UserService.updatePresence(
+            'u_1',
+            String(state),
+          );
 
           expect(resultado).toBeDefined();
           expect(resultado).toEqual(
             expect.objectContaining({
-              new_status: expect.stringMatching(/^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/),
-            })
-          )
+              new_status: expect.stringMatching(
+                /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
+              ),
+            }),
+          );
         }
       });
 
@@ -473,7 +478,6 @@ describe('UserService - Pruebas Funciones', () => {
     });
 
     describe('Borrado de un usuario. -> deleteUser() ', () => {
-
       test('Usuario borrado con éxito: ', async () => {
         const resultado = await UserService.deleteUser(id_usuario_a_borrar);
 
@@ -482,22 +486,16 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Usuario inexistente: ', async () => {
-        await expect(
-          UserService.deleteUser('u_99999999'),
-        ).rejects.toThrow();
+        await expect(UserService.deleteUser('u_99999999')).rejects.toThrow();
       });
 
       test('Entrada Incorrecta: ', async () => {
-        await expect(
-          UserService.deleteUser('Jugador1'),
-        ).rejects.toThrow();
+        await expect(UserService.deleteUser('Jugador1')).rejects.toThrow();
       });
     });
-
   });
   afterAll(async () => {
-
-    let cartas_mazo_prueba = [
+    const cartas_mazo_prueba = [
       'c_1',
       'c_2',
       'c_3',
@@ -512,7 +510,7 @@ describe('UserService - Pruebas Funciones', () => {
       'c_12',
     ];
 
-    let mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
+    const mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
 
     await UserService.updateDeck(
       mazos_a_cambiar,
@@ -520,9 +518,8 @@ describe('UserService - Pruebas Funciones', () => {
       cartas_mazo_prueba,
     );
 
-
     await UserService.updateUserProfile('u_1', 'Jugador1');
   });
 
-  afterEach(() => { });
+  afterEach(() => {});
 });

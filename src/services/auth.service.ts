@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { SignOptions } from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
-// import { UserRedisRepository } from '../repositories';
+import { UserRedisRepository } from '../repositories';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -86,17 +86,17 @@ export const AuthService = {
   },
 
   /**
-   * Busca si el usuario tiene una sesión activa en Redis y devuelve el lobbyCode
+   * Busca si el usuario tiene una sesión activa y devuelve el lobbyCode
    */
   getUserActiveLobby: async (userId: string): Promise<string | null> => {
     try {
-      // Intentamos obtener el documento de sesión directamente por el ID del usuario
-      // Redis-OM usa el ID como parte de la clave si lo configuramos bien
+      // Fetch devuelve el objeto guardado en Redis-OM
       const session = await UserRedisRepository.fetch(userId);
 
-      // Si el objeto existe y tiene un lobbyCode, lo devolvemos
+      // En Redis-OM, si no existe, devuelve un objeto vacío o con valores nulos,
+      // pero comprobamos si tiene el lobbyCode
       if (session && session.lobbyCode) {
-        return session.lobbyCode;
+        return session.lobbyCode as string;
       }
 
       return null;
@@ -107,19 +107,18 @@ export const AuthService = {
   },
 
   /**
-   * Guarda o actualiza la sesión de un usuario (Se llama al hacer joinLobby)
+   * Guarda la sesión del usuario al unirse a un lobby
    */
   saveUserSession: async (userId: string, lobbyCode: string): Promise<void> => {
-    // Creamos o sobreescribimos la "ficha" del usuario
-    const session = UserRedisRepository.createEntity({
-      userId,
-      lobbyCode,
-    });
-
-    // El ID de la entidad será el userId para que sea fácil de buscar (fetch)
-    session.entityId = userId;
-
-    await UserRedisRepository.save(session);
+    try {
+      // Directo al grano: guardar userId con su lobbyCode
+      await UserRedisRepository.saveSession(userId, lobbyCode);
+    } catch (error) {
+      console.error('Error al guardar sesión en Redis:', error);
+      throw new Error('No se pudo persistir la sesión de juego.', {
+        cause: error,
+      });
+    }
   },
 
   // Genera un token corto para conexión WebSocket (lobby o reconexión)

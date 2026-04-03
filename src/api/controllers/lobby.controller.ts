@@ -109,6 +109,8 @@ export const joinLobby = async (
       return;
     }
 
+    await AuthService.saveUserSession(userId, lobbyCode);
+
     // 3. Generar el token de conexión para el WebSocket
     const wsToken = await AuthService.generateLobbyToken(
       userId,

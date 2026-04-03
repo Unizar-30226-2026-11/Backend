@@ -3,15 +3,12 @@
 import { Friendship_States } from '@prisma/client';
 
 import { prisma } from '../infrastructure/prisma';
-
 import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
 
 export const FriendService = {
   // Obtener lista de amigos de un usuario
   getConfirmedFriends: async (u_id: string) => {
-
     return getCachedData(`cache:friends:confirmed:${u_id}`, async () => {
-
       const id_user = parseInt(u_id.replace('u_', ''));
 
       const friendships = await prisma.friendships.findMany({
@@ -42,7 +39,6 @@ export const FriendService = {
 
   // Obtener solicitudes enviadas hacia el usuario (pendientes de aceptar)
   getPendingRequests: async (u_id: string) => {
-
     return getCachedData(`cache:friends:pending:${u_id}`, async () => {
       const id_user = parseInt(u_id.replace('u_', ''));
 

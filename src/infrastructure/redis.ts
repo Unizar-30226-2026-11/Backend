@@ -1,6 +1,6 @@
 // src/infrastructure/redis.ts
-import { createClient } from 'redis';
 import dotenv from 'dotenv';
+import { createClient } from 'redis';
 
 dotenv.config();
 
@@ -19,7 +19,9 @@ export const bullmqConnection = {
 };
 
 redisClient.on('error', (err) => console.error('❌ Redis Client Error', err));
-redisClient.on('connect', () => console.log('✅ Redis conectado correctamente'));
+redisClient.on('connect', () =>
+  console.log('✅ Redis conectado correctamente'),
+);
 
 export const connectRedis = async () => {
   if (!redisClient.isOpen) {
@@ -33,7 +35,9 @@ export const connectRedis = async () => {
 export const GameRepository = {
   async saveGameState(lobbyCode: string, state: any): Promise<void> {
     // Expiración de 2 horas (7200s) para limpiar memoria automáticamente
-    await redisClient.set(`game:${lobbyCode}`, JSON.stringify(state), { EX: 7200 });
+    await redisClient.set(`game:${lobbyCode}`, JSON.stringify(state), {
+      EX: 7200,
+    });
   },
 
   async getGameState(lobbyCode: string): Promise<any | null> {
@@ -43,5 +47,5 @@ export const GameRepository = {
 
   async deleteGameState(lobbyCode: string): Promise<void> {
     await redisClient.del(`game:${lobbyCode}`);
-  }
+  },
 };

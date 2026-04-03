@@ -1,6 +1,7 @@
-import { CollectionService } from '../collection.service';
-import { prisma } from '../../infrastructure/prisma';
 import 'dotenv/config';
+
+import { prisma } from '../../infrastructure/prisma';
+import { CollectionService } from '../collection.service';
 
 describe('CollectionService - Pruebas Funciones', () => {
   let id_colection_test: number;
@@ -26,7 +27,7 @@ describe('CollectionService - Pruebas Funciones', () => {
     return true;
   });
 
-  beforeEach(() => { });
+  beforeEach(() => {});
 
   test('Obtener todas las colecciones. -> getAllCollections() ', async () => {
     const resultado = await CollectionService.getAllCollections();
@@ -117,5 +118,5 @@ describe('CollectionService - Pruebas Funciones', () => {
     });
   });
 
-  afterEach(() => { });
+  afterEach(() => {});
 });
