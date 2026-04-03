@@ -1,8 +1,7 @@
 // controllers/lobby.controller.ts
 import { Response } from 'express';
-import jwt from 'jsonwebtoken';
 
-import { LobbyService } from '../../services';
+import { AuthService, LobbyService } from '../../services';
 import { AuthenticatedRequest } from '../../shared/types';
 
 export const createLobby = async (
@@ -111,16 +110,10 @@ export const joinLobby = async (
     }
 
     // 3. Generar el token de conexión para el WebSocket
-    // Se recomienda una vida muy corta (2 minutos) ya que solo se valida al conectar
-    const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
-    const wsToken = jwt.sign(
-      {
-        id: userId,
-        username: req.user!.username,
-        lobbyCode,
-      },
-      secretKey,
-      { expiresIn: '2m' }, // Expira rápido
+    const wsToken = await AuthService.generateLobbyToken(
+      userId,
+      req.user!.username,
+      lobbyCode,
     );
 
     // 4. Retornar el token al cliente

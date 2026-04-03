@@ -10,7 +10,7 @@ export interface AuthenticatedSocket extends Socket {
     };
     // socket.data ya existe en Socket.io, pero tipamos lo que vamos a guardar
     data: {
-        lobbyCode?: string;
+        lobbyCode?: string | null;
         [key: string]: any;
     };
 }
@@ -30,7 +30,7 @@ export const authenticateSocket = (socket: AuthenticatedSocket, next: (err?: Err
         const decodedPayload = jwt.verify(token, secretKey) as {
             id: string;
             username: string;
-            lobbyCode: string; // <-- Viene del LobbyController
+            lobbyCode: string | null; // <-- Viene del token de lobby/reconexión
         };
 
         // Guardamos los datos validados en el socket

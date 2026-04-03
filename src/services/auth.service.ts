@@ -1,8 +1,10 @@
 // services/auth.service.ts
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { SignOptions } from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
+// import { UserRedisRepository } from '../repositories';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -81,5 +83,63 @@ export const AuthService = {
         username: user.username,
       },
     };
+  },
+
+  /**
+   * Busca si el usuario tiene una sesión activa en Redis y devuelve el lobbyCode
+   */
+  getUserActiveLobby: async (userId: string): Promise<string | null> => {
+    try {
+      // Intentamos obtener el documento de sesión directamente por el ID del usuario
+      // Redis-OM usa el ID como parte de la clave si lo configuramos bien
+      const session = await UserRedisRepository.fetch(userId);
+
+      // Si el objeto existe y tiene un lobbyCode, lo devolvemos
+      if (session && session.lobbyCode) {
+        return session.lobbyCode;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error al obtener sesión de Redis-OM:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Guarda o actualiza la sesión de un usuario (Se llama al hacer joinLobby)
+   */
+  saveUserSession: async (userId: string, lobbyCode: string): Promise<void> => {
+    // Creamos o sobreescribimos la "ficha" del usuario
+    const session = UserRedisRepository.createEntity({
+      userId,
+      lobbyCode,
+    });
+
+    // El ID de la entidad será el userId para que sea fácil de buscar (fetch)
+    session.entityId = userId;
+
+    await UserRedisRepository.save(session);
+  },
+
+  // Genera un token corto para conexión WebSocket (lobby o reconexión)
+  generateLobbyToken: async (
+    userId: string,
+    username: string,
+    lobbyCode: string | null,
+  ): Promise<string> => {
+    const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
+    const wsTokenExpiresIn: SignOptions['expiresIn'] =
+      (process.env.JWT_WS_EXPIRES_IN as SignOptions['expiresIn']) ?? '3m';
+
+    return jwt.sign(
+      {
+        id: userId,
+        username,
+        lobbyCode,
+      },
+      secretKey,
+      { expiresIn: wsTokenExpiresIn },
+    );
   },
 };
