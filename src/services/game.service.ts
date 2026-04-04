@@ -28,7 +28,6 @@ export interface IGameEngine {
   transition(state: GameState, action: GameAction): GameState;
 }
 
-
 export class GameService {
   constructor(
     private readonly redisRepo: typeof GameRedisRepository,
@@ -55,6 +54,7 @@ export class GameService {
       }
     });
 
+    
     let centralDeck: number[] = [];
     userDecks.forEach(deck => {
       deck.cards.forEach(dc => {
@@ -62,10 +62,25 @@ export class GameService {
       });
     });
 
-    // Si hay pocas cartas, rellenamos con comodines
-    if (centralDeck.length < 20) {
-      const fallbackCards = await prisma.cards.findMany({ take: 30, select: { id_card: true } });
+    // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
+    // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
+    // lo que puede generar cartas que no hayamos visto antes de manera consistente.
+    
+    const CARDS_PER_PLAYER = 16;
+    const TARGET_DECK_SIZE = players.length * CARDS_PER_PLAYER;
+
+    // Si hay pocas cartas, rellenamos c hasta TARGET_DECK_SIZE Y si los mazos sobrepasan escogemos al azar
+    if (centralDeck.length < TARGET_DECK_SIZE) {
+      const missingAmount = TARGET_DECK_SIZE - centralDeck.length;
+      const fallbackCards = await prisma.cards.findMany({
+         take: missingAmount, 
+         select: { id_card: true } 
+        });
       centralDeck.push(...fallbackCards.map(c => c.id_card));
+    }
+    else if (centralDeck.length > TARGET_DECK_SIZE) {
+      centralDeck = this.shuffleArray(centralDeck); // Mezclamos antes de cortar para que sea justo
+      centralDeck = centralDeck.slice(0, TARGET_DECK_SIZE); // Nos quedamos exactamente con 84
     }
 
     // Barajamos
@@ -515,7 +530,6 @@ export class GameService {
    * Efecto Bonus Aleatorio: Modifica el límite de cartas durante 2 rondas.
    */
   private applyRandomBonus(state: GameState, pId: string): SocketEmission[] {
-
 
     if (state.mode === 'STELLA') {
 
