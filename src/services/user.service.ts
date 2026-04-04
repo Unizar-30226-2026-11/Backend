@@ -385,7 +385,7 @@ export const UserService = {
 
     const existingDecks = await prisma.deck.findMany({
       where: { id_deck: { in: ids_decks } },
-      select: { id_user: true }
+      select: { id_user: true },
     });
 
     const resultado = await prisma.$transaction([

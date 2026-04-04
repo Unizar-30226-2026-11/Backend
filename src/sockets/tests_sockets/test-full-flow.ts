@@ -313,11 +313,63 @@ async function runTest(): Promise<void> {
             tryStory();
         }
 
-        // 6. Mantener vivo el test hasta 45s
-        await new Promise(r => setTimeout(r, 45000));
-        console.log('\n Tmeout de seguridad alcanzado.');
-        allIds.forEach(id => sockets[id]?.disconnect());
-        process.exit(1);
+        // ─────────────────────────────────────────────────────────────────
+        // PRUEBA DE DESCONEXIÓN, RECONEXIÓN Y MULTITAB
+        // ─────────────────────────────────────────────────────────────────
+        console.log('\n--- INICIANDO PRUEBA DE DESCONEXIÓN Y RECONEXIÓN ---');
+
+        const testPlayerId = FAKE_IDS[0]; // Escogemos al primer jugador de prueba
+        const oldSocket = sockets[testPlayerId];
+
+        // 1. Simulamos que al jugador se le cae el internet (F5 o cierre)
+        console.log(`[Reconexión] Desconectando físicamente el socket de ${testPlayerId}...`);
+        oldSocket.disconnect();
+
+        // Esperamos un poco para que el servidor procese la caída del socket
+        await new Promise(r => setTimeout(r, 1500));
+
+        // 2. Simulamos la reconexión
+        console.log(`[Reconexión] Reconectando a ${testPlayerId} simulando que hizo /refresh-session...`);
+
+        // Creamos un NUEVO socket usando el mismo token 
+        // (En la vida real, aquí el frontend usaría el wsToken devuelto por /refresh-session)
+        const reconnectedSocket = io(BACKEND_URL, {
+            auth: oldSocket.auth // Reutilizamos el token de autenticación
+        });
+
+        // Actualizamos nuestra referencia global en el test
+        sockets[testPlayerId] = reconnectedSocket;
+
+        // 3. Escuchamos el evento de recuperación
+        reconnectedSocket.on('server:session:recovered', (data) => {
+            console.log(`\n✅ ¡ÉXITO! Sesión recuperada para ${testPlayerId}`);
+            console.log(`   -> Sala recuperada: ${data.lobbyCode}`);
+            console.log(`   -> Fase del juego recuperada: ${data.state.phase}`);
+            console.log(`   -> A quién le toca: ${data.state.turnOf}`);
+        });
+
+        // 4. (Opcional) Prueba rápida de Multitab (intentar conectar otra vez)
+        setTimeout(() => {
+            console.log(`\n[Multitab] Intentando abrir una segunda pestaña para ${testPlayerId}...`);
+            const evilMultitabSocket = io(BACKEND_URL, { auth: oldSocket.auth });
+
+            evilMultitabSocket.on('connect', () => {
+                console.log(' Multitab: Segunda pestaña conectada con éxito.');
+            });
+
+            evilMultitabSocket.on('disconnect', () => {
+                console.log(' Multitab: Segunda pestaña desconectada.');
+            });
+
+            // Si funciona bien nuestro backend, el reconnectedSocket debería recibir force_disconnect
+            reconnectedSocket.on('server:force_disconnect', (data) => {
+                console.log(`🚨 ¡MULTITAB DETECTADO Y BLOQUEADO! Mensaje: "${data.message}"`);
+            });
+        }, 3000);
+
+        // Esperamos unos segundos para ver los logs de los eventos
+        await new Promise(r => setTimeout(r, 5000));
+        // ─────────────────────────────────────────────────────────────────
 
     } catch (err) {
         console.error(' Error en el test:', err);

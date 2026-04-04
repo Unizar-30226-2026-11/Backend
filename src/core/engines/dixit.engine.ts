@@ -110,7 +110,8 @@ export class DixitEngine {
       state.hands[pId] = state.centralDeck.splice(-6);
     }
 
-    state.mode = state.mode || 'STANDARD';
+    // Por defecto, arrancamos en modo STANDARD (se podría parametrizar en el payload)
+    state.mode = 'STANDARD';
 
     // Delegamos la creación de la `currentRound` a la estrategia inicial
     const readyState = state as GameState;

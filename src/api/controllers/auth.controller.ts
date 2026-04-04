@@ -2,8 +2,7 @@
 import { Request, Response } from 'express';
 
 import { AuthService } from '../../services';
-import { AuthenticatedRequest } from '../../shared/types/auth.types';
-
+import { AuthenticatedRequest } from '../../shared/types';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -80,28 +79,36 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-
-// Nuevo controlador para la recarga de página
-export const refresh = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const refreshSession = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
   try {
-    if (!req.user) {
-      res.status(401).json({ message: 'Usuario no autenticado.' });
-      return;
-    }
+    const { id: userId, username } = req.user!;
 
-    const { id, username } = req.user;
+    // 1. Delegamos la búsqueda en Redis al servicio
+    const lobbyCode = await AuthService.getUserActiveLobby(userId);
 
-    // Generar un nuevo token verificando el estado en Redis
-    const refreshData = await AuthService.refreshToken(id, username);
+    // 2. Generamos el token usando el método centralizado
+    const wsToken = await AuthService.generateLobbyToken(
+      userId,
+      username,
+      lobbyCode,
+    );
 
+    // 3. Respuesta limpia
     res.status(200).json({
-      message: 'Sesión refrescada correctamente.',
-      token: refreshData.token,
-      activeGameId: refreshData.activeGameId,
-      user: { id, username }
+      message: lobbyCode
+        ? 'Ticket de sesión WebSocket refrescado correctamente.'
+        : 'No hay sesiones activas, redirigiendo al menú.',
+      wsToken,
+      lobbyCode,
+      activeSession: !!lobbyCode,
     });
   } catch (error) {
-    console.error('Error in refresh:', error);
-    res.status(500).json({ message: 'Error interno al refrescar la sesión.' });
+    console.error('Error in refreshSession:', error);
+    res.status(500).json({
+      message: 'Error interno al intentar recuperar la sesión.',
+    });
   }
 };

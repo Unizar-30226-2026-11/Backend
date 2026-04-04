@@ -1,8 +1,9 @@
 // routes/auth.routes.ts
 import { Router } from 'express';
 
-import { login, register, refresh } from '../controllers/auth.controller'; // AÑADIDO refresh
-import { authenticate } from '../middlewares/auth.middleware'; // AÑADIDO
+import { login, refreshSession, register } from '../controllers';
+import { authenticate } from '../middlewares';
+
 const router = Router();
 
 /**
@@ -139,20 +140,51 @@ router.post('/register', register);
  */
 router.post('/login', login);
 
-
 /**
  * @swagger
- * /api/auth/refresh:
- * post:
- * summary: Refresca el token y comprueba si el usuario tiene una partida activa
- * tags: [Auth]
- * security:
- * - bearerAuth: []
- * responses:
- * 200:
- * description: Token refrescado con el estado de la partida
+ * /api/auth/refresh-session:
+ *   post:
+ *     summary: Refrescar ticket de sesión para WebSocket (reconexión)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Ticket WebSocket refrescado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Ticket de sesión WebSocket refrescado correctamente.
+ *                 wsToken:
+ *                   type: string
+ *                   description: Ticket JWT de vida corta para autenticar el socket.
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 lobbyCode:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Código de sala activa en Redis, o null si no hay sesión activa.
+ *                   example: A1B2
+ *                 activeSession:
+ *                   type: boolean
+ *                   description: Indica si el usuario tiene una sesión de juego/lobby activa.
+ *                   example: true
+ *       401:
+ *         description: No autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-router.post('/refresh', authenticate, refresh)
-
+router.post('/refresh-session', authenticate, refreshSession);
 
 export default router;

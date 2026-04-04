@@ -1,6 +1,6 @@
 // src/infrastructure/redis.ts
-import { createClient } from 'redis';
 import dotenv from 'dotenv';
+import { createClient } from 'redis';
 
 dotenv.config();
 
@@ -19,7 +19,9 @@ export const bullmqConnection = {
 };
 
 redisClient.on('error', (err) => console.error('❌ Redis Client Error', err));
-redisClient.on('connect', () => console.log('✅ Redis conectado correctamente'));
+redisClient.on('connect', () =>
+  console.log('✅ Redis conectado correctamente'),
+);
 
 export const connectRedis = async () => {
   if (!redisClient.isOpen) {
@@ -27,23 +29,23 @@ export const connectRedis = async () => {
   }
 };
 
+// REPOSITORIO DE ESTADO DEL JUEGO
 
-// REPOSITORIO DE SESIONES DE USUARIO (Reconexión de partidas)
-// Esto gestiona la clave user:session:{userId} -> gameId
-export const SessionRepository = {
-  async setActiveGame(userId: string, lobbyCode: string): Promise<void> {
-    // Expiración de 2 horas (7200s) al igual que el juego para liberar memoria [cite: 127]
-    await redisClient.set(`user:session:${userId}`, lobbyCode, { EX: 7200 });
+//Esto encapsula la lectura/escritura del JSON de la partida para que el Service quede limpio.
+export const GameRepository = {
+  async saveGameState(lobbyCode: string, state: any): Promise<void> {
+    // Expiración de 2 horas (7200s) para limpiar memoria automáticamente
+    await redisClient.set(`game:${lobbyCode}`, JSON.stringify(state), {
+      EX: 7200,
+    });
   },
 
-  async getActiveGame(userId: string): Promise<string | null> {
-    return await redisClient.get(`user:session:${userId}`);
+  async getGameState(lobbyCode: string): Promise<any | null> {
+    const data = await redisClient.get(`game:${lobbyCode}`);
+    return data ? JSON.parse(data) : null;
   },
 
-  async clearActiveGame(userId: string): Promise<void> {
-    await redisClient.del(`user:session:${userId}`);
-  }
+  async deleteGameState(lobbyCode: string): Promise<void> {
+    await redisClient.del(`game:${lobbyCode}`);
+  },
 };
-
-
-

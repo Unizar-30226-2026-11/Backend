@@ -108,7 +108,7 @@ export const LobbyService = {
 
   /**
    * Cambia el estado de la sala.
-  */
+   */
   updateStatus: async (code: string, status: 'playing' | 'finished') => {
     const lobby = await LobbyRedisRepository.findByCode(code);
     if (!lobby) throw new Error('LOBBY_NOT_FOUND');

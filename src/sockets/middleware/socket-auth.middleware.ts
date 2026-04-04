@@ -26,21 +26,20 @@ export const authenticateSocket = (socket: AuthenticatedSocket, next: (err?: Err
 
         const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
 
-        // Verificamos la firma y expiración del wsToken (2 min)
+        // Verificamos la firma y expiración del wsToken
         const decodedPayload = jwt.verify(token, secretKey) as {
             id: string;
             username: string;
-            lobbyCode: string; // <-- Viene del LobbyController
+            lobbyCode?: string | null; // <-- Hacemos que sea opcional
         };
 
-        // Guardamos los datos validados en el socket
         socket.user = {
             id: decodedPayload.id,
             username: decodedPayload.username,
         };
 
-        // ¡Clave de seguridad! El lobbyCode es inmutable y dictado por el token
-        socket.data.lobbyCode = decodedPayload.lobbyCode;
+        // Guardamos el lobbyCode (puede ser null si está en el menú principal)
+        socket.data.lobbyCode = decodedPayload.lobbyCode || undefined;
 
         next();
     } catch (error) {

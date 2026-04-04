@@ -1,13 +1,14 @@
-import { AuthService } from '../auth.service';
-import { prisma } from '../../infrastructure/prisma';
 import 'dotenv/config';
 
+import { prisma } from '../../infrastructure/prisma';
+import { AuthService } from '../auth.service';
+
 describe('AuthService - Pruebas Funciones', () => {
-  let email_test: string = 'correo_de_prueba@gmail.com';
+  const email_test: string = 'correo_de_prueba@gmail.com';
 
-  let username_test: string = 'usuario_de_prueba';
+  const username_test: string = 'usuario_de_prueba';
 
-  let password_test: string = 'test_password123';
+  const password_test: string = 'test_password123';
 
   beforeAll(async () => {
     // Limpieza Preventiva
@@ -16,7 +17,7 @@ describe('AuthService - Pruebas Funciones', () => {
     });
   });
 
-  beforeEach(() => { });
+  beforeEach(() => {});
 
   describe('Registrar Usuario. -> registerUser() ', () => {
     test('Registro Correcto:', async () => {
@@ -102,5 +103,5 @@ describe('AuthService - Pruebas Funciones', () => {
     });
   });
 
-  afterEach(() => { });
+  afterEach(() => {});
 });

@@ -46,8 +46,13 @@ export const SERVER_EVENTS = {
 
   // Chat
   CHAT_MESSAGE_RECEIVED: 'server:chat:message_received',
+
+  // NUEVOS EVENTOS DE RECONEXIÓN
+  SESSION_RECOVERED: 'server:session:recovered', // Partida en curso
+  LOBBY_RECOVERED: 'server:lobby:recovered',     // Estaba en la sala de espera
+  FORCE_DISCONNECT: 'server:force_disconnect',   // Multitab
 } as const;
 
 // Tipos extraídos de las constantes para usarlos en las interfaces
-export type ClientEvent = typeof CLIENT_EVENTS[keyof typeof CLIENT_EVENTS];
-export type ServerEvent = typeof SERVER_EVENTS[keyof typeof SERVER_EVENTS];
+export type ClientEvent = (typeof CLIENT_EVENTS)[keyof typeof CLIENT_EVENTS];
+export type ServerEvent = (typeof SERVER_EVENTS)[keyof typeof SERVER_EVENTS];

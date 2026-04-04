@@ -37,3 +37,13 @@ export interface ErrorPayload {
     message: string;
     code?: string;
 }
+
+export interface SessionRecoveredPayload {
+    lobbyCode: string;
+    state: any; // Aquí va el estado del juego (gameState)
+}
+
+export interface LobbyRecoveredPayload {
+    lobbyCode: string;
+    lobby: any; // Aquí va el estado del lobby
+}
