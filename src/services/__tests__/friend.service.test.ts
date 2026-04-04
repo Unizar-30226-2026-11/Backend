@@ -1,10 +1,12 @@
-import { FriendService } from '../friend.service';
-import { prisma } from '../../infrastructure/prisma';
-import { Friendship_States } from '@prisma/client';
 import 'dotenv/config';
 
+import { Friendship_States } from '@prisma/client';
+
+import { prisma } from '../../infrastructure/prisma';
+import { FriendService } from '../friend.service';
+
 describe('FriendService - Pruebas Funciones', () => {
-  let pending_relations = [];
+  const pending_relations = [];
 
   for (let i = 0; i < 10; i++) {
     pending_relations.push({
@@ -189,7 +191,7 @@ describe('FriendService - Pruebas Funciones', () => {
 
       test('Relación Existente:', async () => {
         for (let i = 0; i < 5; i++) {
-          let relation =
+          const relation =
             'req_' +
             relations_to_clean[i].id_user_1 +
             '_' +
@@ -223,7 +225,7 @@ describe('FriendService - Pruebas Funciones', () => {
     describe('Aceptar Peticion de Amistad -> acceptFriendRequest() ', () => {
       test('Petición Existente:', async () => {
         for (let i = 0; i < 5; i++) {
-          let relation =
+          const relation =
             'req_' +
             relations_to_clean[i].id_user_1 +
             '_' +
@@ -260,7 +262,7 @@ describe('FriendService - Pruebas Funciones', () => {
     describe('Rechazar Peticion de Amistad -> rejectFriendRequest() ', () => {
       test('Petición Existente:', async () => {
         for (let i = 5; i < 8; i++) {
-          let relation =
+          const relation =
             'req_' +
             relations_to_clean[i].id_user_1 +
             '_' +
