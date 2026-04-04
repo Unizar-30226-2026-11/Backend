@@ -4,45 +4,50 @@ import jwt from 'jsonwebtoken';
 
 // Extendemos la interfaz del Socket
 export interface AuthenticatedSocket extends Socket {
-    user?: {
-        id: string;
-        username: string;
-    };
-    // socket.data ya existe en Socket.io, pero tipamos lo que vamos a guardar
-    data: {
-        lobbyCode?: string;
-        [key: string]: any;
-    };
+  user?: {
+    id: string;
+    username: string;
+  };
+  // socket.data ya existe en Socket.io, pero tipamos lo que vamos a guardar
+  data: {
+    lobbyCode?: string;
+    [key: string]: any;
+  };
 }
 
-export const authenticateSocket = (socket: AuthenticatedSocket, next: (err?: Error) => void) => {
-    try {
-        // El cliente envía el wsToken en el handshake
-        const token = socket.handshake.auth?.token;
+export const authenticateSocket = (
+  socket: AuthenticatedSocket,
+  next: (err?: Error) => void,
+) => {
+  try {
+    // El cliente envía el wsToken en el handshake
+    const token = socket.handshake.auth?.token;
 
-        if (!token) {
-            return next(new Error('Autenticación denegada: wsToken ausente'));
-        }
-
-        const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
-
-        // Verificamos la firma y expiración del wsToken
-        const decodedPayload = jwt.verify(token, secretKey) as {
-            id: string;
-            username: string;
-            lobbyCode?: string | null; // <-- Hacemos que sea opcional
-        };
-
-        socket.user = {
-            id: decodedPayload.id,
-            username: decodedPayload.username,
-        };
-
-        // Guardamos el lobbyCode (puede ser null si está en el menú principal)
-        socket.data.lobbyCode = decodedPayload.lobbyCode || undefined;
-
-        next();
-    } catch (error) {
-        return next(new Error('Autenticación denegada: Ticket inválido o expirado'));
+    if (!token) {
+      return next(new Error('Autenticación denegada: wsToken ausente'));
     }
+
+    const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
+
+    // Verificamos la firma y expiración del wsToken
+    const decodedPayload = jwt.verify(token, secretKey) as {
+      id: string;
+      username: string;
+      lobbyCode?: string | null; // <-- Hacemos que sea opcional
+    };
+
+    socket.user = {
+      id: decodedPayload.id,
+      username: decodedPayload.username,
+    };
+
+    // Guardamos el lobbyCode (puede ser null si está en el menú principal)
+    socket.data.lobbyCode = decodedPayload.lobbyCode || undefined;
+
+    next();
+  } catch (error) {
+    return next(
+      new Error('Autenticación denegada: Ticket inválido o expirado'),
+    );
+  }
 };

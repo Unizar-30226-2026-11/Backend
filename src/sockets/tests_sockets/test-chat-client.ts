@@ -17,7 +17,8 @@ import { io, Socket } from 'socket.io-client';
 const BACKEND_URL = 'http://localhost:3000'; // El puerto donde corre tu backend
 const LOBBY_CODE = 'A1B2'; // Un código de sala de 4 letras que exista
 // IMPORTANTE: Pon aquí un token JWT real devuelto por tu endpoint de login
-const JWT_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InVfMTYiLCJ1c2VybmFtZSI6Imp1Z2Fkb3I0MiIsImlhdCI6MTc3NDcwMDk2NiwiZXhwIjoxNzc0Nzg3MzY2fQ.0QlKCoqNz8bWDos8pOY-pd-lEi2tcuYxhvjyUt7nCwc';
+const JWT_TOKEN =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InVfMTYiLCJ1c2VybmFtZSI6Imp1Z2Fkb3I0MiIsImlhdCI6MTc3NDcwMDk2NiwiZXhwIjoxNzc0Nzg3MzY2fQ.0QlKCoqNz8bWDos8pOY-pd-lEi2tcuYxhvjyUt7nCwc';
 
 console.log('🔄 Intentando conectar al servidor de Sockets...');
 
@@ -73,7 +74,9 @@ socket.on('server:error', (error: any) => {
 
 socket.on('connect_error', (err) => {
   console.error('\n[ERROR DE CONEXIÓN]:', err.message);
-  console.error('Asegúrate de que el servidor está encendido y el token es válido.');
+  console.error(
+    'Asegúrate de que el servidor está encendido y el token es válido.',
+  );
   process.exit(1);
 });
 

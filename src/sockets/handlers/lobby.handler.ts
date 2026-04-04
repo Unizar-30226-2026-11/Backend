@@ -7,8 +7,10 @@ import { GameRedisRepository } from '../../repositories/game.repository';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 
-
-export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) => {
+export const registerLobbyHandlers = (
+  io: Server,
+  socket: AuthenticatedSocket,
+) => {
   // Extraemos los datos 100% confiables del middleware
   const lobbyCode = socket.data.lobbyCode;
   const userId = socket.user?.id;
@@ -23,7 +25,9 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
 
       // Le unimos a la sala de Socket.io (Room)
       socket.join(lobbyCode);
-      console.log(`[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`);
+      console.log(
+        `[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`,
+      );
 
       // Emitimos el nuevo estado a TODOS en la sala para que actualicen sus pantallas
       io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, updatedLobby);
@@ -41,17 +45,24 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
 
       // Validamos quién es el host
       if (lobby.hostId !== userId) {
-        socket.emit(SERVER_EVENTS.ERROR, { message: 'Solo el líder puede empezar la partida.' });
+        socket.emit(SERVER_EVENTS.ERROR, {
+          message: 'Solo el líder puede empezar la partida.',
+        });
         return;
       }
 
       // Validamos el cupo mínimo antes de llamar al motor (Ej. Dixit requiere 4)
       if (lobby.players.length < LOBBY_MIN_PLAYERS) {
-        socket.emit(SERVER_EVENTS.ERROR, { message: 'Se requieren al menos ${LOBBY_MIN_PLAYERS} jugadores para iniciar.' });
+        socket.emit(SERVER_EVENTS.ERROR, {
+          message:
+            'Se requieren al menos ${LOBBY_MIN_PLAYERS} jugadores para iniciar.',
+        });
         return;
       }
 
-      console.log(`[Lobby] Partida iniciada en el lobby ${lobbyCode} por el host ${userId}`);
+      console.log(
+        `[Lobby] Partida iniciada en el lobby ${lobbyCode} por el host ${userId}`,
+      );
 
       //Pasamos los datos del lobby a la partida
       const gameService = new GameService(GameRedisRepository);
@@ -64,7 +75,6 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
 
       //Avisamos a los clientes para que cambien su pantalla al tablero de juego
       io.to(lobbyCode).emit(SOCKET_EVENTS.GAME_STARTED, { lobbyCode });
-
     } catch (error: any) {
       socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
     }
@@ -81,7 +91,10 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
       // Comprobamos si la sala sigue viva para avisar a los demás
       const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
       if (remainingLobby) {
-        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, remainingLobby);
+        io.to(lobbyCode).emit(
+          SERVER_EVENTS.LOBBY_STATE_UPDATED,
+          remainingLobby,
+        );
       }
     } catch (error) {
       console.error(`Error procesando desconexión de ${userId}:`, error);
@@ -91,7 +104,9 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
   //Cuando el usuario pulsa el botón de salir voluntariamente
   socket.on(CLIENT_EVENTS.LOBBY_LEAVE, async () => {
     try {
-      console.log(`[Lobby] ${socket.user?.username} ha salido voluntariamente del lobby ${lobbyCode}`);
+      console.log(
+        `[Lobby] ${socket.user?.username} ha salido voluntariamente del lobby ${lobbyCode}`,
+      );
 
       // 1. Lo sacamos de Redis
       await LobbyService.leaveLobby(lobbyCode, userId);
@@ -105,11 +120,14 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
       // 4. Avisamos al resto de jugadores que quedan en la sala
       const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
       if (remainingLobby) {
-        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, { lobby: remainingLobby });
+        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, {
+          lobby: remainingLobby,
+        });
       }
-
     } catch (error: any) {
-      socket.emit(SERVER_EVENTS.ERROR, { message: 'Error al salir del lobby: ' + error.message });
+      socket.emit(SERVER_EVENTS.ERROR, {
+        message: 'Error al salir del lobby: ' + error.message,
+      });
     }
   });
 };

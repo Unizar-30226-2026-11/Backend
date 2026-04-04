@@ -49,8 +49,8 @@ export const SERVER_EVENTS = {
 
   // NUEVOS EVENTOS DE RECONEXIÓN
   SESSION_RECOVERED: 'server:session:recovered', // Partida en curso
-  LOBBY_RECOVERED: 'server:lobby:recovered',     // Estaba en la sala de espera
-  FORCE_DISCONNECT: 'server:force_disconnect',   // Multitab
+  LOBBY_RECOVERED: 'server:lobby:recovered', // Estaba en la sala de espera
+  FORCE_DISCONNECT: 'server:force_disconnect', // Multitab
 } as const;
 
 // Tipos extraídos de las constantes para usarlos en las interfaces

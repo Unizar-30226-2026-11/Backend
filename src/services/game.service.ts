@@ -29,7 +29,7 @@ export interface IGameEngine {
 }
 
 export class GameService {
-  constructor(private readonly redisRepo: typeof GameRedisRepository) { }
+  constructor(private readonly redisRepo: typeof GameRedisRepository) {}
 
   /**
    * INICIALIZA LA PARTIDA DESDE EL LOBBY.
@@ -74,11 +74,10 @@ export class GameService {
       const missingAmount = TARGET_DECK_SIZE - centralDeck.length;
       const fallbackCards = await prisma.cards.findMany({
         take: missingAmount,
-        select: { id_card: true }
+        select: { id_card: true },
       });
-      centralDeck.push(...fallbackCards.map(c => c.id_card));
-    }
-    else if (centralDeck.length > TARGET_DECK_SIZE) {
+      centralDeck.push(...fallbackCards.map((c) => c.id_card));
+    } else if (centralDeck.length > TARGET_DECK_SIZE) {
       centralDeck = this.shuffleArray(centralDeck); // Mezclamos antes de cortar para que sea justo
       centralDeck = centralDeck.slice(0, TARGET_DECK_SIZE); // Nos quedamos exactamente con 84
     }
@@ -268,7 +267,7 @@ export class GameService {
         starId: `star_${Date.now()}`,
         path: movement.path,
         duration: movement.duration,
-      }
+      },
     });
 
     // Si nadie la pulsa, se desactiva al terminar la duración
@@ -277,8 +276,8 @@ export class GameService {
       { gameId },
       {
         delay: movement.duration,
-        removeOnComplete: true
-      }
+        removeOnComplete: true,
+      },
     );
 
     return emissions;
@@ -290,7 +289,10 @@ export class GameService {
    */
   public _deferredEmitCallback?: (emission: SocketEmission) => void;
 
-  public async claimStar(gameId: string, playerId: string): Promise<SocketEmission[]> {
+  public async claimStar(
+    gameId: string,
+    playerId: string,
+  ): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(gameId);
 
     if (!state || !state.isStarActive || Date.now() > state.starExpiresAt) {
@@ -306,8 +308,8 @@ export class GameService {
       {
         room: gameId,
         event: 'star_claimed',
-        data: { winnerId: playerId, newScores: state.scores }
-      }
+        data: { winnerId: playerId, newScores: state.scores },
+      },
     ];
   }
 
@@ -330,7 +332,7 @@ export class GameService {
     switch (startSide) {
       case 'LEFT':
         start = { x: -10, y: Math.random() * 100 }; // Empieza fuera a la izquierda
-        end = { x: 110, y: Math.random() * 100 };   // Muere fuera a la derecha
+        end = { x: 110, y: Math.random() * 100 }; // Muere fuera a la derecha
         break;
       case 'RIGHT':
         start = { x: 110, y: Math.random() * 100 };
@@ -352,22 +354,22 @@ export class GameService {
     return {
       path: { start, end },
       duration,
-      side: startSide // Enviamos el lado para que el frontend rote el gráfico
+      side: startSide, // Enviamos el lado para que el frontend rote el gráfico
     };
   }
-
 
   //
   //  CASILLAS DEL TABLERO
   //
 
-
-
   /**
    * Escanea los movimientos de los jugadores para activar casillas especiales.
    * Devuelve las emisiones generadas, en lugar de emitir directamente.
    */
-  private async checkSpecialSquares(state: GameState, previousScores: Record<string, number>): Promise<SocketEmission[]> {
+  private async checkSpecialSquares(
+    state: GameState,
+    previousScores: Record<string, number>,
+  ): Promise<SocketEmission[]> {
     const { SPECIAL_SQUARES, CHECKPOINT_65 } = BOARD_CONFIG;
     const emissions: SocketEmission[] = [];
 
@@ -383,15 +385,43 @@ export class GameService {
 
       // CASILLAS IMPARES
       if (currentPos === SPECIAL_SQUARES.ODD_SQUARE_1)
-        emissions.push(...this.applyStepEffect(state, pId, 'ODD', SPECIAL_SQUARES.ODD_SQUARE_1));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'ODD',
+            SPECIAL_SQUARES.ODD_SQUARE_1,
+          ),
+        );
       if (currentPos === SPECIAL_SQUARES.ODD_SQUARE_2)
-        emissions.push(...this.applyStepEffect(state, pId, 'ODD', SPECIAL_SQUARES.ODD_SQUARE_2));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'ODD',
+            SPECIAL_SQUARES.ODD_SQUARE_2,
+          ),
+        );
 
       // CASILLAS PARES
       if (currentPos === SPECIAL_SQUARES.EVEN_SQUARE_1)
-        emissions.push(...this.applyStepEffect(state, pId, 'EVEN', SPECIAL_SQUARES.EVEN_SQUARE_1));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'EVEN',
+            SPECIAL_SQUARES.EVEN_SQUARE_1,
+          ),
+        );
       if (currentPos === SPECIAL_SQUARES.EVEN_SQUARE_2)
-        emissions.push(...this.applyStepEffect(state, pId, 'EVEN', SPECIAL_SQUARES.EVEN_SQUARE_2));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'EVEN',
+            SPECIAL_SQUARES.EVEN_SQUARE_2,
+          ),
+        );
 
       // BONUS ALEATORIO
       if (
@@ -404,7 +434,10 @@ export class GameService {
       }
 
       // SHUFFLE
-      if (currentPos === SPECIAL_SQUARES.SHUFFLE_1 || currentPos === SPECIAL_SQUARES.SHUFFLE_2) {
+      if (
+        currentPos === SPECIAL_SQUARES.SHUFFLE_1 ||
+        currentPos === SPECIAL_SQUARES.SHUFFLE_2
+      ) {
         emissions.push(...this.applyShuffleEffect(state, pId));
       }
 
@@ -414,11 +447,14 @@ export class GameService {
       }
 
       // DUELO
-      if (currentPos === SPECIAL_SQUARES.BET_DUEL_1 || currentPos === SPECIAL_SQUARES.BET_DUEL_2) {
+      if (
+        currentPos === SPECIAL_SQUARES.BET_DUEL_1 ||
+        currentPos === SPECIAL_SQUARES.BET_DUEL_2
+      ) {
         emissions.push({
           room: pId,
           event: 'server:game:duel_available',
-          data: { challengerId: pId }
+          data: { challengerId: pId },
         });
       }
     }
@@ -429,7 +465,12 @@ export class GameService {
   /**
    * Efecto de Impares y Pares: Solo tiene en cuenta la primera vez de cada jugador.
    */
-  private applyStepEffect(state: GameState, pId: string, type: 'ODD' | 'EVEN', squareId: number): SocketEmission[] {
+  private applyStepEffect(
+    state: GameState,
+    pId: string,
+    type: 'ODD' | 'EVEN',
+    squareId: number,
+  ): SocketEmission[] {
     state.boardRegistry[squareId] = state.boardRegistry[squareId] || [];
 
     if (state.boardRegistry[squareId].includes(pId)) return [];
@@ -441,37 +482,43 @@ export class GameService {
     let isPositive: boolean;
 
     if (type === 'ODD') {
-      isPositive = (order % 2 === 1);
+      isPositive = order % 2 === 1;
     } else {
-      isPositive = (order % 2 === 0);
+      isPositive = order % 2 === 0;
     }
 
     const points = isPositive ? magnitude : -magnitude;
     state.scores[pId] = Math.max(0, state.scores[pId] + points);
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: { pId, effect: type, points, squareId }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { pId, effect: type, points, squareId },
+      },
+    ];
   }
 
   /**
    * Efecto de Equilibrio: Avanza un punto por puesto actual.
    */
   private applyEquilibriumEffect(state: GameState): SocketEmission[] {
-    const ranking = Object.keys(state.scores).sort((a, b) => state.scores[b] - state.scores[a]);
+    const ranking = Object.keys(state.scores).sort(
+      (a, b) => state.scores[b] - state.scores[a],
+    );
 
     ranking.forEach((pId, index) => {
       const position = index + 1;
       state.scores[pId] += position; // Gana tantos puntos como su puesto
     });
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: { effect: 'EQUILIBRIUM' }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { effect: 'EQUILIBRIUM' },
+      },
+    ];
   }
 
   /**
@@ -502,7 +549,6 @@ export class GameService {
 
     // Robar cartas una a una asegurando que el mazo nunca se acabe
     for (let i = 0; i < handSize; i++) {
-
       // Si se acaba el monton del mazo rebarajamos las cartas ya usadas
       if (state.centralDeck.length === 0) {
         if (state.discardPile.length === 0) break;
@@ -514,7 +560,7 @@ export class GameService {
         emissions.push({
           room: state.lobbyCode,
           event: 'server:game:deck_reshuffled',
-          data: {}
+          data: {},
         });
       }
 
@@ -529,13 +575,13 @@ export class GameService {
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: newHand }
+      data: { hand: newHand },
     });
 
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:special_event',
-      data: { pId, effect: 'SHUFFLE' }
+      data: { pId, effect: 'SHUFFLE' },
     });
 
     return emissions;
@@ -545,25 +591,23 @@ export class GameService {
    * Efecto Bonus Aleatorio: Modifica el límite de cartas durante 2 rondas.
    */
   private applyRandomBonus(state: GameState, pId: string): SocketEmission[] {
-
-
     if (state.mode === 'STELLA') {
-
       // Definir qué hace el Bonus en Stella.
 
-      return [{
-        room: state.lobbyCode,
-        event: 'server:game:special_event',
-        data: {
-          pId,
-          effect: 'STELLA_BONUS_PLACEHOLDER',
-          message: '¡Casilla Bonus de Stella en construcción!'
-        }
-      }];
+      return [
+        {
+          room: state.lobbyCode,
+          event: 'server:game:special_event',
+          data: {
+            pId,
+            effect: 'STELLA_BONUS_PLACEHOLDER',
+            message: '¡Casilla Bonus de Stella en construcción!',
+          },
+        },
+      ];
     }
 
-
-    const amount = (Math.floor(Math.random() * 3) + 1);
+    const amount = Math.floor(Math.random() * 3) + 1;
     const isPositive = Math.random() > 0.5;
     const finalAmount = isPositive ? amount : -amount;
 
@@ -572,13 +616,15 @@ export class GameService {
     state.activeModifiers[pId] = {
       type: 'HAND_LIMIT',
       value: finalAmount,
-      turnsLeft: 2 // Asegúrate de restar 1 a esto en tu función handleNextRound
+      turnsLeft: 2, // Asegúrate de restar 1 a esto en tu función handleNextRound
     };
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: { pId, effect: 'CARD_BONUS', amount: finalAmount }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { pId, effect: 'CARD_BONUS', amount: finalAmount },
+      },
+    ];
   }
 }
