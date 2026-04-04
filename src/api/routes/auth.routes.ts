@@ -1,8 +1,8 @@
 // routes/auth.routes.ts
 import { Router } from 'express';
 
-import { login, register } from '../controllers';
-
+import { login, register, refresh } from '../controllers/auth.controller'; // AÑADIDO refresh
+import { authenticate } from '../middlewares/auth.middleware'; // AÑADIDO
 const router = Router();
 
 /**
@@ -138,5 +138,21 @@ router.post('/register', register);
  *               $ref: '#/components/schemas/Error'
  */
 router.post('/login', login);
+
+
+/**
+ * @swagger
+ * /api/auth/refresh:
+ * post:
+ * summary: Refresca el token y comprueba si el usuario tiene una partida activa
+ * tags: [Auth]
+ * security:
+ * - bearerAuth: []
+ * responses:
+ * 200:
+ * description: Token refrescado con el estado de la partida
+ */
+router.post('/refresh', authenticate, refresh)
+
 
 export default router;

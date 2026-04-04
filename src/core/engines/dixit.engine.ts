@@ -1,3 +1,4 @@
+import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import {
   ActionChangeMode,
   ActionDisconnect,
@@ -78,8 +79,10 @@ export class DixitEngine {
     const allCardIds: number[] = action.payload.deck;
     const players = state.players || []; // Asumimos que los jugadores ya están en el lobby
 
-    if (players.length < 4) {
-      throw new Error('Se requieren al menos 4 jugadores para iniciar.');
+    if (players.length < LOBBY_MIN_PLAYERS) {
+      throw new Error(
+        `Se requieren al menos ${LOBBY_MIN_PLAYERS} jugadores para iniciar.`,
+      );
     }
     if (!allCardIds || allCardIds.length < players.length * 6) {
       throw new Error('Mazo insuficiente para la cantidad de jugadores.');
@@ -107,8 +110,7 @@ export class DixitEngine {
       state.hands[pId] = state.centralDeck.splice(-6);
     }
 
-    // Por defecto, arrancamos en modo STANDARD (se podría parametrizar en el payload)
-    state.mode = 'STANDARD';
+    state.mode = state.mode || 'STANDARD';
 
     // Delegamos la creación de la `currentRound` a la estrategia inicial
     const readyState = state as GameState;

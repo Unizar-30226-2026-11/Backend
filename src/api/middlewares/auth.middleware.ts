@@ -39,6 +39,7 @@ export const authenticate = (
     req.user = {
       id: decodedPayload.id,
       username: decodedPayload.username,
+      activeGameId: decodedPayload.activeGameId || null, //ID de la partida si está jugando
     };
 
     // Continuar con el siguiente middleware o controlador

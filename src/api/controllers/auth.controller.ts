@@ -2,6 +2,8 @@
 import { Request, Response } from 'express';
 
 import { AuthService } from '../../services';
+import { AuthenticatedRequest } from '../../shared/types/auth.types';
+
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -75,5 +77,31 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({
       message: 'Error interno del servidor durante el inicio de sesión.',
     });
+  }
+};
+
+
+// Nuevo controlador para la recarga de página
+export const refresh = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Usuario no autenticado.' });
+      return;
+    }
+
+    const { id, username } = req.user;
+
+    // Generar un nuevo token verificando el estado en Redis
+    const refreshData = await AuthService.refreshToken(id, username);
+
+    res.status(200).json({
+      message: 'Sesión refrescada correctamente.',
+      token: refreshData.token,
+      activeGameId: refreshData.activeGameId,
+      user: { id, username }
+    });
+  } catch (error) {
+    console.error('Error in refresh:', error);
+    res.status(500).json({ message: 'Error interno al refrescar la sesión.' });
   }
 };

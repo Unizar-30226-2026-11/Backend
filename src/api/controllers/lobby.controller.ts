@@ -1,5 +1,6 @@
 // controllers/lobby.controller.ts
 import { Response } from 'express';
+import jwt from 'jsonwebtoken';
 
 import { LobbyService } from '../../services';
 import { AuthenticatedRequest } from '../../shared/types';
@@ -56,7 +57,7 @@ export const getLobbyByCode = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { lobbyCode } = req.params;
+    const { lobbyCode } = req.params as { lobbyCode: string };
 
     const lobby = await LobbyService.getLobbyByCode(lobbyCode);
 
@@ -65,15 +66,6 @@ export const getLobbyByCode = async (
       res
         .status(404)
         .json({ message: 'La sala solicitada no existe o ya ha terminado.' });
-      return;
-    }
-
-    // Verificar si la sala ya está llena
-    if (lobby.players.length >= lobby.maxPlayers) {
-      res.status(403).json({
-        message: 'La sala está llena. No se pueden unir más jugadores.',
-        lobbyCode: lobby.lobbyCode,
-      });
       return;
     }
 
@@ -96,7 +88,7 @@ export const joinLobby = async (
 ): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { lobbyCode } = req.params;
+    const { lobbyCode } = req.params as { lobbyCode: string };
 
     // 1. Obtener la sala para validar que existe
     const lobby = await LobbyService.getLobbyByCode(lobbyCode);
@@ -109,7 +101,9 @@ export const joinLobby = async (
     }
 
     // 2. Verificar si la sala ya está llena
-    if (lobby.players.length >= lobby.maxPlayers) {
+    const isAlreadyInLobby = lobby.players.includes(userId);
+
+    if (lobby.players.length >= lobby.maxPlayers && !isAlreadyInLobby) {
       res.status(403).json({
         message: 'La sala está llena. No se pueden unir más jugadores.',
       });

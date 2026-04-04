@@ -23,6 +23,11 @@ const gameStateSchema = new Schema('game_state', {
     phase: { type: 'string' },
     status: { type: 'string' },
 
+    // Variables vitales para la sincronización tras reconexión
+    turnOf: { type: 'string' },      // ID del usuario que tiene que mover
+    timer: { type: 'number' },       // Segundos restantes del turno actual
+
+
     // Guardamos como strings para serializar los Record<> y tipos complejos de las interfaces
     players: { type: 'string[]' },
     disconnectedPlayers: { type: 'string[]' },

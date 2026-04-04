@@ -21,6 +21,7 @@ export const setupSockets = (io: Server) => {
         // Unir al usuario a su sala personal usando su ID de base de datos
         if (socket.user?.id) {
             socket.join(socket.user.id);
+            console.log(`${socket.user?.username} se ha unido a su sala personal: ${socket.user.id}`);
         }
 
         //El cliente pide unirse a la sala de Socket.io correspondiente a su partida (lobbyCode) que corresponde con Redis

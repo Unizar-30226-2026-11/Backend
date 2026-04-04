@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
+import { SessionRepository } from '../infrastructure/redis';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -67,19 +68,40 @@ export const AuthService = {
     }
 
     // Generar el token JWT
+    const userId = `u_${user.id_user}`;
+
+    // AÑADIDO: Consultar a Redis si el usuario tiene una partida activa
+    const activeGameId = await SessionRepository.getActiveGame(userId);
+
     const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
     const token = jwt.sign(
-      { id: `u_${user.id_user}`, username: user.username },
+      { id: userId, username: user.username, activeGameId }, // AÑADIDO activeGameId al payload
       secretKey,
       { expiresIn: '24h' },
     );
 
     return {
       token,
-      user: {
-        id: `u_${user.id_user}`,
-        username: user.username,
-      },
+      user: { id: userId, username: user.username },
+      activeGameId // Devolvemos también para la respuesta JSON
     };
   },
+
+
+  // Función para refrescar el token al recargar la página
+  refreshToken: async (userId: string, username: string) => {
+    // 1. Consultar a Redis si está en partida
+    const activeGameId = await SessionRepository.getActiveGame(userId);
+
+    // 2. Generar un nuevo token fresco con la información actualizada
+    const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
+    const token = jwt.sign(
+      { id: userId, username, activeGameId },
+      secretKey,
+      { expiresIn: '24h' },
+    );
+
+    return { token, activeGameId };
+  }
+
 };

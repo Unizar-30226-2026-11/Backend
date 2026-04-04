@@ -16,7 +16,7 @@ describe('AuthService - Pruebas Funciones', () => {
     });
   });
 
-  beforeEach(() => {});
+  beforeEach(() => { });
 
   describe('Registrar Usuario. -> registerUser() ', () => {
     test('Registro Correcto:', async () => {
@@ -102,5 +102,5 @@ describe('AuthService - Pruebas Funciones', () => {
     });
   });
 
-  afterEach(() => {});
+  afterEach(() => { });
 });
