@@ -572,4 +572,92 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         });
     });
 
+    // ==========================================
+    // REDES DE SEGURIDAD (DESCONEXIÓN Y TIMEOUTS)
+    // ==========================================
+    describe('Redes de Seguridad (Desconexión y Watchdog)', () => {
+
+        test('Debe dar la victoria del Duelo (+2/-2) si el oponente tira del cable', async () => {
+            const mockState = {
+                lobbyCode: 'ROOM-1',
+                isMinigameActive: true,
+                activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+                scores: { p1: 10, p2: 10 }
+            } as unknown as GameState;
+            mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+            // p2 se desconecta en mitad del duelo
+            const action = { type: 'DISCONNECT_PLAYER', playerId: 'p2' } as any;
+            const emissions = await gameService.handleAction('ROOM-1', action);
+
+            // Verificamos que p1 gana instantáneamente por abandono de p2
+            expect(mockState.scores['p1']).toBe(12); // 10 + 2
+            expect(mockState.scores['p2']).toBe(8);  // 10 - 2
+            expect(mockState.isMinigameActive).toBe(false); // La partida se desbloquea
+
+            const specialEvent = emissions.find(e => e.event === 'server:game:special_event');
+            expect(specialEvent).toBeDefined();
+        });
+
+        test('Debe dar la victoria del Empate (+1/0) si el oponente tira del cable', async () => {
+            const mockState = {
+                lobbyCode: 'ROOM-1',
+                isMinigameActive: true,
+                activeConflict: { player1: 'p1', player2: 'p2', isDuel: false },
+                scores: { p1: 10, p2: 10 }
+            } as unknown as GameState;
+            mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+            // En este caso, p1 pierde la conexión
+            const action = { type: 'DISCONNECT_PLAYER', playerId: 'p1' } as any;
+            await gameService.handleAction('ROOM-1', action);
+
+            // Verificamos que p2 gana instantáneamente
+            expect(mockState.scores['p2']).toBe(11); // 10 + 1
+            expect(mockState.scores['p1']).toBe(10); // 10 + 0
+            expect(mockState.isMinigameActive).toBe(false);
+        });
+
+        test('Debe ignorar la desconexión (y mantener el bloqueo) si se cae un espectador', async () => {
+            const mockState = {
+                lobbyCode: 'ROOM-1',
+                isMinigameActive: true,
+                activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+                scores: { p1: 10, p2: 10, p3: 5 } // p3 está mirando
+            } as unknown as GameState;
+            mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+            // Se desconecta p3 (que NO está en el duelo)
+            const action = { type: 'DISCONNECT_PLAYER', playerId: 'p3' } as any;
+            
+            // Debe rebotar la acción con el mensaje de bloqueo, sin afectar a los puntos
+            await expect(gameService.handleAction('ROOM-1', action))
+                .rejects.toThrow('Hay un conflicto en curso. Espera a que termine el minijuego.');
+        });
+
+        test('forceUnlockMinigame debe cancelar el duelo sin dar puntos si el Frontend falla', async () => {
+            const mockState = {
+                lobbyCode: 'ROOM-1',
+                isMinigameActive: true,
+                activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+                scores: { p1: 10, p2: 10 } // Puntuaciones iniciales
+            } as unknown as GameState;
+            mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+            // Simulamos que BullMQ llama a la función de rescate a los 20 segundos
+            const emissions = await gameService.forceUnlockMinigame('ROOM-1');
+
+            // Verificamos que el estado se limpia por la fuerza
+            expect(mockState.isMinigameActive).toBe(false);
+            expect(mockState.activeConflict).toBeNull();
+            
+            // Verificamos que nadie ha ganado ni perdido puntos
+            expect(mockState.scores['p1']).toBe(10);
+            expect(mockState.scores['p2']).toBe(10);
+
+            // Verificamos la emisión de cancelación
+            const cancelEmission = emissions.find(e => e.event === 'server:game:special_event');
+            expect((cancelEmission?.data as any).effect).toBe('CONFLICT_CANCELLED');
+        });
+    });
 });

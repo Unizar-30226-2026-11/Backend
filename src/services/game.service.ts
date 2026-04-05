@@ -151,6 +151,23 @@ export class GameService {
     }
 
     // ==========================================
+    // SISTEMA DE DESCONEXIÓN DURANTE MINIJUEGO
+    // ==========================================
+    if (action.type === 'DISCONNECT_PLAYER' && currentState.isMinigameActive && currentState.activeConflict) {
+      const { player1, player2, isDuel } = currentState.activeConflict;
+      const disconnectedId = action.playerId;
+
+      // Si el que se ha caído es uno de los peleadores
+      if (disconnectedId === player1 || disconnectedId === player2) {
+        
+        const winnerId = disconnectedId === player1 ? player2 : player1;
+        
+        // Usamos la función que ya tenemos para resolverlo, dándole la victoria al que se quedó
+        return this.submitConflictResult(gameId, winnerId, disconnectedId, isDuel);
+      }
+    }
+
+    // ==========================================
     // SISTEMA DE BLOQUEO Y DUELOS
     // ==========================================
     if (currentState.isMinigameActive) {
@@ -161,7 +178,20 @@ export class GameService {
     if (action.type === 'RESOLVE_DUEL') {
       const targetId = (action as any).payload.targetId;
       currentState.isMinigameActive = true;
+      currentState.activeConflict = { 
+          player1: action.playerId, 
+          player2: targetId, 
+          isDuel: true 
+      };
       await this.redisRepo.saveGame(gameId, currentState);
+
+      // Programamos la cancelación automática por si el frontend falla.
+      // Le damos los 15s que dura el juego + 5s de margen de red.
+      await gameTimeoutsQueue.add(
+        'minigame-fallback',
+        { gameId: currentState.lobbyCode },
+        { delay: (20 * 1000), jobId: `conflict-${currentState.lobbyCode}-${Date.now()}`, removeOnComplete: true }
+      );
 
       return [{
         room: currentState.lobbyCode,
@@ -446,7 +476,7 @@ export class GameService {
       }
 
       // MINIJUEGOS DESEMPATE
-      const conflictEmissions = this.checkConflictMinigame(state, pId);
+      const conflictEmissions = await this.checkConflictMinigame(state, pId);
       emissions.push(...conflictEmissions);
     }
 
@@ -645,7 +675,7 @@ export class GameService {
    * Detecta si el jugador ha aterrizado en la misma puntuación que otro
    * y dispara el evento de minijuego 1vs1.
    */
-  private checkConflictMinigame(state: GameState, movingPlayerId: string): SocketEmission[] {
+  private async checkConflictMinigame(state: GameState, movingPlayerId: string): Promise<SocketEmission[]> {
     const currentScore = state.scores[movingPlayerId];
     
     // Ignorar la posición 0 (inicio) para no saturar al empezar
@@ -665,6 +695,20 @@ export class GameService {
     // BLOQUEAMOS LA PARTIDA
     state.isMinigameActive = true;
     
+    state.activeConflict = { 
+      player1: movingPlayerId, 
+      player2: rivalId, 
+      isDuel: false 
+    };
+
+    // Programamos la cancelación automática por si el frontend falla.
+    // Le damos los 15s que dura el juego + 5s de margen de red.
+    await gameTimeoutsQueue.add(
+      'minigame-fallback',
+      { gameId: state.lobbyCode },
+      { delay: (20 * 1000), jobId: `conflict-${state.lobbyCode}-${Date.now()}`, removeOnComplete: true }
+    );
+
     return [{
       room: state.lobbyCode,
       event: 'server:game:minigame_start',
@@ -704,6 +748,7 @@ export class GameService {
 
     // 2. Liberamos la partida para que continúe
     state.isMinigameActive = false;
+    state.activeConflict = null;
     await this.redisRepo.saveGame(gameId, state);
 
     // 3. Preparamos las notificaciones
@@ -727,6 +772,35 @@ export class GameService {
     });
 
     return emissions;
+  }
+
+  /**
+   * Llamado por el Worker de BullMQ si el Frontend nunca responde al minijuego.
+   * Cancela el conflicto sin repartir puntos para evitar que la partida muera.
+   */
+  public async forceUnlockMinigame(gameId: string): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(gameId);
+    
+    // Si ya no está activo, el frontend respondió a tiempo
+    if (!state || !state.isMinigameActive) return [];
+
+    // Limpiamos los bloqueos forzosamente
+    state.isMinigameActive = false;
+    state.activeConflict = null;
+    await this.redisRepo.saveGame(gameId, state);
+
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { effect: 'CONFLICT_CANCELLED', message: 'El minijuego ha sido cancelado por falta de respuesta.' }
+      },
+      {
+        room: state.lobbyCode,
+        event: 'server:game:state_updated',
+        data: { state: this.maskPrivateState(state), lastAction: 'MINIGAME_TIMEOUT' }
+      }
+    ];
   }
 }
 

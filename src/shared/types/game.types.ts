@@ -140,10 +140,13 @@ interface BaseGameState {
   /** Timestamp en milisegundos de cuándo debe desaparecer la estrella */
   starExpiresAt: number;
 
-  /**Indica si hay un minijuego de conflicto activo. 
-   * Bloquea el procesamiento de acciones normales.
+  /** Indica si hay un minijuego de conflicto activo. 
+   *  Bloquea el procesamiento de acciones normales.
    */
   isMinigameActive: boolean;
+
+  // Guardamos quiénes están peleando para saber si uno huye
+  activeConflict?: { player1: string; player2: string; isDuel: boolean } | null;
 }
 
 /**
