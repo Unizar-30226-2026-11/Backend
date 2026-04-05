@@ -49,5 +49,5 @@ export const SERVER_EVENTS = {
 } as const;
 
 // Tipos extraídos de las constantes para usarlos en las interfaces
-export type ClientEvent = typeof CLIENT_EVENTS[keyof typeof CLIENT_EVENTS];
-export type ServerEvent = typeof SERVER_EVENTS[keyof typeof SERVER_EVENTS];
+export type ClientEvent = (typeof CLIENT_EVENTS)[keyof typeof CLIENT_EVENTS];
+export type ServerEvent = (typeof SERVER_EVENTS)[keyof typeof SERVER_EVENTS];
