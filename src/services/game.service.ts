@@ -97,6 +97,8 @@ export class GameService {
       centralDeck,
       discardPile: [],
       phase: 'LOBBY',
+      isStarActive: false,     
+      isMinigameActive: false,
     };
 
     players.forEach((p: string) => {
@@ -146,6 +148,32 @@ export class GameService {
     const currentState = await this.redisRepo.getGame(gameId);
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
+    }
+
+    // ==========================================
+    // SISTEMA DE BLOQUEO Y DUELOS
+    // ==========================================
+    if (currentState.isMinigameActive) {
+      throw new Error('Hay un conflicto en curso. Espera a que termine el minijuego.');
+    }
+
+    // Si la acción es iniciar el duelo, lo disparamos sin pasar por el motor
+    if (action.type === 'RESOLVE_DUEL') {
+      const targetId = (action as any).payload.targetId;
+      currentState.isMinigameActive = true;
+      await this.redisRepo.saveGame(gameId, currentState);
+
+      return [{
+        room: currentState.lobbyCode,
+        event: 'server:game:minigame_start',
+        data: {
+          player1: action.playerId,
+          player2: targetId,
+          type: Math.floor(Math.random() * 3), // Int 0-2
+          duration: 15000,
+          isDuel: true // Bandera clave para saber cómo puntuar al final
+        }
+      }];
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
@@ -359,8 +387,13 @@ export class GameService {
     // Nos aseguramos de tener el registro global inicializado en el estado
     if (!state.boardRegistry) state.boardRegistry = {};
 
+    // Capturamos las posiciones de llegada antes de aplicar efectos
+    // Esto evita que si un jugador empuja a otro a una casilla especial, se activen en cadena.
+    // Detectado a través de los tests.
+    const arrivalScores = { ...state.scores };
+
     for (const pId of state.players) {
-      const currentPos = state.scores[pId];
+      const currentPos = arrivalScores[pId]
       const oldPos = previousScores[pId] || 0;
 
       // Si no se movió, ignoramos
@@ -390,7 +423,12 @@ export class GameService {
 
       // SHUFFLE
       if (currentPos === SPECIAL_SQUARES.SHUFFLE_1 || currentPos === SPECIAL_SQUARES.SHUFFLE_2) {
-        emissions.push(...this.applyShuffleEffect(state, pId));
+
+        if (state.mode === 'STELLA') {
+          emissions.push(...this.applyStellaScoreSwap(state, pId));
+        } else {
+          emissions.push(...this.applyShuffleEffect(state, pId));
+        }
       }
 
       // EQUILIBRIO (Checkpoint)
@@ -406,6 +444,10 @@ export class GameService {
           data: { challengerId: pId }
         });
       }
+
+      // MINIJUEGOS DESEMPATE
+      const conflictEmissions = this.checkConflictMinigame(state, pId);
+      emissions.push(...conflictEmissions);
     }
 
     return emissions;
@@ -527,25 +569,58 @@ export class GameService {
   }
 
   /**
+   * Efecto Shuffle en STELLA: Intercambia los puntos con otro jugador al azar.
+   */
+  private applyStellaScoreSwap(state: GameState, pId: string): SocketEmission[] {
+    const otherPlayers = state.players.filter(p => p !== pId);
+
+    // Si está jugando solo (desarrollo/tests), no hace nada
+    if (otherPlayers.length === 0) return [];
+
+    // Elegir un rival al azar
+    const randomRival = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+
+    // Intercambiar puntuaciones
+    const myScore = state.scores[pId] || 0;
+    const rivalScore = state.scores[randomRival] || 0;
+
+    state.scores[pId] = rivalScore;
+    state.scores[randomRival] = myScore;
+
+    return [{
+      room: state.lobbyCode,
+      event: 'server:game:special_event',
+      data: {
+        pId,
+        effect: 'STELLA_SCORE_SWAP',
+        targetId: randomRival,
+        message: `¡Caos de Stella! Has intercambiado tu puntuación con ${randomRival}.`
+      }
+    }];
+  }
+
+  /**
    * Efecto Bonus Aleatorio: Modifica el límite de cartas durante 2 rondas.
    */
   private applyRandomBonus(state: GameState, pId: string): SocketEmission[] {
 
     if (state.mode === 'STELLA') {
 
-      // Definir qué hace el Bonus en Stella.
+      const stellaAmount = Math.floor(Math.random() * 3) + 1; // Genera 1, 2 o 3 (siempre positivo)
+      
+      state.scores[pId] = (state.scores[pId] || 0) + stellaAmount;
       
       return [{
         room: state.lobbyCode,
         event: 'server:game:special_event',
         data: { 
           pId, 
-          effect: 'STELLA_BONUS_PLACEHOLDER', 
-          message: '¡Casilla Bonus de Stella en construcción!' 
+          effect: 'STELLA_BONUS_POINTS', 
+          amount: stellaAmount,
+          message: `¡Bonus de Stella! Ganas ${stellaAmount} puntos.` 
         }
       }];
     }
-
 
     const amount = (Math.floor(Math.random() * 3) + 1);
     const isPositive = Math.random() > 0.5;
@@ -565,4 +640,93 @@ export class GameService {
       data: { pId, effect: 'CARD_BONUS', amount: finalAmount }
     }];
   }
+
+  /**
+   * Detecta si el jugador ha aterrizado en la misma puntuación que otro
+   * y dispara el evento de minijuego 1vs1.
+   */
+  private checkConflictMinigame(state: GameState, movingPlayerId: string): SocketEmission[] {
+    const currentScore = state.scores[movingPlayerId];
+    
+    // Ignorar la posición 0 (inicio) para no saturar al empezar
+    if (currentScore === 0) return [];
+
+    // Buscamos a otro jugador que ya estuviera en esa casilla
+    const rivalId = state.players.find(pId => 
+      pId !== movingPlayerId && state.scores[pId] === currentScore
+    );
+
+    if (!rivalId) return [];
+
+    // Configuración del minijuego
+    const minigameType = Math.floor(Math.random() * 3); // Int 0-2 (Actualmente 3 tipos de juegos, eto esta hablado con Samu)
+    const duration = 15 * 1000;                         // Actualmente duran 15 segundos cada minijuego.
+
+    // BLOQUEAMOS LA PARTIDA
+    state.isMinigameActive = true;
+    
+    return [{
+      room: state.lobbyCode,
+      event: 'server:game:minigame_start',
+      data: {
+        player1: movingPlayerId,
+        player2: rivalId,
+        type: minigameType,
+        duration: duration,
+        isDuel: false // Es un empate, no un duelo (Para reutilizar la casilla de duelo y los desempates)
+      }
+    }];
+  }
+
+  /**
+   * Resuelve el final de un minijuego (tanto Empates como Duelos).
+   * Desbloquea la partida y aplica los puntos correspondientes.
+   */
+  public async submitConflictResult(
+    gameId: string, 
+    winnerId: string, 
+    loserId: string, 
+    isDuel: boolean
+  ): Promise<SocketEmission[]> {
+    
+    const state = await this.redisRepo.getGame(gameId);
+    if (!state || !state.isMinigameActive) return [];
+
+    // 1. Aplicamos los puntos según el tipo de conflicto
+    if (isDuel) {
+      // Reglas de Duelo: Ganador +2, Perdedor -2 (mínimo 0)
+      state.scores[winnerId] = (state.scores[winnerId] || 0) + 2;
+      state.scores[loserId] = Math.max(0, (state.scores[loserId] || 0) - 2);
+    } else {
+      // Reglas de Empate: Ganador +1, Perdedor 0
+      state.scores[winnerId] = (state.scores[winnerId] || 0) + 1;
+    }
+
+    // 2. Liberamos la partida para que continúe
+    state.isMinigameActive = false;
+    await this.redisRepo.saveGame(gameId, state);
+
+    // 3. Preparamos las notificaciones
+    const emissions: SocketEmission[] = [];
+
+    const message = isDuel 
+      ? `¡${winnerId} ha ganado el Duelo (+2 puntos) contra ${loserId} (-2 puntos)!`
+      : `¡${winnerId} ha ganado el desempate y se lleva +1 punto!`;
+
+    emissions.push({
+      room: state.lobbyCode,
+      event: 'server:game:special_event',
+      data: { effect: 'CONFLICT_RESOLVED', message }
+    });
+
+    // Actualizamos el tablero general para todos
+    emissions.push({
+      room: state.lobbyCode,
+      event: 'server:game:state_updated',
+      data: { state: this.maskPrivateState(state), lastAction: 'CONFLICT_RESOLVED' }
+    });
+
+    return emissions;
+  }
 }
+
