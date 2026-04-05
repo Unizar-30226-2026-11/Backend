@@ -1,6 +1,6 @@
 // src/sockets/socket-auth.middleware.ts
-import { Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { Socket } from 'socket.io';
 
 // Extendemos la interfaz del Socket
 export interface AuthenticatedSocket extends Socket {

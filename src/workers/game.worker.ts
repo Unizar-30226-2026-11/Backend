@@ -1,9 +1,10 @@
 //Este código lee el estado, deduce quién falta por jugar y genera las acciones correspondientes.
 
 // src/workers/game.worker.ts
-import { Worker, Job } from 'bullmq';
+import { Job, Worker } from 'bullmq';
 import { Server } from 'socket.io';
-import { GameRepository, bullmqConnection } from '../infrastructure/redis';
+
+import { bullmqConnection, GameRepository } from '../infrastructure/redis';
 import { GameService } from '../services/game.service';
 import { GameAction } from '../shared/types';
 

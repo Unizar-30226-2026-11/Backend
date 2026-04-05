@@ -1,13 +1,14 @@
 // src/sockets/handlers/chat.handler.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
+import { z } from 'zod';
+
 import { CLIENT_EVENTS, SERVER_EVENTS } from '../events';
 import {
-  ChatSendPayload,
   ChatMessageReceivedPayload,
+  ChatSendPayload,
   ErrorPayload,
 } from '../events/types';
-import { z } from 'zod';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 const ChatMessageSchema = z.object({
   lobbyCode: z.string().length(4),

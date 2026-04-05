@@ -14,12 +14,13 @@
  *   cd Backend && npx ts-node src/sockets/tests_sockets/test-full-flow.ts
  */
 
-import path from 'path';
 import dotenv from 'dotenv';
+import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-import { io, Socket } from 'socket.io-client';
 import jwt from 'jsonwebtoken';
+import { io, Socket } from 'socket.io-client';
+
 import { prisma } from '../../infrastructure/prisma';
 import { connectRedis } from '../../infrastructure/redis';
 import { LobbyRedisRepository } from '../../repositories/lobby.repository';

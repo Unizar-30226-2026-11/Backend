@@ -1,16 +1,17 @@
 import { Server, Socket } from 'socket.io';
-import {
-  authenticateSocket,
-  AuthenticatedSocket,
-} from '../middleware/socket-auth.middleware';
-import { registerChatHandlers } from './chat.handler';
-import { registerLobbyHandlers } from './lobby.handler';
-import { registerGameHandlers } from './game.handlers';
-import { SERVER_EVENTS } from '../events';
+
 import {
   gameRepository,
   lobbyRepository,
 } from '../../infrastructure/redis/index';
+import { SERVER_EVENTS } from '../events';
+import {
+  AuthenticatedSocket,
+  authenticateSocket,
+} from '../middleware/socket-auth.middleware';
+import { registerChatHandlers } from './chat.handler';
+import { registerGameHandlers } from './game.handlers';
+import { registerLobbyHandlers } from './lobby.handler';
 
 const connectedUsers = new Map<string, Socket>();
 

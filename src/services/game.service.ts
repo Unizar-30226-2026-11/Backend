@@ -1,11 +1,12 @@
 // src/services/game.service.ts
 import { Queue } from 'bullmq';
+
+import { DixitEngine } from '../core/engines';
+import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
-import { GameAction, GameState } from '../shared/types';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
-import { prisma } from '../infrastructure/prisma';
-import { DixitEngine } from '../core/engines';
+import { GameAction, GameState } from '../shared/types';
 
 // ==========================================
 // CONFIGURACIÓN DE BULLMQ (Timeouts de turnos)

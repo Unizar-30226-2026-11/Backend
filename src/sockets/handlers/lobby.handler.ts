@@ -1,11 +1,12 @@
 // src/sockets/lobby.handler.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
-import { LobbyService } from '../../services/lobby.service';
-import { GameService, SocketEmission } from '../../services/game.service';
+
 import { GameRedisRepository } from '../../repositories/game.repository';
-import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+import { GameService, SocketEmission } from '../../services/game.service';
+import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
+import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 export const registerLobbyHandlers = (
   io: Server,

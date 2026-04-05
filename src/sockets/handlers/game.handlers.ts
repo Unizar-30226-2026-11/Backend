@@ -1,9 +1,10 @@
 // src/sockets/handlers/game.handlers.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
-import { GameService, SocketEmission } from '../../services/game.service';
-import { GameRedisRepository } from '../../repositories/game.repository';
 import { z } from 'zod';
+
+import { GameRedisRepository } from '../../repositories/game.repository';
+import { GameService, SocketEmission } from '../../services/game.service';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 const GameActionSchema = z.object({
   lobbyCode: z.string().length(4, 'Código de sala inválido'),

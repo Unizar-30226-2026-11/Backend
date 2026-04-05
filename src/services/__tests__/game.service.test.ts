@@ -1,7 +1,7 @@
 import { prisma } from '../../infrastructure/prisma';
-import { GameService, gameTimeoutsQueue } from '../game.service';
-import { GameState } from '../../shared/types';
 import { BOARD_CONFIG } from '../../shared/constants/board-config';
+import { GameState } from '../../shared/types';
+import { GameService, gameTimeoutsQueue } from '../game.service';
 
 jest.mock('bullmq', () => ({
   Queue: jest.fn().mockReturnValue({
