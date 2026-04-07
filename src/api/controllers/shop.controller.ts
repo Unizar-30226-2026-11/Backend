@@ -9,9 +9,10 @@ export const getShopItems = async (
   req: AuthenticatedRequest,
   res: Response,
 ): Promise<void> => {
+  const userId = Number(req.user!.id);
   try {
     // Obtener el catálogo disponible en la tienda
-    const items = await ShopService.getAvailableItems();
+    const items = await ShopService.getAvailableItems(userId);
 
     res.status(200).json({ items });
   } catch (error) {

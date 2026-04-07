@@ -33,6 +33,19 @@ enum Rarity {
   LEGENDARY
 }
 
+enum Purchase_Type {
+  SINGLE_CARD
+  CARD_PACK
+  COLLECTION
+  BOARD
+}
+
+enum Board_Type {
+  CLASSIC
+  NEON                  // Añadir los que comunique el frontend (He sacado el NEON del mockup)
+  STELLAR_GALAXY
+}
+
 model User {
   id_user        Int         @id @default(autoincrement())
   username       String      @unique
@@ -44,12 +57,29 @@ model User {
   state          User_States @default(UNKNOWN)
   personal_state String? // Para añadir 
 
+  tableros       Board_Type[] @default([CLASSIC])
   my_cards UserCard[]
   my_deck  Deck[]
+  purchases PurchaseHistory[]
   games    UserGameStats[]
 
   friends_sent     Friendships[] @relation("Enviadas")
   friends_received Friendships[] @relation("Recibidas")
+}
+
+model PurchaseHistory {
+  id_purchase   Int           @id @default(autoincrement())
+  id_user       Int
+  purchase_type Purchase_Type
+  
+ 
+  reference_ids Int[]            // Para cartas y colecciones
+  reference_name  String?        // Para tableros
+
+  coins_spent   Int
+  purchased_at  DateTime      @default(now())
+
+  user          User          @relation(fields: [id_user], references: [id_user])
 }
 
 model UserCard {
