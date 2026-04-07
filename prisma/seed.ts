@@ -13,6 +13,7 @@ async function main() {
   const hashedBasePassword = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
 
   console.log('--- Limpiando base de datos ---');
+  await prisma.purchaseHistory.deleteMany();
   await prisma.userGameStats.deleteMany();
   await prisma.games_log.deleteMany();
   await prisma.deckCard.deleteMany();
@@ -86,7 +87,13 @@ async function main() {
       })),
     });
 
-    // Crear al menos 1 Mazo de 12 cartas (usando las base)
+    const createdUserCards = await prisma.userCard.findMany({
+      where: { id_user: user.id_user },
+      select: { id_user_card: true },
+      take: 12 // Solo necesitamos 12 para el mazo
+    });
+
+    // Crear al menos 1 Mazo de 12 cartas
     const deck = await prisma.deck.create({
       data: {
         name: `Mazo Principal de ${user.username}`,
@@ -94,11 +101,11 @@ async function main() {
       },
     });
 
-    const deckSelection = baseCards.slice(0, 12);
+    const deckSelection = createdUserCards.slice(0, 12);
     await prisma.deckCard.createMany({
       data: deckSelection.map((card) => ({
         id_deck: deck.id_deck,
-        id_user_card: card.id_card,
+        id_user_card: card.id_user_card,
       })),
     });
   }
@@ -117,7 +124,6 @@ async function main() {
   console.log('--- Generando 15 Partidas Multijugador (4-8 jugadores) ---');
   for (let i = 0; i < 15; i++) {
     // Definir duracion aleatoria entre 60 y 115 minutos
-
     const duration = Math.floor(Math.random() * 60) + 45;
 
     // Crear la partida
