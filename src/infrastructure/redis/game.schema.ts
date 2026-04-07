@@ -1,6 +1,6 @@
 import { Repository, Schema } from 'redis-om';
 
-import { redisClient } from '../redis';
+import { safeRedis } from '../redis';
 
 export const gameStateSchema = new Schema(
   'game_state',
@@ -37,5 +37,5 @@ export const gameStateSchema = new Schema(
 
 export const gameRepository = new Repository(
   gameStateSchema,
-  redisClient as any,
+  safeRedis as any,
 );

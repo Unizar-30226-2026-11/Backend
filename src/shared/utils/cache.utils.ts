@@ -1,5 +1,11 @@
 import { redisClient } from '../../infrastructure/redis';
 
+const ensureRedisConnection = async () => {
+  if (!redisClient.isOpen) {
+    await redisClient.connect();
+  }
+};
+
 /**
  * Guarda un dato en la caché abstrayendo la serialización y el manejo de errores.
  * @param key La clave única (ej: 'cache:collection:id:1')
@@ -12,6 +18,7 @@ export async function setCachedData<T>(
   expirationSeconds: number = 3600,
 ): Promise<void> {
   try {
+    await ensureRedisConnection();
     // Abstraemos el stringify y la sintaxis del tiempo (la fijamos a segundos).
     await redisClient.set(key, JSON.stringify(data), { EX: expirationSeconds });
   } catch (error) {
@@ -35,6 +42,7 @@ export async function getCachedData<T>(
   expirationSeconds: number = 3600,
 ): Promise<T | null> {
   try {
+    await ensureRedisConnection();
     // Intento de lectura en caché (CACHÉ HIT)
     const cachedData = await redisClient.get(key);
 
@@ -67,6 +75,7 @@ export async function getCachedData<T>(
  */
 export async function getCachedItem<T>(key: string): Promise<T | null> {
   try {
+    await ensureRedisConnection();
     // Intento de lectura en caché (CACHÉ HIT)
     const cached = await redisClient.get(key);
 
@@ -88,6 +97,7 @@ export async function getCachedItem<T>(key: string): Promise<T | null> {
  */
 export async function invalidateCache(key: string): Promise<void> {
   try {
+    await ensureRedisConnection();
     await redisClient.del(key);
   } catch (error) {
     console.error(

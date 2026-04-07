@@ -52,8 +52,10 @@ async function main() {
     }
   }
 
-  // Definir las 48 cartas "base" (las de las primeras 4 colecciones)
+  // Definir las 48 cartas "base" (las de las primeras 4 colecciones) (2 veces para tener 2 instancias al crear mazos)
   const baseCards = allCards.slice(0, 48);
+
+  const doubleCards = [ ... baseCards ,  ... baseCards]
 
   console.log('--- Creando Usuarios y sus Colecciones ---');
   const users = [];
@@ -69,7 +71,7 @@ async function main() {
 
     // Asignar las 48 cartas base a cada usuario
     await prisma.userCard.createMany({
-      data: baseCards.map((card) => ({
+      data: doubleCards.map((card) => ({
         id_user: user.id_user,
         id_card: card.id_card,
       })),

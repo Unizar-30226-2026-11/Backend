@@ -127,6 +127,10 @@ export const UserService = {
     const deck_ids = user_decks.map((d) => d.id_deck);
 
     const resultado = await prisma.$transaction([
+      prisma.purchaseHistory.deleteMany({
+        where: { id_user },
+      }),
+      
       prisma.userGameStats.deleteMany({
         where: { id_user },
       }),
@@ -162,7 +166,6 @@ export const UserService = {
       await invalidateCache(`cache:user:economy:${u_id}`);
       await invalidateCache(`cache:user:cards:${u_id}`);
       await invalidateCache(`cache:user:decks:${u_id}`);
-
       return true;
     } else {
       return false;

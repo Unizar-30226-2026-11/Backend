@@ -6,9 +6,10 @@ import { prisma } from '../../infrastructure/prisma';
 import { FriendService } from '../friend.service';
 
 describe('FriendService - Pruebas Funciones', () => {
-  const pending_relations = [];
 
-  for (let i = 0; i < 10; i++) {
+  const pending_relations = [{ id_user_1: 3, id_user_2: 1, state: Friendship_States.PENDING }];
+
+  for (let i = 1; i < 10; i++) {
     pending_relations.push({
       id_user_1: i + 3,
       id_user_2: 1,

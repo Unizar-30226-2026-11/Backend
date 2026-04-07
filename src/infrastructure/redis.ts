@@ -29,23 +29,41 @@ export const connectRedis = async () => {
   }
 };
 
+// Wrapper seguro para exportarlo a otros repositorios
+export const safeRedis = {
+  async get(key: string) {
+    await connectRedis(); 
+    return redisClient.get(key);
+  },
+  
+  async set(key: string, value: string, options?: any) {
+    await connectRedis(); 
+    return redisClient.set(key, value, options);
+  },
+  
+  async del(key: string) {
+    await connectRedis(); 
+    return redisClient.del(key);
+  }
+};
+
 // REPOSITORIO DE ESTADO DEL JUEGO
 
 //Esto encapsula la lectura/escritura del JSON de la partida para que el Service quede limpio.
 export const GameRepository = {
   async saveGameState(lobbyCode: string, state: any): Promise<void> {
     // Expiración de 2 horas (7200s) para limpiar memoria automáticamente
-    await redisClient.set(`game:${lobbyCode}`, JSON.stringify(state), {
+    await safeRedis.set(`game:${lobbyCode}`, JSON.stringify(state), {
       EX: 7200,
     });
   },
 
   async getGameState(lobbyCode: string): Promise<any | null> {
-    const data = await redisClient.get(`game:${lobbyCode}`);
+    const data = await safeRedis.get(`game:${lobbyCode}`);
     return data ? JSON.parse(data) : null;
   },
 
   async deleteGameState(lobbyCode: string): Promise<void> {
-    await redisClient.del(`game:${lobbyCode}`);
+    await safeRedis.del(`game:${lobbyCode}`);
   },
 };

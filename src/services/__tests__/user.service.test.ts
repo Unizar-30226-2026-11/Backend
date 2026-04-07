@@ -12,24 +12,6 @@ describe('UserService - Pruebas Funciones', () => {
   let id_usuario_a_borrar: string;
 
   beforeAll(async () => {
-    for (let i = 0; i < 5; i++) {
-      const cartas_mazo_prueba = [
-        'c_1',
-        'c_2',
-        'c_3',
-        'c_4',
-        'c_5',
-        'c_6',
-        'c_7',
-        'c_8',
-      ];
-      const resultado = await UserService.createDeck(
-        'u_1',
-        'De Prueba',
-        cartas_mazo_prueba,
-      );
-      mazos_a_borrar.push(resultado.id);
-    }
 
     const ghostUser = await prisma.user.findUnique({
       where: { username: 'UsuarioSacrificable_Full' },
@@ -48,6 +30,34 @@ describe('UserService - Pruebas Funciones', () => {
       },
     });
     id_usuario_a_borrar = `u_${usuario_test.id_user}`;
+
+    await prisma.userCard.createMany({
+      data: [1, 2, 3, 4, 5, 6, 7, 8].flatMap(cardId => [
+        { id_user: usuario_test.id_user, id_card: cardId }
+
+      ])
+    });
+
+    for (let i = 0; i < 5; i++) {
+    
+      const cartas_mazo_prueba = [
+        'c_1',
+        'c_2',
+        'c_3',
+        'c_4',
+        'c_5',
+        'c_6',
+        'c_7',
+        'c_8',
+      ];
+      const resultado = await UserService.createDeck(
+        'u_1',
+        'De Prueba',
+        cartas_mazo_prueba,
+      );
+      mazos_a_borrar.push(resultado.id);
+    }
+
 
     const carta1 = await prisma.userCard.create({
       data: { id_user: usuario_test.id_user, id_card: 1 },

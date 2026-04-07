@@ -1,8 +1,8 @@
 // src/services/shop.service.ts
 import { prisma } from '../infrastructure/prisma';
-import { Purchase_Type, Rarity, Board_Type } from '@prisma/client'; 
+import { Purchase_Type, Board_Type } from '@prisma/client'; 
 import { ShopRedisRepository } from '../repositories/shop.repository';
-import { DailyShopState } from '../infrasctucture/redis/shop.schema';
+import { DailyShopState } from '../infrastructure/redis/shop.schema';
 
 // ==========================================
 // DICCIONARIOS DE PRECIOS

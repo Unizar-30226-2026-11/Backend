@@ -1,6 +1,4 @@
-// src/shared/types/shop.schema.ts
-import { Repository, Schema } from 'redis-om';
-import { safeRedis } from '../redis';
+// src/shared/types/shop.types.ts
 import { Rarity, Board_Type } from '@prisma/client';
 
 export interface DailyShopCard {
@@ -35,9 +33,3 @@ export interface DailyShopState {
   boardOffer: DailyShopBoard | null;
   expiresAt: string; 
 }
-
-
-export const shopRedisRepository = new Repository(
-  DailyShopState,
-  safeRedis as any,
-);
