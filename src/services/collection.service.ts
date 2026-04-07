@@ -1,40 +1,44 @@
 import { prisma } from '../infrastructure/prisma';
-
-import { getCachedData, getCachedItem, setCachedData } from '../shared/utils/cache.utils';
+import {
+  getCachedData,
+  getCachedItem,
+  setCachedData,
+} from '../shared/utils/cache.utils';
 
 export const CollectionService = {
   // Obtiene todas las colecciones disponibles
   getAllCollections: async () => {
-
-    return getCachedData('cache:collections:all', async () => {
-
-      const collections = await prisma.collection.findMany({
-        include: {
-          _count: {
-            select: { cards: true },
+    return getCachedData(
+      'cache:collections:all',
+      async () => {
+        const collections = await prisma.collection.findMany({
+          include: {
+            _count: {
+              select: { cards: true },
+            },
           },
-        },
-      });
+        });
 
-      if (collections == null) return null;
+        if (collections == null) return null;
 
-      const mappedCollections = collections.map((collection) => ({
-        id: `col_${collection.id_collection}`,
-        name: collection.name,
-        description: collection.description,
-        release_date: collection.releaseDate,
-        total_cards: collection._count.cards,
-      }));
+        const mappedCollections = collections.map((collection) => ({
+          id: `col_${collection.id_collection}`,
+          name: collection.name,
+          description: collection.description,
+          release_date: collection.releaseDate,
+          total_cards: collection._count.cards,
+        }));
 
-      return { collections: mappedCollections };
-    }, 86400); // 24 horas (86400s) 
+        return { collections: mappedCollections };
+      },
+      86400,
+    ); // 24 horas (86400s)
   },
 
   // Busca una (o unas) coleccion específica por su ID
   getCollectionById: async (col_ids: string | string[]) => {
     const isArrayInput = Array.isArray(col_ids);
     const idsToProcess = isArrayInput ? col_ids : [col_ids];
-
 
     const numericIds = idsToProcess.map((id) =>
       parseInt(id.replace('col_', '')),
@@ -44,7 +48,6 @@ export const CollectionService = {
     const missingIdsInCache: number[] = [];
 
     for (const id of numericIds) {
-
       const cacheKey = `cache:collection:id:${id}`;
 
       const cached = await getCachedItem<any>(cacheKey);
@@ -54,7 +57,6 @@ export const CollectionService = {
       } else {
         missingIdsInCache.push(id);
       }
-
     }
 
     if (missingIdsInCache.length == 0) {
@@ -74,7 +76,6 @@ export const CollectionService = {
 
     if (bbddCollections.length > 0) {
       for (const collection of bbddCollections) {
-
         const formattedDate = collection.releaseDate
           ? collection.releaseDate.toISOString().split('T')[0]
           : null;
@@ -85,7 +86,7 @@ export const CollectionService = {
           description: collection.description,
           releaseDate: formattedDate,
           totalCards: collection._count.cards,
-        }
+        };
 
         const cacheKey = `cache:collection:id:${collection.id_collection}`;
 
@@ -93,8 +94,7 @@ export const CollectionService = {
 
         finalCollections.push(formattedCollection);
       }
-
-    };
+    }
 
     if (finalCollections.length === 0) {
       return null;
@@ -118,7 +118,6 @@ export const CollectionService = {
     const missingIdsInCache: number[] = [];
 
     for (const id of numericIds) {
-
       const cacheKey = `cache:collection:cards:${id}`;
       const cached = await getCachedItem<any>(cacheKey);
 
@@ -142,9 +141,7 @@ export const CollectionService = {
     });
 
     if (bbddCollections.length > 0) {
-
       for (const collection of bbddCollections) {
-
         const collection_id = `col_${collection.id_collection}`;
 
         const formattedCatalog = {
@@ -165,7 +162,7 @@ export const CollectionService = {
         await setCachedData(cacheKey, formattedCatalog, 86400); // 24 Horas
 
         finalCatalogs.push(formattedCatalog);
-      };
+      }
     }
 
     if (finalCatalogs.length === 0) {
@@ -173,5 +170,5 @@ export const CollectionService = {
     }
 
     return finalCatalogs;
-  }
-};  
+  },
+};

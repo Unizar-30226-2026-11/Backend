@@ -1,14 +1,15 @@
 // src/sockets/handlers/game.handlers.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
-import { GameService, SocketEmission } from '../../services/game.service';
-import { GameRedisRepository } from '../../repositories/game.repository';
 import { z } from 'zod';
+
+import { GameRedisRepository } from '../../repositories/game.repository';
+import { GameService, SocketEmission } from '../../services/game.service';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 const GameActionSchema = z.object({
   lobbyCode: z.string().length(4, 'Código de sala inválido'),
   actionType: z.string(),
-  payload: z.any().optional()
+  payload: z.any().optional(),
 });
 
 /**
@@ -21,7 +22,10 @@ function dispatchEmissions(io: Server, emissions: SocketEmission[]): void {
   }
 }
 
-export const registerGameHandlers = (io: Server, socket: AuthenticatedSocket) => {
+export const registerGameHandlers = (
+  io: Server,
+  socket: AuthenticatedSocket,
+) => {
   const gameService = new GameService(GameRedisRepository);
 
   // Inyectamos el callback para emisiones diferidas (ej: expiración de estrella)
@@ -47,12 +51,15 @@ export const registerGameHandlers = (io: Server, socket: AuthenticatedSocket) =>
         return;
       }
 
-      const action: any = { type: actionType, playerId: userId, payload: payload || {} };
+      const action: any = {
+        type: actionType,
+        playerId: userId,
+        payload: payload || {},
+      };
 
       // El service ejecuta la lógica y devuelve qué hay que emitir
       const emissions = await gameService.handleAction(lobbyCode, action);
       dispatchEmissions(io, emissions);
-
     } catch (error: any) {
       socket.emit('server:error', { message: error.message });
     }

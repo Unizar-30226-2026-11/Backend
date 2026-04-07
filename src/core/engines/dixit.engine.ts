@@ -1,3 +1,4 @@
+import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import {
   ActionChangeMode,
   ActionDisconnect,
@@ -7,7 +8,6 @@ import {
   GameMode,
   GameState,
 } from '../../shared/types';
-import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import {
   GameModeStrategy,
   StandardStrategy,

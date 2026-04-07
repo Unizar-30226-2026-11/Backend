@@ -1,12 +1,17 @@
 // src/sockets/lobby.handler.ts
 import { Server } from 'socket.io';
-import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
-import { LobbyService } from '../../services/lobby.service';
-import { GameService, SocketEmission } from '../../services/game.service';
-import { GameRedisRepository } from '../../repositories/game.repository';
-import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
 
-export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) => {
+import { GameRedisRepository } from '../../repositories/game.repository';
+import { GameService, SocketEmission } from '../../services/game.service';
+import { LobbyService } from '../../services/lobby.service';
+import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
+import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
+
+export const registerLobbyHandlers = (
+  io: Server,
+  socket: AuthenticatedSocket,
+) => {
   // Extraemos los datos 100% confiables del middleware
   const lobbyCode = socket.data.lobbyCode;
   const userId = socket.user?.id;
@@ -21,7 +26,9 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
 
       // Le unimos a la sala de Socket.io (Room)
       socket.join(lobbyCode);
-      console.log(`[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`);
+      console.log(
+        `[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`,
+      );
 
       // Emitimos el nuevo estado a TODOS en la sala para que actualicen sus pantallas
       io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, updatedLobby);
@@ -39,17 +46,24 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
 
       // Validamos quién es el host
       if (lobby.hostId !== userId) {
-        socket.emit(SERVER_EVENTS.ERROR, { message: 'Solo el líder puede empezar la partida.' });
+        socket.emit(SERVER_EVENTS.ERROR, {
+          message: 'Solo el líder puede empezar la partida.',
+        });
         return;
       }
 
       // Validamos el cupo mínimo antes de llamar al motor (Ej. Dixit requiere 4)
-      if (lobby.players.length < 4) {
-        socket.emit(SERVER_EVENTS.ERROR, { message: 'Se requieren al menos 4 jugadores para iniciar.' });
+      if (lobby.players.length < LOBBY_MIN_PLAYERS) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          message:
+            'Se requieren al menos ${LOBBY_MIN_PLAYERS} jugadores para iniciar.',
+        });
         return;
       }
 
-      console.log(`[Lobby] Partida iniciada en el lobby ${lobbyCode} por el host ${userId}`);
+      console.log(
+        `[Lobby] Partida iniciada en el lobby ${lobbyCode} por el host ${userId}`,
+      );
 
       //Pasamos los datos del lobby a la partida
       const gameService = new GameService(GameRedisRepository);
@@ -62,7 +76,6 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
 
       //Avisamos a los clientes para que cambien su pantalla al tablero de juego
       io.to(lobbyCode).emit(SOCKET_EVENTS.GAME_STARTED, { lobbyCode });
-
     } catch (error: any) {
       socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
     }
@@ -79,7 +92,10 @@ export const registerLobbyHandlers = (io: Server, socket: AuthenticatedSocket) =
       // Comprobamos si la sala sigue viva para avisar a los demás
       const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
       if (remainingLobby) {
-        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, remainingLobby);
+        io.to(lobbyCode).emit(
+          SERVER_EVENTS.LOBBY_STATE_UPDATED,
+          remainingLobby,
+        );
       }
     } catch (error) {
       console.error(`Error procesando desconexión de ${userId}:`, error);
