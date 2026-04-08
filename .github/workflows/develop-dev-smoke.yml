@@ -1,0 +1,90 @@
+name: Develop Dev Smoke
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dev-smoke:
+    name: Validar arranque con npm run dev
+    runs-on: ubuntu-latest
+
+    env:
+      PORT: 3000
+      DB_USER: user
+      DB_PASSWORD: pass
+      DB_NAME: mydb
+      DB_PORT: 5432
+      DATABASE_URL: postgresql://user:pass@localhost:5432/mydb?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: github_actions_secret
+      AES_KEY: 32_characters_long_key_for_aes_256
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Levantar PostgreSQL y Redis
+        run: docker compose up -d postgres redis
+
+      - name: Esperar a PostgreSQL
+        run: until docker exec A_Tale_of_Recognition_PostgreSQL pg_isready -U user -d mydb; do sleep 2; done
+
+      - name: Esperar a Redis
+        run: until docker exec redis_stack_server redis-cli ping | grep -q PONG; do sleep 2; done
+
+      - name: Preparar esquema de BD
+        run: npx prisma db push
+
+      - name: Smoke test de npm run dev
+        run: |
+          set -euo pipefail
+
+          npm run dev > dev.log 2>&1 &
+          DEV_PID=$!
+
+          for i in {1..30}; do
+            if ! kill -0 "$DEV_PID" 2>/dev/null; then
+              echo "El proceso npm run dev termino de forma inesperada"
+              cat dev.log
+              exit 1
+            fi
+
+            if grep -q "Servidor (HTTP + WebSockets)" dev.log; then
+              echo "npm run dev arranco correctamente"
+              break
+            fi
+
+            sleep 1
+          done
+
+          if ! grep -q "Servidor (HTTP + WebSockets)" dev.log; then
+            echo "No se detecto el mensaje de arranque esperado"
+            cat dev.log
+            kill "$DEV_PID" || true
+            exit 1
+          fi
+
+          kill "$DEV_PID" || true
+          wait "$DEV_PID" || true
+
+      - name: Apagar servicios de Docker
+        if: always()
+        run: docker compose down -v
