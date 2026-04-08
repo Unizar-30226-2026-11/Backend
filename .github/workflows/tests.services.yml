@@ -27,6 +27,10 @@ on:
       - 'package.json'
       - 'prisma.config.ts'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Ejecutar Tests de Servicios con Jest
