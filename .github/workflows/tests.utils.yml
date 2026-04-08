@@ -1,0 +1,58 @@
+name: Utility Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/shared/utils/**'
+      - 'src/infrastructure/redis.ts'
+      - 'package.json'
+
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/shared/utils/**'
+      - 'src/infrastructure/redis.ts'
+      - 'package.json'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Ejecutar Tests de Utilidades con Jest
+    runs-on: ubuntu-latest
+
+    env:
+      DB_USER: user
+      DB_PASSWORD: pass
+      DB_NAME: mydb
+      DB_PORT: 5432
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - name: 📥 Checkout del código
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🔴 Levantar Redis
+        run: docker compose up -d redis
+
+      - name: ⏳ Esperar a Redis
+        run: until docker exec redis_stack_server redis-cli ping | grep PONG; do sleep 2; done
+
+      - name: 🧪 Ejecutar los tests de utilidades
+        run: npx jest src/shared/utils --runInBand

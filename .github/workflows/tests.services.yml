@@ -1,0 +1,77 @@
+name: Service Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/services/**'
+      - 'src/infrastructure/**'
+      - 'src/shared/types/**'
+      - 'src/shared/constants/**'
+      - 'prisma/**'
+      - 'package.json'
+      - 'prisma.config.ts'
+
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/services/**'
+      - 'src/infrastructure/**'
+      - 'src/shared/types/**'
+      - 'src/shared/constants/**'
+      - 'prisma/**'
+      - 'package.json'
+      - 'prisma.config.ts'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Ejecutar Tests de Servicios con Jest
+    runs-on: ubuntu-latest
+
+    env:
+      PORT: 3000
+      DATABASE_URL: postgresql://user:pass@localhost:5432/mydb?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: github_actions_secret
+      AES_KEY: 32_characters_long_key_for_aes_256
+
+    steps:
+      - name: 📥 Checkout del código
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🐘 Levantar PostgreSQL y Redis
+        env:
+          DB_USER: user
+          DB_PASSWORD: pass
+          DB_NAME: mydb
+          DB_PORT: 5432
+        run: docker compose up -d postgres redis
+
+      - name: ⏳ Esperar a PostgreSQL
+        run: until docker exec A_Tale_of_Recognition_PostgreSQL pg_isready -U user -d mydb; do sleep 2; done
+
+      - name: 🗄️ Preparar Prisma y datos de prueba
+        run: |
+          npx prisma generate
+          npx prisma db push
+          npx prisma db seed
+
+      - name: 🧪 Ejecutar los tests de servicios
+        run: npx jest src/services --runInBand
