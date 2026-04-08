@@ -69,6 +69,7 @@ jobs:
 
       - name: 🗄️ Preparar Prisma y datos de prueba
         run: |
+          npx prisma generate
           npx prisma db push
           npx prisma db seed
 

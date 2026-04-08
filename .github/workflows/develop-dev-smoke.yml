@@ -50,8 +50,10 @@ jobs:
       - name: Esperar a Redis
         run: until docker exec redis_stack_server redis-cli ping | grep -q PONG; do sleep 2; done
 
-      - name: Preparar esquema de BD
-        run: npx prisma db push
+      - name: Preparar cliente y esquema de BD
+        run: |
+          npx prisma generate
+          npx prisma db push
 
       - name: Smoke test de npm run dev
         run: |
