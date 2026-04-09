@@ -8,8 +8,10 @@ import {
   getBalance,
   getOwnedCards,
   getProfile,
+  getPurchasedBoards,
   getUserDecks,
   searchUsers,
+  selectActiveBoard,
   updateDeck,
   updateProfile,
   updateStatus,
@@ -17,6 +19,7 @@ import {
 import {
   authenticate,
   hasCardsInCollection,
+  isBoardOwner,
   isDeckOwner,
   validateDeckBody,
   validateIdParam,
@@ -604,5 +607,120 @@ router.delete(
   isDeckOwner,
   deleteDeck,
 );
+
+/**
+ * @swagger
+ * /api/users/boards:
+ *   get:
+ *     summary: Obtener los tableros comprados por el usuario autenticado
+ *     description: Retorna la lista de todos los tableros que el usuario ha comprado. Incluye información del tablero como id, nombre y descripción.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de tableros comprados obtenida correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 boards:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: b_001
+ *                       name:
+ *                         type: string
+ *                         example: Tablero Clásico
+ *                       description:
+ *                         type: string
+ *                         example: El tablero estándar del juego con diseño clásico
+ *       401:
+ *         description: No autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.get('/boards', getPurchasedBoards);
+
+/**
+ * @swagger
+ * /api/users/boards/active:
+ *   post:
+ *     summary: Seleccionar el tablero activo para las partidas
+ *     description: Establece el tablero que se mostrará en todas las partidas del usuario. El tablero debe estar en su lista de tableros comprados.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - boardId
+ *             properties:
+ *               boardId:
+ *                 type: string
+ *                 description: ID del tablero a seleccionar
+ *                 example: b_001
+ *     responses:
+ *       200:
+ *         description: Tablero seleccionado correctamente como tablero activo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Tablero seleccionado correctamente.
+ *                 activeBoard:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: b_001
+ *                     name:
+ *                       type: string
+ *                       example: Tablero Clásico
+ *       400:
+ *         description: falta el ID del tablero o es inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: No autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: El usuario no posee este tablero
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.post('/boards/active', isBoardOwner, selectActiveBoard);
 
 export default router;
