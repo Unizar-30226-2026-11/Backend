@@ -6,6 +6,7 @@ import { GameService, SocketEmission } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+import { LobbyStartPayload } from '../events/types';
 import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 export const registerLobbyHandlers = (
@@ -38,8 +39,9 @@ export const registerLobbyHandlers = (
   });
 
   // 2. INICIAR PARTIDA (Flujo Real sin Mocks)
-  socket.on(CLIENT_EVENTS.LOBBY_START, async () => {
+  socket.on(CLIENT_EVENTS.LOBBY_START, async (payload?: LobbyStartPayload) => {
     try {
+      const useDynamicPool = payload?.useDynamicPool ?? true;
       // Obtenemos la sala de Redis con todos los jugadores reales
       const lobby = await LobbyService.getLobbyByCode(lobbyCode);
       if (!lobby) throw new Error('La sala no existe o ha expirado.');
@@ -67,7 +69,9 @@ export const registerLobbyHandlers = (
 
       //Pasamos los datos del lobby a la partida
       const gameService = new GameService(GameRedisRepository);
-      const emissions = await gameService.initializeGame(lobbyCode, lobby);
+      const emissions = await gameService.initializeGame(lobbyCode, lobby, {
+        useDynamicPool,
+      });
 
       // Ejecutamos las emisiones devueltas por el service
       for (const { room, event, data } of emissions) {
@@ -86,8 +90,8 @@ export const registerLobbyHandlers = (
     try {
       console.log(`[Lobby] ${socket.user?.username} se ha desconectado.`);
 
-      // Sacamos al jugador de la sala en Redis
-      await LobbyService.leaveLobby(lobbyCode, userId);
+      // Sacamos al jugador de la sala en Redis NO: El disconnect debe quedarse solo para hacer console.log o limpiar memoria temporal, pero nunca para tocar la base de datos (Redis).
+      //await LobbyService.leaveLobby(lobbyCode, userId);
 
       // Comprobamos si la sala sigue viva para avisar a los demás
       const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
@@ -99,6 +103,36 @@ export const registerLobbyHandlers = (
       }
     } catch (error) {
       console.error(`Error procesando desconexión de ${userId}:`, error);
+    }
+  });
+
+  //Cuando el usuario pulsa el botón de salir voluntariamente
+  socket.on(CLIENT_EVENTS.LOBBY_LEAVE, async () => {
+    try {
+      console.log(
+        `[Lobby] ${socket.user?.username} ha salido voluntariamente del lobby ${lobbyCode}`,
+      );
+
+      // 1. Lo sacamos de Redis
+      await LobbyService.leaveLobby(lobbyCode, userId);
+
+      // 2. Lo sacamos de la sala de Socket.io
+      socket.leave(lobbyCode);
+
+      // 3. Limpiamos su variable interna por si reutiliza el socket
+      socket.data.lobbyCode = undefined;
+
+      // 4. Avisamos al resto de jugadores que quedan en la sala
+      const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
+      if (remainingLobby) {
+        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, {
+          lobby: remainingLobby,
+        });
+      }
+    } catch (error: any) {
+      socket.emit(SERVER_EVENTS.ERROR, {
+        message: 'Error al salir del lobby: ' + error.message,
+      });
     }
   });
 };

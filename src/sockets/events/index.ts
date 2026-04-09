@@ -44,8 +44,18 @@ export const SERVER_EVENTS = {
   GAME_STATE_UPDATED: 'server:game:state_updated',
   GAME_ENDED: 'server:game:ended',
 
+  DECK_RESHUFFLED: 'server:game:deck_reshuffled', //Animación visual: El mazo de descartes se ha mezclado y vuelve al mazo central.
+  PRIVATE_HAND: 'server:game:private_hand', //Tus cartas acaban de cambiar (por robar en nuevo turno o por caer en Shuffle).
+  DUEL_AVAILABLE: 'server:game:duel_available', //Has caído en la casilla de apuestas. Muestra un menú (Modal) para elegir a qué jugador de la partida quieres atacar.
+  SPECIAL_EVENT: 'server:game:special_event', //Un jugador ha activado una casilla. Mostrar animación en su ficha y pintar un aviso en pantalla.
+  GAME_ERROR: 'server:game:error', //Has intentado hacer algo ilegal (ej. jugar carta durante un minijuego activo). Mostrar Toast/Alerta de error.
   // Chat
   CHAT_MESSAGE_RECEIVED: 'server:chat:message_received',
+
+  // NUEVOS EVENTOS DE RECONEXIÓN
+  SESSION_RECOVERED: 'server:session:recovered', // Partida en curso
+  LOBBY_RECOVERED: 'server:lobby:recovered', // Estaba en la sala de espera
+  FORCE_DISCONNECT: 'server:force_disconnect', // Multitab
 } as const;
 
 // Tipos extraídos de las constantes para usarlos en las interfaces

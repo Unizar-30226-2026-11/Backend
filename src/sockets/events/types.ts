@@ -6,6 +6,10 @@ export interface JoinLobbyPayload {
   lobbyCode: string;
 }
 
+export interface LobbyStartPayload {
+  useDynamicPool?: boolean;
+}
+
 export interface ChatSendPayload {
   lobbyCode: string;
   text: string;
@@ -35,4 +39,14 @@ export interface GameStateUpdatedPayload {
 export interface ErrorPayload {
   message: string;
   code?: string;
+}
+
+export interface SessionRecoveredPayload {
+  lobbyCode: string;
+  state: any; // Aquí va el estado del juego (gameState)
+}
+
+export interface LobbyRecoveredPayload {
+  lobbyCode: string;
+  lobby: any; // Aquí va el estado del lobby
 }
