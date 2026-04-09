@@ -14,6 +14,11 @@ type CardFileInfo = {
   filename: string;
 };
 
+type StorageListEntry = {
+  name: string;
+  id: string | null;
+};
+
 const BUCKET_NAME = 'game-assets';
 const STORAGE_BASE_PATH = 'cards';
 const BUCKET_CONFIG = {
@@ -30,6 +35,8 @@ const RARITY_TOKENS: Array<{ token: string; rarity: Rarity }> = [
   { token: 'rare', rarity: Rarity.UNCOMMON },
   { token: 'common', rarity: Rarity.COMMON },
 ];
+
+const CLEANUP_FLAGS = new Set(['--cleanup', '-c', 'cleanup']);
 
 function normalizePathPart(value: string): string {
   return value.trim().replace(/\\/g, '/');
@@ -155,6 +162,89 @@ async function walkDirectoryRecursively(dir: string): Promise<string[]> {
   return files;
 }
 
+async function listStorageFilesRecursively(
+  supabase: SupabaseClient,
+  bucketName: string,
+  currentPath: string,
+): Promise<string[]> {
+  const collected: string[] = [];
+  const limit = 100;
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .list(currentPath, {
+        limit,
+        offset,
+        sortBy: { column: 'name', order: 'asc' },
+      });
+
+    if (error) {
+      throw new Error(
+        `Error al listar el bucket en '${currentPath}': ${error.message}`,
+      );
+    }
+
+    const entries = (data ?? []) as StorageListEntry[];
+
+    if (entries.length === 0) {
+      break;
+    }
+
+    for (const entry of entries) {
+      const entryPath = currentPath
+        ? `${currentPath}/${entry.name}`
+        : entry.name;
+
+      if (entry.id === null) {
+        const nestedFiles = await listStorageFilesRecursively(
+          supabase,
+          bucketName,
+          entryPath,
+        );
+        collected.push(...nestedFiles);
+      } else {
+        collected.push(entryPath);
+      }
+    }
+
+    if (entries.length < limit) {
+      break;
+    }
+
+    offset += limit;
+  }
+
+  return collected;
+}
+
+async function removeStoragePaths(
+  supabase: SupabaseClient,
+  bucketName: string,
+  paths: string[],
+): Promise<number> {
+  const chunkSize = 100;
+  let removed = 0;
+
+  for (let i = 0; i < paths.length; i += chunkSize) {
+    const chunk = paths.slice(i, i + chunkSize);
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .remove(chunk);
+
+    if (error) {
+      throw new Error(
+        `Error al eliminar archivos del storage: ${error.message}`,
+      );
+    }
+
+    removed += data?.length ?? 0;
+  }
+
+  return removed;
+}
+
 function parseCardFile(
   rootDir: string,
   absolutePath: string,
@@ -192,7 +282,9 @@ async function syncCards() {
     );
   }
 
-  const inputCardsPath = process.argv[2];
+  const scriptArgs = process.argv.slice(2);
+  const cleanupEnabled = scriptArgs.some((arg) => CLEANUP_FLAGS.has(arg));
+  const inputCardsPath = scriptArgs.find((arg) => !CLEANUP_FLAGS.has(arg));
   const cardsRoot = inputCardsPath
     ? path.resolve(process.cwd(), inputCardsPath)
     : path.resolve(process.cwd(), 'Cartas');
@@ -216,7 +308,11 @@ async function syncCards() {
   let createdCards = 0;
   let updatedCards = 0;
   let skippedFiles = 0;
+  let deletedCards = 0;
+  let deletedStorageFiles = 0;
   const collectionCache = new Map<string, { id: number }>();
+  const processedTitles = new Set<string>();
+  const processedStoragePaths = new Set<string>();
 
   await prisma.$connect();
 
@@ -321,9 +417,45 @@ async function syncCards() {
       createdCards += 1;
     }
 
+    processedTitles.add(title);
+    processedStoragePaths.add(storagePath);
+
     console.log(
       `Sincronizada: ${title} | Coleccion: ${parsed.collection} | Rarity: ${inferredRarity}`,
     );
+  }
+
+  if (cleanupEnabled) {
+    console.log('\nIniciando fase de cleanup...');
+
+    const deleteCardsResult = await prisma.cards.deleteMany({
+      where: {
+        title: {
+          notIn: Array.from(processedTitles),
+        },
+      },
+    });
+    deletedCards = deleteCardsResult.count;
+
+    const allStorageFiles = await listStorageFilesRecursively(
+      supabase,
+      BUCKET_NAME,
+      STORAGE_BASE_PATH,
+    );
+
+    const storageToDelete = allStorageFiles.filter(
+      (storagePath) => !processedStoragePaths.has(storagePath),
+    );
+
+    if (storageToDelete.length > 0) {
+      deletedStorageFiles = await removeStoragePaths(
+        supabase,
+        BUCKET_NAME,
+        storageToDelete,
+      );
+    }
+
+    console.log('✅ Cleanup completado.');
   }
 
   console.log('\nResumen de sincronizacion');
@@ -331,6 +463,10 @@ async function syncCards() {
   console.log(`- Cartas creadas: ${createdCards}`);
   console.log(`- Cartas actualizadas: ${updatedCards}`);
   console.log(`- Archivos omitidos: ${skippedFiles}`);
+  if (cleanupEnabled) {
+    console.log(`- Cartas eliminadas (DB): ${deletedCards}`);
+    console.log(`- Archivos eliminados (Storage): ${deletedStorageFiles}`);
+  }
 }
 
 void syncCards()
