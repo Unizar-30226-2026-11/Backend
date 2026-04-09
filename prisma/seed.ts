@@ -44,6 +44,7 @@ async function main() {
         data: {
           title: `Carta ${i}-${j + 1}`,
           rarity: rarities[j],
+          url_image: `https://example.com/cards/coleccion-${i}/carta-${j + 1}.png`,
           id_collection: collection.id_collection,
         },
       });
@@ -94,11 +95,21 @@ async function main() {
       },
     });
 
-    const deckSelection = baseCards.slice(0, 12);
+    const deckCardIds = baseCards.slice(0, 12).map((card) => card.id_card);
+    const deckSelection = await prisma.userCard.findMany({
+      where: {
+        id_user: user.id_user,
+        id_card: { in: deckCardIds },
+      },
+      select: {
+        id_user_card: true,
+      },
+    });
+
     await prisma.deckCard.createMany({
       data: deckSelection.map((card) => ({
         id_deck: deck.id_deck,
-        id_user_card: card.id_card,
+        id_user_card: card.id_user_card,
       })),
     });
   }
