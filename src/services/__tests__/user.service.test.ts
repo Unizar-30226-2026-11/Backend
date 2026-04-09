@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-import { User_States } from '@prisma/client';
+import { Rarity, User_States } from '@prisma/client';
 
 import { prisma } from '../../infrastructure/prisma';
 import { UserService } from '../user.service';
@@ -8,10 +8,90 @@ import { UserService } from '../user.service';
 describe('UserService - Pruebas Funciones', () => {
   let id_deck_created: string;
   const mazos_a_borrar: string[] = [];
+  let mazos_base_usuario_1: string[] = [];
 
   let id_usuario_a_borrar: string;
 
   beforeAll(async () => {
+    // Fixtures mínimas para soportar tests con IDs fijos (u_1, c_1..c_12, d_1..d_4).
+    await prisma.user.createMany({
+      data: Array.from({ length: 15 }, (_, i) => ({
+        id_user: i + 1,
+        username: `Jugador${i + 1}`,
+        email: `jugador${i + 1}@ejemplo.com`,
+        password: 'hashed_password',
+      })),
+      skipDuplicates: true,
+    });
+
+    await prisma.collection.createMany({
+      data: [
+        {
+          id_collection: 1,
+          name: 'Coleccion_Test_UserService',
+          description: 'Coleccion base para tests de UserService',
+        },
+      ],
+      skipDuplicates: true,
+    });
+
+    await prisma.cards.createMany({
+      data: Array.from({ length: 12 }, (_, i) => ({
+        id_card: i + 1,
+        title: `UserService Test Card ${i + 1}`,
+        rarity: Rarity.COMMON,
+        url_image: `https://example.com/user-service-card-${i + 1}.png`,
+        id_collection: 1,
+      })),
+      skipDuplicates: true,
+    });
+
+    await prisma.userCard.createMany({
+      data: Array.from({ length: 12 }, (_, i) => ({
+        id_user: 1,
+        id_card: i + 1,
+      })),
+      skipDuplicates: true,
+    });
+
+    await prisma.deck.createMany({
+      data: Array.from({ length: 4 }, (_, i) => ({
+        id_deck: i + 1,
+        name: `Mazo Principal de Jugador${i + 1}`,
+        id_user: 1,
+      })),
+      skipDuplicates: true,
+    });
+
+    const baseUserCards = await prisma.userCard.findMany({
+      where: {
+        id_user: 1,
+        id_card: { in: [1, 2, 3, 4, 5, 6, 7, 8] },
+      },
+      select: {
+        id_user_card: true,
+      },
+      take: 8,
+    });
+
+    for (const deckId of [1, 2, 3, 4]) {
+      for (const uc of baseUserCards) {
+        await prisma.deckCard.upsert({
+          where: {
+            id_deck_id_user_card: {
+              id_deck: deckId,
+              id_user_card: uc.id_user_card,
+            },
+          },
+          update: {},
+          create: {
+            id_deck: deckId,
+            id_user_card: uc.id_user_card,
+          },
+        });
+      }
+    }
+
     for (let i = 0; i < 5; i++) {
       const cartas_mazo_prueba = [
         'c_1',
@@ -30,6 +110,7 @@ describe('UserService - Pruebas Funciones', () => {
       );
       mazos_a_borrar.push(resultado.id);
     }
+    mazos_base_usuario_1 = mazos_a_borrar.slice(0, 4);
 
     const ghostUser = await prisma.user.findUnique({
       where: { username: 'UsuarioSacrificable_Full' },
@@ -230,7 +311,9 @@ describe('UserService - Pruebas Funciones', () => {
   describe('Sistema de Mazos. ', () => {
     describe('Búsqueda de Mazo por ID. -> getDeckById() ', () => {
       test('Mazo Existente:', async () => {
-        const resultado = await UserService.getDeckById('d_1');
+        const resultado = await UserService.getDeckById(
+          mazos_base_usuario_1[0],
+        );
 
         expect(resultado).toBeDefined();
         expect(resultado).toEqual(
@@ -343,7 +426,7 @@ describe('UserService - Pruebas Funciones', () => {
           'c_2',
           'c_1',
         ];
-        const mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
+        const mazos_a_cambiar = mazos_base_usuario_1;
         const resultado = await UserService.updateDeck(
           mazos_a_cambiar,
           'De Prueba Reorganizado',
@@ -510,15 +593,25 @@ describe('UserService - Pruebas Funciones', () => {
       'c_12',
     ];
 
-    const mazos_a_cambiar = ['d_1', 'd_2', 'd_3', 'd_4'];
+    const mazos_a_cambiar = mazos_base_usuario_1;
 
-    await UserService.updateDeck(
-      mazos_a_cambiar,
-      'Mazo Principal de JugadorX',
-      cartas_mazo_prueba,
-    );
+    if (mazos_a_cambiar.length > 0) {
+      try {
+        await UserService.updateDeck(
+          mazos_a_cambiar,
+          'Mazo Principal de JugadorX',
+          cartas_mazo_prueba,
+        );
+      } catch {
+        // Algunos tests eliminan estos mazos; no debe romper el teardown.
+      }
+    }
 
-    await UserService.updateUserProfile('u_1', 'Jugador1');
+    try {
+      await UserService.updateUserProfile('u_1', 'Jugador1');
+    } catch {
+      // En algunos entornos el username puede ya estar tomado por datos previos.
+    }
   });
 
   afterEach(() => {});

@@ -418,7 +418,7 @@ export const UserService = {
   /**
    * Obtiene la lista de tableros comprados por el usuario.
    */
-  getUserPurchasedBoards: async (u_id: string) => {
+  getUserPurchasedBoards: async (_u_id: string) => {
     // TODO: Implementar lógica para obtener tableros comprados del usuario
     // 1. Extraer el ID numérico de u_id (remover prefijo 'u_')
     // 2. Consultar en la base de datos los tableros que el usuario posee
@@ -428,7 +428,7 @@ export const UserService = {
   /**
    * Establece el tablero activo para que se muestre en las partidas del usuario.
    */
-  setUserActiveBoard: async (u_id: string, boardId: string) => {
+  setUserActiveBoard: async (_u_id: string, _boardId: string) => {
     // TODO: Implementar lógica para establecer el tablero activo
     // 1. Extraer los IDs numéricos (remover prefijos)
     // 2. Verificar que el usuario posee el tablero (si no, lanzar error 'BOARD_NOT_OWNED')

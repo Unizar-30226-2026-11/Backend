@@ -1,5 +1,7 @@
 import 'dotenv/config';
 
+import { Rarity } from '@prisma/client';
+
 import { prisma } from '../../infrastructure/prisma';
 import { CollectionService } from '../collection.service';
 
@@ -23,6 +25,23 @@ describe('CollectionService - Pruebas Funciones', () => {
     if (colection_test == null) return false;
 
     id_colection_test = colection_test.id_collection;
+
+    await prisma.cards.createMany({
+      data: [
+        {
+          title: `Test Card A ${id_colection_test}`,
+          rarity: Rarity.COMMON,
+          url_image: 'https://example.com/test-card-a.png',
+          id_collection: id_colection_test,
+        },
+        {
+          title: `Test Card B ${id_colection_test}`,
+          rarity: Rarity.SPECIAL,
+          url_image: 'https://example.com/test-card-b.png',
+          id_collection: id_colection_test,
+        },
+      ],
+    });
 
     return true;
   });
@@ -74,7 +93,7 @@ describe('CollectionService - Pruebas Funciones', () => {
 
   describe('Obtener cartas de una coleccion por ID.  -> getCardsByCollection() ', () => {
     test('Cartas de una Colección existente.', async () => {
-      const id_col = 'col_1';
+      const id_col = 'col_' + id_colection_test.toString();
 
       const resultado = await CollectionService.getCardsByCollection(id_col);
 
@@ -111,6 +130,12 @@ describe('CollectionService - Pruebas Funciones', () => {
   });
 
   afterAll(async () => {
+    await prisma.cards.deleteMany({
+      where: {
+        id_collection: id_colection_test,
+      },
+    });
+
     await prisma.collection.deleteMany({
       where: {
         id_collection: id_colection_test,
