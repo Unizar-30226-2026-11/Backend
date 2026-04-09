@@ -4,15 +4,15 @@ import { Socket } from 'socket.io';
 
 // Extendemos la interfaz del Socket
 export interface AuthenticatedSocket extends Socket {
-  user?: {
-    id: string;
-    username: string;
-  };
-  // socket.data ya existe en Socket.io, pero tipamos lo que vamos a guardar
-  data: {
-    lobbyCode?: string;
-    [key: string]: any;
-  };
+    user?: {
+        id: string;
+        username: string;
+    };
+    // socket.data ya existe en Socket.io, pero tipamos lo que vamos a guardar
+    data: {
+        lobbyCode?: string;
+        [key: string]: any;
+    };
 }
 
 export const authenticateSocket = (
@@ -29,20 +29,21 @@ export const authenticateSocket = (
 
     const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
 
-    // Verificamos la firma y expiración del wsToken
-    const decodedPayload = jwt.verify(token, secretKey) as {
-      id: string;
-      username: string;
-      lobbyCode?: string | null; // <-- Hacemos que sea opcional
-    };
+        // Verificamos la firma y expiración del wsToken (2 min)
+        const decodedPayload = jwt.verify(token, secretKey) as {
+            id: string;
+            username: string;
+            lobbyCode: string; // <-- Viene del LobbyController
+        };
 
-    socket.user = {
-      id: decodedPayload.id,
-      username: decodedPayload.username,
-    };
+        // Guardamos los datos validados en el socket
+        socket.user = {
+            id: decodedPayload.id,
+            username: decodedPayload.username,
+        };
 
-    // Guardamos el lobbyCode (puede ser null si está en el menú principal)
-    socket.data.lobbyCode = decodedPayload.lobbyCode || undefined;
+        // ¡Clave de seguridad! El lobbyCode es inmutable y dictado por el token
+        socket.data.lobbyCode = decodedPayload.lobbyCode;
 
     next();
   } catch (error) {
