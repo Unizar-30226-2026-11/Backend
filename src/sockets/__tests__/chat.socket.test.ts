@@ -53,7 +53,7 @@ describe('Chat Socket (E2E Test)', () => {
       engine: 'STANDARD',
       isPrivate: false,
       status: 'waiting',
-      players: [hostId], 
+      players: [hostId],
     };
 
     await LobbyRedisRepository.save(LOBBY_CODE, {
@@ -69,7 +69,7 @@ describe('Chat Socket (E2E Test)', () => {
       socket.disconnect();
     }
     await prisma.$disconnect();
-    
+
     if (redisClient.isOpen) {
       await redisClient.disconnect();
     }
@@ -87,7 +87,11 @@ describe('Chat Socket (E2E Test)', () => {
     // Promosificamos los eventos para que Jest espere a que acabe el ciclo de envío y recepción
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Timeout esperando el mensaje. Asegúrate de tener el servidor con npm run dev corriendo.'));
+        reject(
+          new Error(
+            'Timeout esperando el mensaje. Asegúrate de tener el servidor con npm run dev corriendo.',
+          ),
+        );
       }, 5000);
 
       socket.on('connect', () => {
@@ -99,7 +103,9 @@ describe('Chat Socket (E2E Test)', () => {
       // ¡Aquí está la magia! No usamos setTimeout ciego. Sincronizamos cuando el backend nos
       // dice que ha cargado todo el estado inicial y sabemos que sus handlers están listos.
       socket.on('server:lobby:recovered', () => {
-        console.log(`\n✅ Sala de espera recuperada. Mandando mensaje a ${LOBBY_CODE}...`);
+        console.log(
+          `\n✅ Sala de espera recuperada. Mandando mensaje a ${LOBBY_CODE}...`,
+        );
         socket.emit('client:chat:send', {
           lobbyCode: LOBBY_CODE,
           text: '¡Hola! Este es un mensaje de prueba desde el script de Jest.',
@@ -115,7 +121,9 @@ describe('Chat Socket (E2E Test)', () => {
 
         // Las validaciones de que vino lo correcto
         expect(payload).toBeDefined();
-        expect(payload.text).toBe('¡Hola! Este es un mensaje de prueba desde el script de Jest.');
+        expect(payload.text).toBe(
+          '¡Hola! Este es un mensaje de prueba desde el script de Jest.',
+        );
         expect(payload.timestamp).toBeDefined();
 
         console.log('\n✅ Test finalizado con éxito.');
@@ -131,7 +139,11 @@ describe('Chat Socket (E2E Test)', () => {
 
       socket.on('connect_error', (err) => {
         clearTimeout(timeout);
-        reject(new Error(`[ERROR DE CONEXIÓN]: ${err.message}\nAsegúrate de que el servidor está encendido.`));
+        reject(
+          new Error(
+            `[ERROR DE CONEXIÓN]: ${err.message}\nAsegúrate de que el servidor está encendido.`,
+          ),
+        );
       });
     });
   }, 10000); // 10 segundos máximo para todo el bloque it()

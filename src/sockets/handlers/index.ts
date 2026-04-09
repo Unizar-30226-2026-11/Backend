@@ -1,7 +1,7 @@
 import { Server, Socket } from 'socket.io';
 
-import { lobbyRepository } from '../../infrastructure/redis/index';
 import { GameRedisRepository } from '../../repositories/game.repository';
+import { LobbyRedisRepository } from '../../repositories/lobby.repository';
 import { SERVER_EVENTS } from '../events';
 import {
   AuthenticatedSocket,
@@ -62,11 +62,10 @@ export const setupSockets = (io: Server) => {
           });
         } else {
           // No hay partida, pero hay lobbyCode, así que está en la sala de espera
-          const lobbyState = await lobbyRepository
-            .search()
-            .where('lobbyCode')
-            .equals(lobbyCode)
-            .return.first();
+          // IMPORTANTE: usar findByCode en lugar de search() garantiza O(1) y evita
+          // race-conditions en los tests si el índice de Redis tarda en construirse.
+          const lobbyState = await LobbyRedisRepository.findByCode(lobbyCode);
+
           if (lobbyState) {
             socket.emit(SERVER_EVENTS.LOBBY_RECOVERED, {
               lobbyCode,
