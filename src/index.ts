@@ -6,6 +6,7 @@ import { Server } from 'socket.io'; // Para manejar WebSockets
 import app from './app';
 import { prisma } from './infrastructure/prisma';
 import { connectRedis, redisClient } from './infrastructure/redis';
+import { initRedisIndices } from './infrastructure/redis/index';
 import { setupSockets } from './sockets/handlers'; // Para configurar los handlers de Socket.io
 import { initializeGameWorker } from './workers/game.worker';
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,8 @@ async function bootstrap() {
 
     // Conectar Redis
     await connectRedis();
+    // Inicializar índices de Redis OM
+    await initRedisIndices();
 
     //Creamos el servidor HTTP envolviendo la app de Express
     const httpServer = createServer(app);

@@ -9,7 +9,7 @@ export const GameRedisRepository = {
     const data = await gameRepository.fetch(gameId);
 
     // Si el objeto recuperado no tiene ID, es que no existe en Redis
-    if (!data || !data.gameId) return null;
+    if (!data || !data.lobbyCode) return null;
 
     // Convertimos los strings de Redis en los tipos reales de TS
     return {
@@ -30,8 +30,8 @@ export const GameRedisRepository = {
   /**
    * "Deshidrata" el GameState convirtiendo objetos a strings para Redis.
    */
-  async saveGame(gameId: string, state: GameState): Promise<void> {
-    await gameRepository.save(gameId, {
+  async saveGame(lobbyCode: string, state: GameState): Promise<void> {
+    await gameRepository.save(lobbyCode, {
       ...state,
       // Serializamos los objetos complejos antes de guardar
       scores: JSON.stringify(state.scores),

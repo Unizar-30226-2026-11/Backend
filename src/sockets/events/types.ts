@@ -1,9 +1,15 @@
 // src/sockets/events/types.ts
 
+import { AnyNullClass } from '@prisma/client/runtime/client';
+
 // --- TIPOS DE SUBIDA (Payloads del Cliente) ---
 
 export interface JoinLobbyPayload {
   lobbyCode: string;
+}
+
+export interface LobbyStartPayload {
+  useDynamicPool?: boolean;
 }
 
 export interface ChatSendPayload {
@@ -25,6 +31,31 @@ export interface ChatMessageReceivedPayload {
   text: string;
   timestamp: string;
 }
+export interface GameStartedPayload {
+  state: any;
+}
+
+export interface PrivateHandPayload {
+  hand: number[];
+}
+
+export interface DuelAvailablePayload {
+  challengerId: any;
+}
+
+export interface SpecialEventPayload {
+  pId: any;
+  effect: string;
+  amount: number;
+}
+
+export interface MinigameStartPayload {
+  player1: any;
+  player2: any;
+  type: number;
+  duration: number;
+  isDuel: boolean;
+}
 
 export interface GameStateUpdatedPayload {
   // Aquí importarías tu GameState (el JSON que guardamos en Redis)
@@ -35,4 +66,18 @@ export interface GameStateUpdatedPayload {
 export interface ErrorPayload {
   message: string;
   code?: string;
+}
+
+export interface GameErrorPayload {
+  message: string;
+}
+
+export interface SessionRecoveredPayload {
+  lobbyCode: string;
+  state: any; // Aquí va el estado del juego (gameState)
+}
+
+export interface LobbyRecoveredPayload {
+  lobbyCode: string;
+  lobby: any; // Aquí va el estado del lobby
 }

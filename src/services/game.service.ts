@@ -6,6 +6,10 @@ import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
+import {
+  PREDEFINED_DECK_KEYS,
+  PREDEFINED_DECKS,
+} from '../shared/constants/decks';
 import { GameAction, GameState } from '../shared/types';
 
 // ==========================================
@@ -39,6 +43,7 @@ export class GameService {
   public async initializeGame(
     lobbyCode: string,
     lobbyData: any,
+    options: { useDynamicPool: boolean } = { useDynamicPool: true },
   ): Promise<SocketEmission[]> {
     const { engine: mode, players } = lobbyData;
 
@@ -48,28 +53,46 @@ export class GameService {
       return isNaN(num) ? 0 : num;
     });
 
-    // 2. Extraer cartas de los mazos de los jugadores
-    const userDecks = await prisma.deck.findMany({
-      where: { id_user: { in: numericPlayerIds } },
-      include: {
-        cards: { include: { user_card: true } },
-      },
-    });
-
     let centralDeck: number[] = [];
-    userDecks.forEach((deck) => {
-      deck.cards.forEach((dc) => {
-        if (dc.user_card) centralDeck.push(dc.user_card.id_card);
-      });
-    });
 
-    // Si hay pocas cartas, rellenamos con comodines
-    if (centralDeck.length < 20) {
+    // 2. Extraer cartas de los mazos (o usar el predeterminado al azar)
+    if (options.useDynamicPool) {
+      const userDecks = await prisma.deck.findMany({
+        where: { id_user: { in: numericPlayerIds } },
+        include: {
+          cards: { include: { user_card: true } },
+        },
+      });
+
+      userDecks.forEach((deck) => {
+        deck.cards.forEach((dc) => {
+          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+        });
+      });
+    } else {
+      const keys = PREDEFINED_DECK_KEYS;
+      const randomKey = keys[Math.floor(Math.random() * keys.length)];
+      centralDeck = [...PREDEFINED_DECKS[randomKey]];
+    }
+
+    // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
+    // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
+    // lo que puede generar cartas que no hayamos visto antes de manera consistente.
+
+    const CARDS_PER_PLAYER = 16;
+    const TARGET_DECK_SIZE = players.length * CARDS_PER_PLAYER;
+
+    // Si hay pocas cartas, rellenamos c hasta TARGET_DECK_SIZE Y si los mazos sobrepasan escogemos al azar
+    if (centralDeck.length < TARGET_DECK_SIZE) {
+      const missingAmount = TARGET_DECK_SIZE - centralDeck.length;
       const fallbackCards = await prisma.cards.findMany({
-        take: 30,
+        take: missingAmount,
         select: { id_card: true },
       });
       centralDeck.push(...fallbackCards.map((c) => c.id_card));
+    } else if (centralDeck.length > TARGET_DECK_SIZE) {
+      centralDeck = this.shuffleArray(centralDeck); // Mezclamos antes de cortar para que sea justo
+      centralDeck = centralDeck.slice(0, TARGET_DECK_SIZE); // Nos quedamos exactamente con 84
     }
 
     // Barajamos
@@ -145,7 +168,7 @@ export class GameService {
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
-    const engine: IGameEngine = this.getEngine(currentState.lobbyCode);
+    const engine: IGameEngine = this.getEngine();
 
     const oldPhase = currentState.phase;
     const previousScores = { ...currentState.scores };
@@ -261,25 +284,14 @@ export class GameService {
     });
 
     // Si nadie la pulsa, se desactiva al terminar la duración
-    setTimeout(async () => {
-      const currentState = await this.redisRepo.getGame(gameId);
-      if (
-        currentState &&
-        currentState.isStarActive &&
-        Date.now() >= currentState.starExpiresAt
-      ) {
-        currentState.isStarActive = false;
-        await this.redisRepo.saveGame(gameId, currentState);
-        // Esta emisión interna diferida la producimos vía el método público
-        // para que el handler pueda suscribirse si lo necesita.
-        // En la práctica queda delegada aquí como efecto secundario controlado.
-        this._deferredEmitCallback?.({
-          room: gameId,
-          event: 'star_expired',
-          data: {},
-        });
-      }
-    }, movement.duration);
+    await gameTimeoutsQueue.add(
+      'star-expiration',
+      { gameId },
+      {
+        delay: movement.duration,
+        removeOnComplete: true,
+      },
+    );
 
     return emissions;
   }
@@ -314,9 +326,8 @@ export class GameService {
     ];
   }
 
-  private getEngine(_lobbyCode: string): IGameEngine {
-    // Aquí podrías consultar qué tipo de partida es. Por defecto:
-    // return type === 'STELLA' ? StellaEngine : DixitEngine;
+  private getEngine(): IGameEngine {
+    // DixitEngine es el motor universal del juego.
     return DixitEngine;
   }
 
@@ -432,7 +443,7 @@ export class GameService {
         currentPos === SPECIAL_SQUARES.BONUS_RANDOM_3 ||
         currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
       ) {
-        emissions.push(...this.applyRandomCardBonus(state, pId));
+        emissions.push(...this.applyRandomBonus(state, pId));
       }
 
       // SHUFFLE
@@ -547,6 +558,7 @@ export class GameService {
     state.discardPile.push(...currentHand);
 
     const newHand: number[] = [];
+    const emissions: SocketEmission[] = [];
 
     // Robar cartas una a una asegurando que el mazo nunca se acabe
     for (let i = 0; i < handSize; i++) {
@@ -557,6 +569,12 @@ export class GameService {
         // Convertimos el descarte barajado en el nuevo mazo central
         state.centralDeck = this.shuffleArray(state.discardPile);
         state.discardPile = [];
+
+        emissions.push({
+          room: state.lobbyCode,
+          event: 'server:game:deck_reshuffled',
+          data: {},
+        });
       }
 
       const card = state.centralDeck.pop();
@@ -567,27 +585,41 @@ export class GameService {
 
     state.hands[pId] = newHand;
 
-    return [
-      {
-        room: pId,
-        event: 'private_hand_updated',
-        data: { hand: newHand },
-      },
-      {
-        room: state.lobbyCode,
-        event: 'server:game:special_event',
-        data: { pId, effect: 'SHUFFLE' },
-      },
-    ];
+    emissions.push({
+      room: pId,
+      event: 'server:game:private_hand',
+      data: { hand: newHand },
+    });
+
+    emissions.push({
+      room: state.lobbyCode,
+      event: 'server:game:special_event',
+      data: { pId, effect: 'SHUFFLE' },
+    });
+
+    return emissions;
   }
 
   /**
    * Efecto Bonus Aleatorio: Modifica el límite de cartas durante 2 rondas.
    */
-  private applyRandomCardBonus(
-    state: GameState,
-    pId: string,
-  ): SocketEmission[] {
+  private applyRandomBonus(state: GameState, pId: string): SocketEmission[] {
+    if (state.mode === 'STELLA') {
+      // Definir qué hace el Bonus en Stella.
+
+      return [
+        {
+          room: state.lobbyCode,
+          event: 'server:game:special_event',
+          data: {
+            pId,
+            effect: 'STELLA_BONUS_PLACEHOLDER',
+            message: '¡Casilla Bonus de Stella en construcción!',
+          },
+        },
+      ];
+    }
+
     const amount = Math.floor(Math.random() * 3) + 1;
     const isPositive = Math.random() > 0.5;
     const finalAmount = isPositive ? amount : -amount;

@@ -4,8 +4,33 @@ info:
   version: 1.0.0
   description: |
     Especificación de la API de WebSockets (Socket.IO) para el Lobby, Chat y Juego.
-    Define los eventos que el cliente puede enviar (publish) y recibir (subscribe) del servidor,
-    junto con sus esquemas de datos correspondientes (payloads).
+    
+    ## 1. Visión general de la arquitectura
+    El backend utiliza Socket.IO ejecutándose sobre el servidor HTTP en el puerto 3000. La arquitectura está orientada en **canales de acción centralizado**, en donde el evento principal `client:game:action` procesa toda la lógica delegándola en el motor base de juego (`DixitEngine`).
+    
+    ## 2. Autenticación y Seguridad
+    - Un middleware global valida siempre un token **JWT** incluido en el handshake (`socket.handshake.auth.token`).
+    - Al aceptar la comunicación, se asignan y blindan los atributos de `userId` y `lobbyCode` desde el interior inmutable del JWT.
+    
+    ## 3. Sistema de Salas (Rooms)
+    - **Lobby Room (`lobbyCode`)**: Canal de difusión genérico por el que se propaga eventos públicos (por ejemplo, chats o los avances de jugadas) para todos los usuarios.
+    - **Personal Room (`userId`)**: Sala única individual empleada para mandar información que pudiese comprometer el juego limpio, como tu propia mano oculta de cartas (`server:game:private_hand`) o notificaciones personalizadas (`server:error`).
+
+    ## 4. Handlers de Sockets
+    - **Lobby Handler**: `client:lobby:join`, `client:lobby:start`, y la salida mediante la desconexión del socket. Coordina peticiones hacia `LobbyService`.
+    - **Game Handler**: Escucha `client:game:action` unificando toda orden de juego. Transmite con validación de Zod el objeto interpretado al GameService.
+    - **Chat Handler**: Transmite `client:chat:send` tras un procesamiento por Zod.
+
+    ## 5. Servicios Relacionados
+    - **LobbyService (Redis)**: Accede en forma de CRUD rápido a los metadatos y estado de concurrencia actual de los grupos en fase _waiting_.
+    - **GameService**: Orquestador principal que une `DixitEngine` (lógica agnóstica de negocio), infraestructura local Redis, y cronómetros de turnos automáticos mediante colas _BullMQ_. Extrae información privada sensible (`hands` y `centralDeck`) antes de compartir el estado general.
+    - **Worker BullMQ**: Administrador de ausencias / AFKs que monitorea la fase y activa jugadas default pseudo-aleatorias y eventos perezosos (`NEXT_ROUND`).
+
+    ## 6. Casos de Uso Destacados / Flujos Completos
+    1. **Adhesión a Sala**: Conexión a Socket con handshake JWT -> Pedido `client:lobby:join` -> Servidor verifica disponibilidad e ingresa código al Redis. Luego se difunde `server:lobby:state_updated` con los miembros para la UI local.
+    2. **Disparo de Partida**: El _Creator_ emite `client:lobby:start` -> Validaciones de aforo mínimo -> Initial setup con inserción de estados en Redis y cartas prisma. Se expide tanto `game:started` como `server:game:started`/`server:game:private_hand`.
+    3. **Ciclo Típico de Acción Central**: Al dictar el Narrador la nueva palabra -> `client:game:action` (subtipo _SUBMIT_STORY_) -> Processamiento -> Salvaguarda Redis -> Extracción de secretismos y retransmisión de estados adaptados a toda la pantalla grupal (`server:game:state_updated`) e individual de cartas de refresco.
+
 servers:
   production:
     url: localhost:3000
@@ -17,31 +42,31 @@ channels:
   # EVENTOS DE SUBIDA (Cliente -> Servidor)
   # ==========================================
   client:lobby:join:
-    description: El cliente solicita unirse a un lobby.
+    description: El cliente solicita unirse a un lobby confirmando su llegada a la pantalla de lobby compartida.
     publish:
       message:
         $ref: '#/components/messages/ClientLobbyJoin'
         
   client:lobby:leave:
-    description: El cliente abandona el lobby intencionalmente.
+    description: El cliente abandona el lobby intencionalmente (alternativamente a dispararse evento de socket desconectado).
     publish:
       message:
         $ref: '#/components/messages/EmptyMessage'
         
   client:lobby:start:
-    description: El host del lobby solicita iniciar el juego.
+    description: El host del lobby solicita iniciar el juego al conseguir el cupo mínimo legal de integrantes.
     publish:
       message:
         $ref: '#/components/messages/EmptyMessage'
         
   client:game:action:
-    description: El cliente envía una acción de juego al servidor (arquitectura centralizada en el motor).
+    description: El cliente envía una acción principal de juego al servidor, posteriormente delegada al motor DixitEngine que calculará los deltas del GameState.
     publish:
       message:
         $ref: '#/components/messages/ClientGameAction'
         
   client:chat:send:
-    description: El cliente envía un mensaje al chat del lobby.
+    description: El cliente redacta un comentario libre y el servidor lo difunde a todos los habitantes con su sello temporal e identificador en la sala.
     publish:
       message:
         $ref: '#/components/messages/ClientChatSend'
@@ -50,37 +75,49 @@ channels:
   # EVENTOS DE BAJADA (Servidor -> Cliente)
   # ==========================================
   server:error:
-    description: El servidor emite un evento de error cuando algo falla.
+    description: Enviado únicamente a un jugador específico de manera privada cuando sucede un problema formal o denegación por error de lógica / validación.
     subscribe:
       message:
         $ref: '#/components/messages/ServerError'
         
   server:lobby:state_updated:
-    description: El servidor emite el estado actualizado del lobby a todos los jugadores en él (ej. cuando alguien entra/sale).
+    description: Contiene todos los datos en vivo sobre los inquilinos actuales de la partida organizados en array, además de propiedades meta (ej. hostId, capacidad, motor).
     subscribe:
       message:
         $ref: '#/components/messages/ServerLobbyStateUpdated'
+
+  server:game:started:
+    description: Emitido inmediatamente después del cambio y configuración de recursos base. Desglosa el estado inicial oficial del tablero sin información clasificada de participantes.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerGameStarted'
         
   server:game:state_updated:
-    description: El motor de juego actualiza el estado y emite la "foto" completa de la partida.
+    description: Actualiza a todos en la room del estado publico modificado post-resolución de una acción o turno (despojando las cartas y mazos ajenos).
     subscribe:
       message:
         $ref: '#/components/messages/ServerGameStateUpdated'
-        
+
+  server:game:private_hand:
+    description: Enviado mediante comunicación unidireccional por una sala personal oculta. Refleja tu baraja real de identidades jugables. 
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerGamePrivateHand'
+
   server:game:ended:
-    description: Notificación de que el juego ha terminado.
+    description: La partida ha concluido y el servidor despacha notificación al cerrar puntuaciones y estados lógicos finales.
     subscribe:
       message:
         $ref: '#/components/messages/EmptyMessage'
         
   server:chat:message_received:
-    description: Un mensaje de chat ha sido recibido y retransmitido a todos en el lobby.
+    description: Retransmisión de texto válido verificado originario e indexado en orden cronológico actual. Todos los de la room procesan este frame.
     subscribe:
       message:
         $ref: '#/components/messages/ServerChatMessageReceived'
         
   game:started:
-    description: Notificación de que la partida ha iniciado oficialmente (generalmente para que el frontend cambie de pantalla a modo de juego).
+    description: Disparado como señal visual asíncrona de frontend para migrar limpiamente entre las interfaces /Lobby hacia /Table sin perder sincronía.
     subscribe:
       message:
         $ref: '#/components/messages/GameStarted'
@@ -92,7 +129,7 @@ components:
       title: Payload Vacio
       payload:
         type: object
-        description: No se espera ningún payload o se ignora.
+        description: No se espera ningún payload explícito o extra.
 
     ClientLobbyJoin:
       name: ClientLobbyJoin 
@@ -102,7 +139,7 @@ components:
         properties:
           lobbyCode:
             type: string
-            description: Código alfanumérico de 4 caracteres del lobby
+            description: Código alfanumérico de 4 caracteres exactos (extraído implícitamente del token pero forzado en payload de seguridad).
         required: 
           - lobbyCode
 
@@ -114,14 +151,14 @@ components:
         properties:
           lobbyCode:
             type: string
-            description: Código de la sala
+            description: Identificador base de sala para validación.
           actionType:
             type: string
-            enum: [SUBMIT_STORY, PLAY_CARD, VOTE_CARD, USE_POWERUP]
-            description: Tipo de acción que el jugador quiere ejecutar
+            enum: [SUBMIT_STORY, PLAY_CARD, SUBMIT_CARD, VOTE_CARD, CAST_VOTE, NEXT_ROUND]
+            description: Enumeración explícita sobre qué clase particular de orden intentará mutar el curso del juego. (Ej Nexo Dixit).
           payload:
             type: object
-            description: Datos específicos de la acción (ID de la carta jugada, pista escrita, etc.)
+            description: Parámetros del objeto requeridos. Ejemplo, si actionType=SUBMIT_STORY -> { cardId: 1, clue: "Un texto abstracto" }.
         required: 
           - lobbyCode
           - actionType
@@ -140,7 +177,7 @@ components:
             type: string
             maxLength: 255
             minLength: 1
-            description: Texto del mensaje enviado
+            description: Texto real a comunicar.
         required: 
           - lobbyCode
           - text
@@ -153,10 +190,10 @@ components:
         properties:
           message:
             type: string
-            description: Mensaje descriptivo del error
+            description: Texto legible como formato base indicando a qué se atiene el problema de desincronización o rechazo.
           code:
             type: string
-            description: Opcional. Código interno de error
+            description: Código auxiliar del manejador de fallos interno (Optional).
         required: 
           - message
 
@@ -165,7 +202,7 @@ components:
       title: Lobby State Updated
       payload:
         type: object
-        description: Objeto que representa el modelo completo actualizado de LobbyService.
+        description: Interfaz actual en caché de Redis con los presentes.
         properties:
           id: 
             type: string
@@ -183,6 +220,22 @@ components:
                 username: 
                   type: string
 
+    ServerGameStarted:
+      name: ServerGameStarted
+      title: Game Started Inicialization Public Frame
+      payload:
+        type: object
+        properties:
+          state:
+            type: object
+            description: Árbol completo del JSON GameState subido ya filtrado para proteger mazos de otras manos en tablero base.
+          message:
+            type: string
+            description: Frase inicial amigable ("¡La partida ha comenzado!").
+        required:
+          - state
+          - message
+
     ServerGameStateUpdated:
       name: ServerGameStateUpdated
       title: Game State Updated Payload
@@ -191,12 +244,26 @@ components:
         properties:
           state:
             type: object
-            description: El JSON completo con el estado de la partida guardado en Redis (GameState completo).
+            description: Resumen general en la presistencia Redis por turnos (ya filtradas las manos de contrincantes escondidas).
           lastAction:
             type: string
-            description: Opcional. Indica la última acción tomada que provocó esta actualización (para animaciones del frontend).
+            description: Detalla la acción previamente culminada. Relevante para procesar y disparar rutinas de animaciones.
         required: 
           - state
+
+    ServerGamePrivateHand:
+      name: ServerGamePrivateHand
+      title: Game Private Hand Hidden Broadcast
+      payload:
+        type: object
+        properties:
+          hand:
+            type: array
+            items:
+              type: number
+            description: Lista de IDs de la baraja única personal accesible en la ronda.
+        required:
+          - hand
 
     ServerChatMessageReceived:
       name: ServerChatMessageReceived
@@ -206,14 +273,14 @@ components:
         properties:
           username:
             type: string
-            description: Nombre del usuario que mandó el mensaje
+            description: Etiqueta visible in-game del remitente.
           text:
             type: string
-            description: Contenido del mensaje original
+            description: Mensaje explícito limpio.
           timestamp:
             type: string
             format: date-time
-            description: Timestamp ISO-8601 del momento en que el servidor procesó el chat
+            description: Tiempo indexado nativo (ISO-8601).
         required: 
           - username
           - text
@@ -221,7 +288,7 @@ components:
 
     GameStarted:
       name: GameStarted
-      title: Game Started Notification
+      title: Game Started View Redirection Let
       payload:
         type: object
         properties:

@@ -6,5 +6,6 @@ export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     username: string;
+    activeGameId?: string | null; // (Para la reconexión) ID de la partida si está jugando
   };
 }
