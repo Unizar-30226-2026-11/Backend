@@ -6,7 +6,11 @@ import { prisma } from '../../infrastructure/prisma';
 import { FriendService } from '../friend.service';
 
 describe('FriendService - Pruebas Funciones', () => {
-  const pending_relations = [];
+  const pending_relations: {
+    id_user_1: number;
+    id_user_2: number;
+    state: Friendship_States;
+  }[] = [];
 
   for (let i = 0; i < 10; i++) {
     pending_relations.push({
