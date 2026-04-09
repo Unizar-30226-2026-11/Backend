@@ -114,3 +114,43 @@ export const checkItemNotOwned = async (
     });
   }
 };
+
+export const isBoardOwner = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { boardId } = req.body;
+
+    if (!boardId) {
+      res.status(400).json({ message: 'El ID del tablero es requerido.' });
+      return;
+    }
+
+    const boards = await UserService.getUserPurchasedBoards(userId);
+    const ownedBoard = Array.isArray(boards)
+      ? boards.find(
+          (board): board is { id: string } =>
+            typeof board === 'object' &&
+            board !== null &&
+            'id' in board &&
+            (board as { id: unknown }).id === boardId,
+        )
+      : null;
+
+    if (!ownedBoard) {
+      res.status(403).json({ message: 'No tienes este tablero comprado.' });
+      return;
+    }
+
+    (req as any).board = ownedBoard;
+
+    next();
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: 'Error en la validación de propiedad del tablero.' });
+  }
+};
