@@ -6,6 +6,7 @@ import { GameService, SocketEmission } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
+import { LobbyStartPayload } from '../events/types';
 import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 export const registerLobbyHandlers = (
@@ -38,8 +39,9 @@ export const registerLobbyHandlers = (
   });
 
   // 2. INICIAR PARTIDA (Flujo Real sin Mocks)
-  socket.on(CLIENT_EVENTS.LOBBY_START, async () => {
+  socket.on(CLIENT_EVENTS.LOBBY_START, async (payload?: LobbyStartPayload) => {
     try {
+      const useDynamicPool = payload?.useDynamicPool ?? true;
       // Obtenemos la sala de Redis con todos los jugadores reales
       const lobby = await LobbyService.getLobbyByCode(lobbyCode);
       if (!lobby) throw new Error('La sala no existe o ha expirado.');
@@ -67,7 +69,9 @@ export const registerLobbyHandlers = (
 
       //Pasamos los datos del lobby a la partida
       const gameService = new GameService(GameRedisRepository);
-      const emissions = await gameService.initializeGame(lobbyCode, lobby);
+      const emissions = await gameService.initializeGame(lobbyCode, lobby, {
+        useDynamicPool,
+      });
 
       // Ejecutamos las emisiones devueltas por el service
       for (const { room, event, data } of emissions) {

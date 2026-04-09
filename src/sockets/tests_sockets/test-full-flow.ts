@@ -29,6 +29,7 @@ const BACKEND_URL = 'http://localhost:3000';
 const LOBBY_CODE = 'FLOW';
 const SECRET_KEY = process.env.JWT_SECRET || 'super_secret_fallback_key';
 const FAKE_IDS = ['u_901', 'u_902', 'u_903'];
+const USE_DYNAMIC_POOL = false; // <-- Cambia a true para usar los mazos de los usuarios (mezcla) o false para usar una colección al azar
 
 // ─── Estado global compartido entre listeners ─────────────────────────────────
 const sockets: Record<string, Socket> = {};
@@ -335,7 +336,15 @@ async function runTest(): Promise<void> {
 
     // 3. Host inicia la partida
     separator('client:lobby:start');
-    sockets[hostId].emit('client:lobby:start');
+    sockets[hostId].emit('client:lobby:start', {
+      useDynamicPool: USE_DYNAMIC_POOL,
+    });
+
+    if (USE_DYNAMIC_POOL) {
+      console.log('\n Usando mazos dinámicos (mezcla de colecciones)...');
+    } else {
+      console.log('\n Usando mazos predefinidos (colección aleatoria)...');
+    }
 
     // 4. Esperar repartición de manos (max 8s por jugador)
     console.log('\n Esperando repartición de manos privadas...');
@@ -398,7 +407,9 @@ async function runTest(): Promise<void> {
       console.log(`\n✅ ¡ÉXITO! Sesión recuperada para ${testPlayerId}`);
       console.log(`   -> Sala recuperada: ${data.lobbyCode}`);
       console.log(`   -> Fase del juego recuperada: ${data.state.phase}`);
-      console.log(`   -> A quién le toca: ${data.state.turnOf}`);
+      console.log(
+        `   -> Storyteller: ${data.state.currentRound.storytellerId}`,
+      );
     });
 
     // 4. (Opcional) Prueba rápida de Multitab (intentar conectar otra vez)

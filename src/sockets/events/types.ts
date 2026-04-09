@@ -6,6 +6,10 @@ export interface JoinLobbyPayload {
   lobbyCode: string;
 }
 
+export interface LobbyStartPayload {
+  useDynamicPool?: boolean;
+}
+
 export interface ChatSendPayload {
   lobbyCode: string;
   text: string;

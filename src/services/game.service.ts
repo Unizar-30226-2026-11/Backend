@@ -6,6 +6,10 @@ import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
+import {
+  PREDEFINED_DECK_KEYS,
+  PREDEFINED_DECKS,
+} from '../shared/constants/decks';
 import { GameAction, GameState } from '../shared/types';
 
 // ==========================================
@@ -39,6 +43,7 @@ export class GameService {
   public async initializeGame(
     lobbyCode: string,
     lobbyData: any,
+    options: { useDynamicPool: boolean } = { useDynamicPool: true },
   ): Promise<SocketEmission[]> {
     const { engine: mode, players } = lobbyData;
 
@@ -48,20 +53,27 @@ export class GameService {
       return isNaN(num) ? 0 : num;
     });
 
-    // 2. Extraer cartas de los mazos de los jugadores
-    const userDecks = await prisma.deck.findMany({
-      where: { id_user: { in: numericPlayerIds } },
-      include: {
-        cards: { include: { user_card: true } },
-      },
-    });
-
     let centralDeck: number[] = [];
-    userDecks.forEach((deck) => {
-      deck.cards.forEach((dc) => {
-        if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+
+    // 2. Extraer cartas de los mazos (o usar el predeterminado al azar)
+    if (options.useDynamicPool) {
+      const userDecks = await prisma.deck.findMany({
+        where: { id_user: { in: numericPlayerIds } },
+        include: {
+          cards: { include: { user_card: true } },
+        },
       });
-    });
+
+      userDecks.forEach((deck) => {
+        deck.cards.forEach((dc) => {
+          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+        });
+      });
+    } else {
+      const keys = PREDEFINED_DECK_KEYS;
+      const randomKey = keys[Math.floor(Math.random() * keys.length)];
+      centralDeck = [...PREDEFINED_DECKS[randomKey]];
+    }
 
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,

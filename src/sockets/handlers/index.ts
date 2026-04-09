@@ -1,9 +1,7 @@
 import { Server, Socket } from 'socket.io';
 
-import {
-  gameRepository,
-  lobbyRepository,
-} from '../../infrastructure/redis/index';
+import { lobbyRepository } from '../../infrastructure/redis/index';
+import { GameRedisRepository } from '../../repositories/game.repository';
 import { SERVER_EVENTS } from '../events';
 import {
   AuthenticatedSocket,
@@ -54,14 +52,10 @@ export const setupSockets = (io: Server) => {
 
       try {
         // Buscamos si la partida ya ha empezado
-        const gameState = await gameRepository
-          .search()
-          .where('lobbyCode')
-          .equals(lobbyCode)
-          .return.first();
+        const gameState = await GameRedisRepository.getGame(lobbyCode);
 
         if (gameState) {
-          // Está jugando, le enviamos el tablero (recuerda decirle a tu equipo que añadan turnOf y timer a redis)
+          // Está jugando, le enviamos el tablero
           socket.emit(SERVER_EVENTS.SESSION_RECOVERED, {
             lobbyCode,
             state: gameState,
