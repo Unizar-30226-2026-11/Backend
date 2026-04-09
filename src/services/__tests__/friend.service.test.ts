@@ -6,7 +6,11 @@ import { prisma } from '../../infrastructure/prisma';
 import { FriendService } from '../friend.service';
 
 describe('FriendService - Pruebas Funciones', () => {
-  const pending_relations = [];
+  const pending_relations: {
+    id_user_1: number;
+    id_user_2: number;
+    state: Friendship_States;
+  }[] = [];
 
   for (let i = 0; i < 10; i++) {
     pending_relations.push({
@@ -22,6 +26,34 @@ describe('FriendService - Pruebas Funciones', () => {
   }));
 
   beforeAll(async () => {
+    // Aseguramos usuarios base para evitar fallos por FK en entornos sin seed previo.
+    await prisma.user.createMany({
+      data: Array.from({ length: 15 }, (_, i) => ({
+        id_user: i + 1,
+        username: `friend_test_user_${i + 1}`,
+        email: `friend_test_user_${i + 1}@example.com`,
+        password: 'test_password',
+      })),
+      skipDuplicates: true,
+    });
+
+    await prisma.friendships.upsert({
+      where: {
+        id_user_1_id_user_2: {
+          id_user_1: 1,
+          id_user_2: 2,
+        },
+      },
+      update: {
+        state: Friendship_States.FRIEND,
+      },
+      create: {
+        id_user_1: 1,
+        id_user_2: 2,
+        state: Friendship_States.FRIEND,
+      },
+    });
+
     // Limpieza Preventiva
     await prisma.friendships.deleteMany({
       where: {

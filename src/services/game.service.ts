@@ -314,7 +314,7 @@ export class GameService {
     ];
   }
 
-  private getEngine(lobbyCode: string): IGameEngine {
+  private getEngine(_lobbyCode: string): IGameEngine {
     // Aquí podrías consultar qué tipo de partida es. Por defecto:
     // return type === 'STELLA' ? StellaEngine : DixitEngine;
     return DixitEngine;
