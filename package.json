@@ -66,7 +66,7 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "jest": "^30.2.0",
     "prettier": "^3.8.1",
-    "prisma": "^7.4.2",
+    "prisma": "^6.19.3",
     "ts-jest": "^29.4.6",
     "ts-node-dev": "^2.0.0",
     "tsc-alias": "^1.8.16",
