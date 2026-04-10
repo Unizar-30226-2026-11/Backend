@@ -96,4 +96,15 @@ export const registerGameHandlers = (
       socket.emit('server:error', { message: (error as Error).message });
     }
   });
+
+  //Finalizar partida
+  socket.on('client:game:end', async (rawPayload: unknown) => {
+    try {
+      const { lobbyCode } = rawPayload as { lobbyCode: string };
+      const emissions = await gameService.finalizeGame(lobbyCode);
+      dispatchEmissions(io, emissions);
+    } catch (error: unknown) {
+      socket.emit('server:error', { message: (error as Error).message });
+    }
+  });
 };

@@ -43,7 +43,7 @@ export const SERVER_EVENTS = {
   // El motor calcula todo, guarda en Redis, y el socket emite esta "foto" de la partida.
   GAME_STARTED: 'server:game:started', //La partida arranca. Renderizar tablero.
   GAME_STATE_UPDATED: 'server:game:state_updated', //El estado general (puntos, descartes, fase) ha cambiado. Redibujar UI general.
-  GAME_ENDED: 'server:game:ended',
+  GAME_ENDED: 'server:game:ended', //La partida ha terminado. Mostrar pantalla de resultados con el ranking y monedas ganadas.
 
   DECK_RESHUFFLED: 'server:game:deck_reshuffled', //Animación visual: El mazo de descartes se ha mezclado y vuelve al mazo central.
   PRIVATE_HAND: 'server:game:private_hand', //Tus cartas acaban de cambiar (por robar en nuevo turno o por caer en Shuffle).
@@ -52,6 +52,10 @@ export const SERVER_EVENTS = {
   MINIGAME_START: 'server:game:minigame_start', //Dos jugadores entran en conflicto. Mostrar un minijuego en las pantallas de p1 y p2 (y un cartel de "Duelo en curso" al resto).
 
   GAME_ERROR: 'server:game:error', //Has intentado hacer algo ilegal (ej. jugar carta durante un minijuego activo). Mostrar Toast/Alerta de error.
+
+  // Economía (RF-14)
+  WALLET_UPDATED: 'server:economy:wallet_updated', // [RF-14] El saldo de monedas del usuario ha cambiado. Actualizar el widget del monedero en tiempo real.
+
   // Chat
   CHAT_MESSAGE_RECEIVED: 'server:chat:message_received',
 

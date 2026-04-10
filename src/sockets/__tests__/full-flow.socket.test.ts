@@ -23,6 +23,8 @@ describe('Full Flow Socket (E2E Test)', () => {
   let player2Token: string;
   let hostId: string;
   let player2Id: string;
+  let p3Id: string;
+  let p4Id: string;
 
   beforeAll(async () => {
     console.log('🔌 Conectando bases de datos...');
@@ -32,32 +34,53 @@ describe('Full Flow Socket (E2E Test)', () => {
     await GameRedisRepository.deleteGame(LOBBY_CODE);
     await LobbyRedisRepository.remove(LOBBY_CODE);
 
-    // 1. Buscar dos usuarios reales con cartas
-    const users = await prisma.user.findMany({
+    // 1. Buscar usuarios reales
+    const usersWithDecks = await prisma.user.findMany({
       where: { my_deck: { some: {} } },
       select: { id_user: true, username: true },
       take: 2,
     });
 
-    if (users.length < 2)
+    if (usersWithDecks.length < 2)
       throw new Error(
         'Se necesitan al menos 2 usuarios con mazos en la BD para probar.',
       );
 
-    hostId = `u_${users[0].id_user}`;
-    player2Id = `u_${users[1].id_user}`;
+    const otherUsers = await prisma.user.findMany({
+      where: { id_user: { notIn: usersWithDecks.map((u) => u.id_user) } },
+      select: { id_user: true, username: true },
+      take: 2,
+    });
+
+    if (otherUsers.length < 2)
+      throw new Error(
+        'Se necesitan al menos 4 usuarios en total en la BD para probar.',
+      );
+
+    hostId = `u_${usersWithDecks[0].id_user}`;
+    player2Id = `u_${usersWithDecks[1].id_user}`;
+    p3Id = `u_${otherUsers[0].id_user}`;
+    p4Id = `u_${otherUsers[1].id_user}`;
     console.log(
-      `✅ Host: ${users[0].username} (${hostId}) | Jugador 2: ${users[1].username} (${player2Id})`,
+      `✅ Host: ${usersWithDecks[0].username} (${hostId}) | Jugador 2: ${usersWithDecks[1].username} (${player2Id})`,
     );
 
     // 2. Generar JWT para ambos
     hostToken = jwt.sign(
-      { id: hostId, username: users[0].username, lobbyCode: LOBBY_CODE },
+      {
+        id: hostId,
+        username: usersWithDecks[0].username,
+        lobbyCode: LOBBY_CODE,
+      },
       SECRET_KEY,
       { expiresIn: '5m' },
     );
     player2Token = jwt.sign(
-      { id: player2Id, username: users[1].username, lobbyCode: LOBBY_CODE },
+      {
+        id: player2Id,
+        username: usersWithDecks[1].username,
+        lobbyCode: LOBBY_CODE,
+      },
       SECRET_KEY,
       { expiresIn: '5m' },
     );
@@ -70,7 +93,7 @@ describe('Full Flow Socket (E2E Test)', () => {
       engine: 'STANDARD',
       isPrivate: false,
       status: 'waiting',
-      players: [hostId, 'u_901', 'u_902'], // 3 Jugadores. El player2Id se unirá vía Socket para sumar 4
+      players: [hostId, p3Id, p4Id], // 3 Jugadores. El player2Id se unirá vía Socket para sumar 4
       lobbyCode: LOBBY_CODE,
     };
 
@@ -223,5 +246,109 @@ describe('Full Flow Socket (E2E Test)', () => {
         );
       });
     });
+  }, 10000);
+
+  it('debería simular el fin de partida, verificar ranking y reparto de monedas', async () => {
+    console.log('\n🔄 Simulando finalización de partida con puntuaciones...');
+
+    // 1. Obtener monedas iniciales de los usuarios
+    const numericIds = [hostId, player2Id, p3Id, p4Id].map((id) =>
+      parseInt(id.replace('u_', '')),
+    );
+    const initialUsers = await prisma.user.findMany({
+      where: { id_user: { in: numericIds } },
+      select: { id_user: true, coins: true },
+    });
+    const initialCoins: Record<string, number> = {};
+    initialUsers.forEach((u) => {
+      initialCoins[`u_${u.id_user}`] = u.coins || 0;
+    });
+
+    // 2. Manipular estado de Redis con puntuaciones definidas
+    const gameId = LOBBY_CODE;
+    const currentState = await GameRedisRepository.getGame(gameId);
+    expect(currentState).toBeDefined();
+
+    if (currentState) {
+      // Establecer puntuaciones de 1º a 4º (Host 1º, P2 2º, P3 3º, P4 4º)
+      currentState.scores[hostId] = 40;
+      currentState.scores[player2Id] = 30;
+      currentState.scores[p3Id] = 20;
+      currentState.scores[p4Id] = 10;
+      await GameRedisRepository.saveGame(gameId, currentState);
+    }
+
+    // 3. Emitir y esperar eventos
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error('Timeout esperando eventos de fin de juego')),
+        5000,
+      );
+
+      let gameEndedReceived = false;
+      let walletUpdatedHost = false;
+      let walletUpdatedP2 = false;
+
+      const checkDone = () => {
+        if (gameEndedReceived && walletUpdatedHost && walletUpdatedP2) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+
+      // Nos suscribimos desde host a la tabla final
+      hostSocket.on('server:game:ended', (payload: any) => {
+        console.log(
+          '🏁 [HOST] Partida finalizada recibida. Ranking comprobado.',
+        );
+        expect(payload.ranking.length).toBe(4);
+        expect(payload.ranking[0].playerId).toBe(hostId); // 1er lugar
+        expect(payload.ranking[0].coinsEarned).toBe(50);
+        expect(payload.ranking[1].playerId).toBe(player2Id); // 2o lugar
+        expect(payload.ranking[1].coinsEarned).toBe(35);
+        expect(payload.ranking[2].playerId).toBe(p3Id); // 3er lugar
+        expect(payload.ranking[2].coinsEarned).toBe(25);
+        expect(payload.ranking[3].playerId).toBe(p4Id); // 4o lugar
+        expect(payload.ranking[3].coinsEarned).toBe(15);
+        gameEndedReceived = true;
+        checkDone();
+      });
+
+      // Wallet de Host
+      hostSocket.on('server:economy:wallet_updated', (payload: any) => {
+        console.log(`💰 [HOST] Wallet update recibido: ${payload.balance}`);
+        const expectedCoins = initialCoins[hostId] + 50;
+        expect(payload.balance).toBe(expectedCoins);
+        walletUpdatedHost = true;
+        checkDone();
+      });
+
+      // Wallet de Jugador 2
+      player2Socket.on('server:economy:wallet_updated', (payload: any) => {
+        console.log(`💰 [P2] Wallet update recibido: ${payload.balance}`);
+        const expectedCoins = initialCoins[player2Id] + 35;
+        expect(payload.balance).toBe(expectedCoins);
+        walletUpdatedP2 = true;
+        checkDone();
+      });
+
+      // Disparamos el fin de partida
+      console.log('🚀 [HOST] Enviando client:game:end...');
+      hostSocket.emit('client:game:end', { lobbyCode: LOBBY_CODE });
+    });
+
+    // 4. Validar que la BD persistió correctamente
+    const finalUsers = await prisma.user.findMany({
+      where: { id_user: { in: numericIds } },
+      select: { id_user: true, coins: true },
+    });
+
+    const hostFinal = finalUsers.find((u) => u.id_user === numericIds[0]);
+    const p2Final = finalUsers.find((u) => u.id_user === numericIds[1]);
+    expect(hostFinal?.coins).toBe(initialCoins[hostId] + 50);
+    expect(p2Final?.coins).toBe(initialCoins[player2Id] + 35);
+    console.log(
+      '✅ Base de datos validada con éxito tras finalizar la partida.',
+    );
   }, 10000);
 });
