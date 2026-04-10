@@ -56,8 +56,12 @@ export const setupSockets = (io: Server) => {
         const gameState = await GameRedisRepository.getGame(lobbyCode);
 
         if (gameState) {
-          // Está jugando, le enviamos el tablero
+          //Le enviamos su mano privada
+          socket.emit(SERVER_EVENTS.PRIVATE_HAND, {
+            hand: gameState.hands[userId],
+          });
 
+          // Está jugando, le enviamos el tablero
           //Eliminamos información privada primero
           const publicState = structuredClone(gameState);
           delete (publicState as any).centralDeck;
