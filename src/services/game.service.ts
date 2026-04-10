@@ -10,7 +10,12 @@ import {
   PREDEFINED_DECK_KEYS,
   PREDEFINED_DECKS,
 } from '../shared/constants/decks';
+import {
+  COIN_REWARDS_BY_RANK,
+  COIN_REWARDS_DEFAULT,
+} from '../shared/constants/rewards';
 import { GameAction, GameState } from '../shared/types';
+import { invalidateCache } from '../shared/utils/cache.utils';
 
 // ==========================================
 // CONFIGURACIÓN DE BULLMQ (Timeouts de turnos)
@@ -224,7 +229,120 @@ export class GameService {
       }
     }
 
+    // 11. Si la partida ha terminado, finalizarla
+    if (newState.phase === 'FINISHED') {
+      const finalEmissions = await this.finalizeGame(gameId);
+      emissions.push(...finalEmissions);
+    }
+
     return emissions;
+  }
+
+  // ==========================================
+  // FIN DE PARTIDA: RANKING Y MONEDAS
+  // ==========================================
+
+  /**
+   * Cierra la partida: calcula el ranking, reparte monedas según la tabla
+   * COIN_REWARDS_BY_RANK, persiste los resultados en Prisma y devuelve
+   * las emisiones socket (resultado sala + saldo personal por RF-14).
+   */
+  public async finalizeGame(lobbyCode: string): Promise<SocketEmission[]> {
+    // 2. Ordenar jugadores por puntuación (de mayor a menor)
+    const currentState = await this.redisRepo.getGame(lobbyCode);
+    if (!currentState) {
+      throw new Error('Partida no encontrada o expirada.');
+    }
+    const ranking = Object.entries(currentState.scores)
+      .sort(([, a], [, b]) => b - a)
+      .map(([playerId, points], index) => ({
+        playerId,
+        points,
+        place: index + 1,
+        coinsEarned: COIN_REWARDS_BY_RANK[index + 1] ?? COIN_REWARDS_DEFAULT,
+      }));
+
+    // 2. Persistir en Prisma dentro de una transacción
+    try {
+      const gameDuration = 0; // TODO: calcular duración real cuando se almacene el startedAt
+      const gameLog = await prisma.games_log.create({
+        data: { duration: gameDuration },
+      });
+
+      await prisma.$transaction([
+        // Registro de estadísticas por jugador
+        ...ranking.map(({ playerId, points, place }) => {
+          const numericId = parseInt(playerId.replace('u_', ''));
+          return prisma.userGameStats.create({
+            data: {
+              id_user: numericId,
+              id_game: gameLog.id_game,
+              points,
+              place,
+            },
+          });
+        }),
+        // Incremento atómico de monedas (seguro ante concurrencia)
+        ...ranking.map(({ playerId, coinsEarned }) => {
+          const numericId = parseInt(playerId.replace('u_', ''));
+          return prisma.user.update({
+            where: { id_user: numericId },
+            data: { coins: { increment: coinsEarned } },
+          });
+        }),
+      ]);
+
+      // 3. Obtener el saldo actualizado de cada jugador para el evento WALLET_UPDATED
+      const updatedBalances = await Promise.all(
+        ranking.map(async ({ playerId }) => {
+          const numericId = parseInt(playerId.replace('u_', ''));
+          const user = await prisma.user.findUnique({
+            where: { id_user: numericId },
+            select: { coins: true },
+          });
+          return { playerId, balance: user?.coins ?? 0 };
+        }),
+      );
+
+      // 4. Invalidar caché de economía de cada jugador (RF-14)
+      await Promise.all(
+        ranking.map(({ playerId }) =>
+          invalidateCache(`cache:user:economy:${playerId}`),
+        ),
+      );
+
+      const emissions: SocketEmission[] = [];
+
+      // 5a. Emitir resultados a toda la sala
+      emissions.push({
+        room: lobbyCode,
+        event: 'server:game:ended',
+        data: { ranking },
+      });
+
+      // 5b. Emitir saldo actualizado a cada jugador por su sala personal (RF-14)
+      for (const { playerId, balance } of updatedBalances) {
+        emissions.push({
+          room: playerId, // Sala personal del jugador (socket.join(userId))
+          event: 'server:economy:wallet_updated',
+          data: { balance },
+        });
+      }
+
+      return emissions;
+    } catch (error) {
+      console.error(
+        `[GameService] Error al finalizar la partida ${lobbyCode}:`,
+        error,
+      );
+      return [
+        {
+          room: lobbyCode,
+          event: 'server:game:ended',
+          data: { ranking, error: 'No se pudieron guardar las estadísticas.' },
+        },
+      ];
+    }
   }
 
   // ==========================================
