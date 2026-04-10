@@ -229,6 +229,12 @@ export class GameService {
       }
     }
 
+    // 11. Si la partida ha terminado, finalizarla
+    if (newState.phase === 'FINISHED') {
+      const finalEmissions = await this.finalizeGame(gameId);
+      emissions.push(...finalEmissions);
+    }
+
     return emissions;
   }
 
