@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
 import { LobbyRedisRepository } from '../../repositories/lobby.repository';
+import { LobbyService } from '../../services/lobby.service';
 import { SERVER_EVENTS } from '../events';
 import {
   AuthenticatedSocket,
@@ -56,21 +57,42 @@ export const setupSockets = (io: Server) => {
 
         if (gameState) {
           // Está jugando, le enviamos el tablero
+
+          //Eliminamos información privada primero
+          const publicState = structuredClone(gameState);
+          delete (publicState as any).centralDeck;
+          delete (publicState as any).hands;
           socket.emit(SERVER_EVENTS.SESSION_RECOVERED, {
             lobbyCode,
-            state: gameState,
+            state: publicState,
           });
         } else {
           // No hay partida, pero hay lobbyCode, así que está en la sala de espera
-          // IMPORTANTE: usar findByCode en lugar de search() garantiza O(1) y evita
-          // race-conditions en los tests si el índice de Redis tarda en construirse.
-          const lobbyState = await LobbyRedisRepository.findByCode(lobbyCode);
+          // El disconnect previo habrá borrado al jugador de Redis (leaveLobby),
+          // así que lo volvemos a insertar antes de emitir el estado a todos.
+          const updatedLobby = await LobbyService.joinLobby(
+            lobbyCode,
+            userId,
+          ).catch(() => LobbyRedisRepository.findByCode(lobbyCode));
 
-          if (lobbyState) {
+          if (updatedLobby) {
+            // 1. Informamos al propio socket de su recuperación con el estado actualizado
             socket.emit(SERVER_EVENTS.LOBBY_RECOVERED, {
               lobbyCode,
-              lobby: lobbyState,
+              lobby: updatedLobby,
             });
+
+            // 2. Notificamos al RESTO de usuarios que el jugador se ha reconectado
+            socket.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_PLAYER_RECONNECTED, {
+              user: socket.user?.username,
+              message: `${socket.user?.username} se ha reconectado a la sala.`,
+            });
+
+            // 3. Emitimos el estado COMPLETO (con el jugador incluido) a TODOS
+            io.to(lobbyCode).emit(
+              SERVER_EVENTS.LOBBY_STATE_UPDATED,
+              updatedLobby,
+            );
           }
         }
       } catch (error) {

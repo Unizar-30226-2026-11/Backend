@@ -6,7 +6,7 @@ import { GameService, SocketEmission } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
-import { LobbyStartPayload } from '../events/types';
+import { LobbyRecoveredPayload, LobbyStartPayload } from '../events/types';
 import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 export const registerLobbyHandlers = (
@@ -30,6 +30,12 @@ export const registerLobbyHandlers = (
       console.log(
         `[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`,
       );
+
+      // Informar al resto de usuarios que este usuario se unió
+      socket.to(lobbyCode).emit(SOCKET_EVENTS.LOBBY_PLAYER_JOINED, {
+        user: socket.user?.username,
+        message: `${socket.user?.username} se ha unido a la sala.`,
+      });
 
       // Emitimos el nuevo estado a TODOS en la sala para que actualicen sus pantallas
       io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, updatedLobby);
@@ -90,8 +96,14 @@ export const registerLobbyHandlers = (
     try {
       console.log(`[Lobby] ${socket.user?.username} se ha desconectado.`);
 
-      // Sacamos al jugador de la sala en Redis NO: El disconnect debe quedarse solo para hacer console.log o limpiar memoria temporal, pero nunca para tocar la base de datos (Redis).
-      //await LobbyService.leaveLobby(lobbyCode, userId);
+      // Sacamos al jugador de la sala en Redis
+      await LobbyService.leaveLobby(lobbyCode, userId);
+
+      // Informamos a los demás en la sala
+      socket.to(lobbyCode).emit(SOCKET_EVENTS.LOBBY_PLAYER_LEFT, {
+        user: socket.user?.username,
+        message: `${socket.user?.username} se ha desconectado de la sala.`,
+      });
 
       // Comprobamos si la sala sigue viva para avisar a los demás
       const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
@@ -122,12 +134,19 @@ export const registerLobbyHandlers = (
       // 3. Limpiamos su variable interna por si reutiliza el socket
       socket.data.lobbyCode = undefined;
 
+      // Informamos a los demás en la sala
+      socket.to(lobbyCode).emit(SOCKET_EVENTS.LOBBY_PLAYER_LEFT, {
+        user: socket.user?.username,
+        message: `${socket.user?.username} ha abandonado la sala.`,
+      });
+
       // 4. Avisamos al resto de jugadores que quedan en la sala
       const remainingLobby = await LobbyService.getLobbyByCode(lobbyCode);
       if (remainingLobby) {
-        io.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_STATE_UPDATED, {
-          lobby: remainingLobby,
-        });
+        io.to(lobbyCode).emit(
+          SERVER_EVENTS.LOBBY_STATE_UPDATED,
+          remainingLobby,
+        );
       }
     } catch (error: any) {
       socket.emit(SERVER_EVENTS.ERROR, {

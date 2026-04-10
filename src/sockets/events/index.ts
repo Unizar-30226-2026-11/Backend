@@ -58,6 +58,7 @@ export const SERVER_EVENTS = {
   // NUEVOS EVENTOS DE RECONEXIÓN
   SESSION_RECOVERED: 'server:session:recovered', // Partida en curso
   LOBBY_RECOVERED: 'server:lobby:recovered', // Estaba en la sala de espera
+  LOBBY_PLAYER_RECONNECTED: 'server:lobby:player_reconnected', // Un jugador se ha reconectado al lobby
   FORCE_DISCONNECT: 'server:force_disconnect', // Multitab
 } as const;
 
