@@ -17,7 +17,8 @@ jest.mock('../../infrastructure/redis', () => ({
 jest.mock('../../infrastructure/prisma', () => ({
     prisma: {
         deck: { findMany: jest.fn() },
-        cards: { findMany: jest.fn() }
+        cards: { findMany: jest.fn() },
+        user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) }
     }
 }));
 
@@ -300,48 +301,6 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         });
     });
 
-    // ==========================================
-    // CASILLA DE BONUS ALEATORIO
-    // ==========================================
-    describe('Casilla de Bonus Aleatorio', () => {
-
-        test('Debe aplicar el modificador HAND_LIMIT en modo STANDARD', async () => {
-            const mockState = {
-                lobbyCode: 'LOBBY-1',
-                mode: 'STANDARD',
-                players: ['p1'],
-                scores: { p1: BOARD_CONFIG.SPECIAL_SQUARES.BONUS_RANDOM_1 },
-            } as unknown as GameState;
-
-            const previousScores = { p1: 0 };
-            const emissions = await gameService['checkSpecialSquares'](mockState, previousScores);
-
-            expect(mockState.activeModifiers).toBeDefined();
-            expect(mockState.activeModifiers!['p1'].type).toBe('HAND_LIMIT');
-            expect(emissions[0].data).toHaveProperty('effect', 'CARD_BONUS');
-        });
-
-        test('Debe sumar puntos directos (1 a 3) en modo STELLA', async () => {
-            const mockState = {
-                lobbyCode: 'LOBBY-1',
-                mode: 'STELLA',
-                players: ['p1'],
-                scores: { p1: BOARD_CONFIG.SPECIAL_SQUARES.BONUS_RANDOM_1 },
-                isMinigameActive: false
-            } as unknown as GameState;
-
-            const previousScores = { p1: 0 };
-            jest.spyOn(global.Math, 'random').mockReturnValueOnce(0.5); // Fuerzamos +2 puntos
-
-            const emissions = await gameService['checkSpecialSquares'](mockState, previousScores);
-
-            expect(mockState.scores['p1']).toBe(BOARD_CONFIG.SPECIAL_SQUARES.BONUS_RANDOM_1 + 2);
-            expect(emissions[0].data).toHaveProperty('effect', 'STELLA_BONUS_POINTS');
-            
-            jest.spyOn(global.Math, 'random').mockRestore();
-        });
-
-    });
 
     // ==========================================
     // CASILLA DE EQUILIBRIO
@@ -406,7 +365,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
             expect(mockState.isStarActive).toBe(true);
             expect(mockRedisRepo.saveGame).toHaveBeenCalled();
-            expect(emissions[0].event).toBe('star_spawned');
+            expect(emissions[0].event).toBe('server:game:star_spawned');
 
             // Ahora que hemos "espiado" la cola correctamente, pasará sin problema
             expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(

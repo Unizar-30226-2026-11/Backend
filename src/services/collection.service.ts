@@ -8,9 +8,7 @@ import {
 export const CollectionService = {
   // Obtiene todas las colecciones disponibles
   getAllCollections: async () => {
-    return getCachedData(
-      'cache:collections:all',
-      async () => {
+    return getCachedData('cache:collections:all', async () => {
         const collections = await prisma.collection.findMany({
           include: {
             _count: {
@@ -25,7 +23,7 @@ export const CollectionService = {
           id: `col_${collection.id_collection}`,
           name: collection.name,
           description: collection.description,
-          release_date: collection.releaseDate,
+          release_date: collection.releaseDate.toISOString(),
           total_cards: collection._count.cards,
         }));
 
@@ -49,14 +47,10 @@ export const CollectionService = {
 
     for (const id of numericIds) {
       const cacheKey = `cache:collection:id:${id}`;
-
       const cached = await getCachedItem<any>(cacheKey);
 
-      if (cached) {
-        finalCollections.push(cached);
-      } else {
-        missingIdsInCache.push(id);
-      }
+      if (cached) finalCollections.push(cached);
+      else missingIdsInCache.push(id);
     }
 
     if (missingIdsInCache.length == 0) {
@@ -76,15 +70,12 @@ export const CollectionService = {
 
     if (bbddCollections.length > 0) {
       for (const collection of bbddCollections) {
-        const formattedDate = collection.releaseDate
-          ? collection.releaseDate.toISOString().split('T')[0]
-          : null;
 
         const formattedCollection = {
           id: `col_${collection.id_collection}`,
           name: collection.name,
           description: collection.description,
-          releaseDate: formattedDate,
+          releaseDate: collection.releaseDate.toISOString(),
           totalCards: collection._count.cards,
         };
 
@@ -96,13 +87,13 @@ export const CollectionService = {
       }
     }
 
-    if (finalCollections.length === 0) {
-      return null;
-    }
+    if (finalCollections.length === 0) return null;
 
-    return {
-      collections: finalCollections,
-    };
+    // Si pedimos más de uno, devolvemos el objeto con el array.
+    // Si solo pedimos uno, devolvemos el objeto directo.
+    return idsToProcess.length > 1 
+      ? { collections: finalCollections } 
+      : finalCollections[0];
   },
 
   // Obtiene el catálogo de cartas de una (o unas) colección
@@ -150,9 +141,8 @@ export const CollectionService = {
             name: collection.name,
           },
           cards: collection.cards.map((card) => ({
-            id: `${collection_id}_card_${card.id_card}`,
+            id: `c_${card.id_card}`,
             name: card.title,
-            type: 'Standard',
             rarity: card.rarity,
           })),
         };
@@ -169,6 +159,10 @@ export const CollectionService = {
       return null;
     }
 
-    return finalCatalogs;
+    // Si pedimos más de uno, devolvemos el objeto con el array.
+    // Si solo pedimos uno, devolvemos el objeto directo.
+    return idsToProcess.length > 1 
+      ? { collections: finalCatalogs } 
+      : finalCatalogs[0];
   },
 };

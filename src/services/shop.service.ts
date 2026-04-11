@@ -1,8 +1,8 @@
 // src/services/shop.service.ts
 import { prisma } from '../infrastructure/prisma';
-import { Purchase_Type, Board_Type } from '@prisma/client'; 
+import { Purchase_Type } from '@prisma/client'; 
 import { ShopRedisRepository } from '../repositories/shop.repository';
-import { DailyShopState } from '../infrastructure/redis/shop.schema';
+
 
 // ==========================================
 // DICCIONARIOS DE PRECIOS
@@ -14,12 +14,6 @@ const RARITY_PRICES = {
   SPECIAL: 800,
   EPIC: 1500,
   LEGENDARY: 3000,
-};
-
-const BOARD_PRICES: Record<Board_Type, number> = {
-  CLASSIC: 0,
-  NEON: 1200,
-  STELLAR_GALAXY: 1500,
 };
 
 /**
@@ -40,50 +34,52 @@ class ShopServiceClass {
    * Obtiene la tienda diaria privada de un usuario.
    * Utiliza Redis para cachear la tienda durante 24 horas.
    */
-  public async getAvailableItems(userId: number): Promise<DailyShopState> {
+  public async getAvailableItems(userId: number): Promise<any> {
 
     // Preguntamos al Repositorio si ya existe la tienda generada hoy
     const cachedShop = await ShopRedisRepository.getDailyShop(userId);
     if (cachedShop) return cachedShop;
 
-    // Cálculo de reinicio del servidor
+    // Cálculo de reinicio del servidor:
+
     const now = new Date();
     // Creamos una fecha que apunte exactamente a las 00:00:00 del día siguiente (en horario universal UTC)
     const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-    
     // Calculamos los segundos exactos que faltan para llegar a esa medianoche
     const secondsUntilMidnight = Math.floor((nextMidnight.getTime() - now.getTime()) / 1000);
 
-    // Obtener las cartas y tableros que el usuario ya posee
+    // Obtener inventario actual del usuario
     const userInventory = await prisma.user.findUnique({
       where: { id_user: userId },
       include: { 
-        my_cards: { select: { id_card: true } }
+        my_cards: { select: { id_card: true } },
+        my_boards: { select: { id_board: true } }
       }
     });
 
     const ownedCardIds = new Set(userInventory?.my_cards.map(c => c.id_card) || []);
-    const ownedBoards = userInventory?.tableros || [];
+    const ownedBoardIds = new Set(userInventory?.my_boards.map(b => b.id_board) || []);
 
-    // Filtrar cartas que NO tenga para las ofertas individuales
+    // Cartas individuales
     const allCards = await prisma.cards.findMany();
     const availableForSingles = allCards.filter(c => !ownedCardIds.has(c.id_card));
     const singles = availableForSingles.sort(() => 0.5 - Math.random()).slice(0, 3);
 
-    // Filtrar colecciones que no tenga COMPLETAS
+    // Coleccion 
     const allColls = await prisma.collection.findMany({ include: { cards: true } });
     const availableColls = allColls.filter(coll => 
       coll.cards.some(card => !ownedCardIds.has(card.id_card))
     );
     const randomColl = availableColls.length > 0 ? availableColls[Math.floor(Math.random() * availableColls.length)] : null;
 
-    // Tablero que no tenga
-    const availableBoards = (Object.keys(BOARD_PRICES) as Board_Type[]).filter(b => !ownedBoards.includes(b));
-    const boardName = availableBoards.length > 0 ? availableBoards[Math.floor(Math.random() * availableBoards.length)] : null;
-    
-    const pack = availableForSingles.sort(() => 0.5 - Math.random()).slice(0,5);
+    // Tablero
+    const allBoards = await prisma.board.findMany();
+    const availableBoards = allBoards.filter(b => !ownedBoardIds.has(b.id_board));
+    const selectedBoard = availableBoards.length > 0 ? availableBoards[Math.floor(Math.random() * availableBoards.length)] : null;
 
-    const state: DailyShopState = {
+    const pack = allCards.sort(() => 0.5 - Math.random()).slice(0,5);
+
+    const shop = {
       singleCards: singles.map(c => ({ id_card: c.id_card, title: c.title, rarity: c.rarity, price: RARITY_PRICES[c.rarity] })),
       cardPackOffer: {
         name: "Sobre Diario",
@@ -96,17 +92,22 @@ class ShopServiceClass {
         name: randomColl.name,
         price: calculateCleanPrice(randomColl.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.80)
       } : null,
-      boardOffer: boardName ? { name: boardName, price: BOARD_PRICES[boardName] } : null,
+      boardOffer: selectedBoard ? { 
+        id_board: selectedBoard.id_board, 
+        name: selectedBoard.name, 
+        price: selectedBoard.price,
+        description: selectedBoard.description 
+      } : null,
       expiresAt: nextMidnight.toISOString()
     };
 
-    await ShopRedisRepository.saveDailyShop(userId, state, secondsUntilMidnight);
-    return state;
+    await ShopRedisRepository.saveDailyShop(userId, shop, secondsUntilMidnight);
+    return shop;
+    
   }
 
   /**
-   * Procesa la compra de forma segura mediante Transacción.
-   * Recibe un string `itemId` que debe tener formato: "card_5", "board_NEON_CYBERPUNK", "collection_2" o "pack_daily"
+   * Procesa la compra mediante Transacción de Prisma.
    */
   public async processPurchase(rawUserId: string | number, itemId: string) {
 
@@ -116,24 +117,25 @@ class ShopServiceClass {
 
       let totalCost = 0;
       let cardsToAdd: number[] = [];
+      let boardToAddId: number | null = null;
       let purchaseType: Purchase_Type;
-      let referenceIds: number[] = [];
-      let referenceName: string | undefined = undefined;
       let itemNameForResponse = ''; // Para devolverlo en el success al controlador
 
-      // --- VALIDACIÓN DE PROPIEDAD SEGÚN TIPO ---
+      // Identificacion del artículo y validación
       if (itemId.startsWith('board_')) {
         purchaseType = 'BOARD';
-        referenceName = itemId.replace('board_', '');
-        if (!BOARD_PRICES[referenceName as Board_Type]) throw { status: 404, message: 'Tablero inválido.' };
-        
-        totalCost = BOARD_PRICES[referenceName as Board_Type];
-        itemNameForResponse = `Tablero ${referenceName}`;
+        boardToAddId = parseInt(itemId.replace('board_', ''));
 
-        const userCheck = await tx.user.findUnique({ where: { id_user: userId }, select: { tableros: true } });
-        if (userCheck?.tableros.includes(referenceName as Board_Type)) {
-          throw { status: 400, message: 'Ya posees este tablero.' }; 
-        }
+        const board = await tx.board.findUnique({ where: { id_board: boardToAddId } });
+        if (!board) throw { status: 404, message: 'Tablero no encontrado.' };
+
+        const alreadyOwned = await tx.userBoard.findFirst({
+          where: { id_user: userId, id_board: boardToAddId }
+        });
+        if (alreadyOwned) throw { status: 400, message: 'Ya posees este tablero.' };
+
+        totalCost = board.price;
+        itemNameForResponse = `Tablero: ${board.name}`;
 
       } else if (itemId.startsWith('card_')) {
         purchaseType = 'SINGLE_CARD';
@@ -147,7 +149,6 @@ class ShopServiceClass {
         
         totalCost = RARITY_PRICES[card.rarity];
         cardsToAdd.push(card.id_card);
-        referenceIds.push(card.id_card);
         itemNameForResponse = `Carta: ${card.title}`;
 
       } else if (itemId.startsWith('collection_')) {
@@ -168,7 +169,6 @@ class ShopServiceClass {
 
         totalCost = calculateCleanPrice(collection.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.80);
         cardsToAdd = collection.cards.map(c => c.id_card);
-        referenceIds.push(collection.id_collection);
         itemNameForResponse = `Colección: ${collection.name}`;
 
       } else if (itemId === 'pack_daily') {
@@ -179,7 +179,6 @@ class ShopServiceClass {
   
         totalCost = dailyShop.cardPackOffer.price;
         cardsToAdd = dailyShop.cardPackOffer.card_ids;
-        referenceIds = cardsToAdd;
         itemNameForResponse = dailyShop.cardPackOffer.name;
 
       } else {
@@ -201,19 +200,38 @@ class ShopServiceClass {
 
       await tx.user.update({
         where: { id_user: userId },
+        data: { coins: { decrement: totalCost } }
+      });
+
+      if (boardToAddId) {
+        await tx.userBoard.create({
+          data: { id_user: userId, id_board: boardToAddId }
+        });
+      }
+
+      if (cardsToAdd.length > 0) {
+        await tx.userCard.createMany({ 
+          data: cardsToAdd.map(id => ({ id_user: userId, id_card: id })),
+        });
+      }
+
+      const purchase = await tx.purchaseHistory.create({
         data: { 
-          coins: { decrement: totalCost },
-          ...(purchaseType === 'BOARD' && { tableros: { push: referenceName as Board_Type } })
+          id_user: userId, 
+          purchase_type: purchaseType, 
+          coins_spent: totalCost,
+          board_id: boardToAddId // Ahora se guarda el ID real del tablero
         }
       });
 
       if (cardsToAdd.length > 0) {
-        await tx.userCard.createMany({ data: cardsToAdd.map(id => ({ id_user: userId, id_card: id })) });
+        await tx.purchaseHistoryCard.createMany({
+          data: cardsToAdd.map(id => ({
+            id_purchase: purchase.id_purchase,
+            id_card: id
+          }))
+        });
       }
-
-      await tx.purchaseHistory.create({
-        data: { id_user: userId, purchase_type: purchaseType, reference_ids: referenceIds, reference_name: referenceName || null, coins_spent: totalCost }
-      });
 
       const updatedUser = await tx.user.findUnique({ where: { id_user: userId }, select: { coins: true } });
       return { itemName: itemNameForResponse, updatedEconomy: { userId, coins: updatedUser?.coins } };
@@ -229,7 +247,11 @@ class ShopServiceClass {
     return await prisma.purchaseHistory.findMany({
       where: { id_user: userId },
       orderBy: { purchased_at: 'desc' },
-      take: amount === 0 ? undefined : amount
+      take: amount === 0 ? undefined : amount,
+      include: {
+        board: true, // Trae info del tablero comprado
+        cards: { include: { card: true } } // Trae info de las cartas compradas
+      }
     });
   }
 }

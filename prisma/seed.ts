@@ -13,16 +13,46 @@ async function main() {
   const hashedBasePassword = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
 
   console.log('--- Limpiando base de datos ---');
+  await prisma.purchaseHistoryCard.deleteMany();
   await prisma.purchaseHistory.deleteMany();
   await prisma.userGameStats.deleteMany();
   await prisma.games_log.deleteMany();
   await prisma.deckCard.deleteMany();
   await prisma.deck.deleteMany();
   await prisma.userCard.deleteMany();
+  await prisma.userBoard.deleteMany();
   await prisma.friendships.deleteMany();
   await prisma.cards.deleteMany();
   await prisma.collection.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.board.deleteMany();
+
+
+  console.log('--- Creando Tableros (Boards) ---');
+  // Creamos el tablero clásico con ID 1 explícitamente para mayor seguridad
+  const classicBoard = await prisma.board.create({
+    data: {
+      name: 'CLASSIC',
+      description: 'El tablero original de madera y estrellas.',
+      price: 0,
+    },
+  });
+
+  await prisma.board.create({
+    data: {
+      name: 'NEON',
+      description: 'Un estilo futurista con luces vibrantes y efectos ciberpunk.',
+      price: 2000,
+    },
+  });
+
+  await prisma.board.create({
+    data: {
+      name: 'STELLAR_GALAXY',
+      description: 'Viaja a través del cosmos con este tablero espacial.',
+      price: 2000,
+    },
+  });
 
   console.log('--- Creando Colecciones y Cartas ---'); // 12 Colecciones x 12 Cartas = 144 cartas en total
 
@@ -65,9 +95,19 @@ async function main() {
         username: `Jugador${i}`,
         email: `jugador${i}@ejemplo.com`,
         password: hashedBasePassword,
+        coins: 1000,
+        active_board_id: classicBoard.id_board,
       },
     });
     users.push(user);
+
+    // Asignar propiedad del tablero clásico (Gratis por registro)
+    await prisma.userBoard.create({
+      data: {
+        id_user: user.id_user,
+        id_board: classicBoard.id_board,
+      },
+    });
 
     // Asignar las 48 cartas base a cada usuario
     await prisma.userCard.createMany({

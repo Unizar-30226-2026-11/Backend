@@ -38,14 +38,36 @@ export const AuthService = {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(passwordRaw, saltRounds);
 
-    const newUser = await prisma.user.create({
-      data: {
-        email,
-        username,
-        password: hashedPassword,
-      },
-    });
+    const newUser = await prisma.$transaction(async (tx) => {
 
+      const user = await tx.user.create({
+        data: {
+          email,
+          username,
+          password: hashedPassword,
+          coins: 500
+        },
+      });
+
+      // Buscar el ID del tablero 'CLASSIC' (Asumimos que el ID es 1 por el Seed)
+      // Si prefieres buscarlo por nombre para ser más seguro:
+      const classicBoard = await tx.board.findUnique({ where: { name: 'CLASSIC' } });
+      const classicId = classicBoard?.id_board || 1;
+
+      // Darle la propiedad del tablero
+      await tx.userBoard.create({
+        data: {
+          id_user: user.id_user,
+          id_board: classicId,
+        }
+      });
+
+      // Establecerlo como activo
+      return await tx.user.update({
+        where: { id_user: user.id_user },
+        data: { active_board_id: classicId }
+      });
+    });
     return {
       id: `u_${newUser.id_user}`,
       username: newUser.username,

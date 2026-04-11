@@ -1,6 +1,6 @@
 import { Repository, Schema } from 'redis-om';
 
-import { safeRedis } from '../redis';
+import { redisClient } from '../redis';
 
 export const gameStateSchema = new Schema(
   'game_state',
@@ -27,9 +27,6 @@ export const gameStateSchema = new Schema(
     // Registro de visitas a casillas: Record<SquareID, PlayerID[]>
     boardRegistry: { type: 'string' },
 
-    // Modificadores temporales (como el bonus de cartas)
-    activeModifiers: { type: 'string' },
-
     isMinigameActive: { type: 'boolean' }
   },
   { dataStructure: 'JSON' },
@@ -37,5 +34,5 @@ export const gameStateSchema = new Schema(
 
 export const gameRepository = new Repository(
   gameStateSchema,
-  safeRedis as any,
+  redisClient as any,
 );

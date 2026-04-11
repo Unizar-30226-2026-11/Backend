@@ -1,6 +1,6 @@
 import { Repository, Schema } from 'redis-om';
 
-import { safeRedis } from '../redis';
+import { redisClient } from '../redis';
 
 export const userSessionSchema = new Schema(
   'user_session',
@@ -15,5 +15,5 @@ export const userSessionSchema = new Schema(
 
 export const userSessionRepository = new Repository(
   userSessionSchema,
-  safeRedis as any,
+  redisClient as any,
 );

@@ -40,13 +40,21 @@ export class GameService {
   public async initializeGame(lobbyCode: string, lobbyData: any): Promise<SocketEmission[]> {
     const { engine: mode, players } = lobbyData;
 
-    // 1. Obtener los IDs numéricos para buscar en Prisma
+    // Obtener los IDs numéricos para buscar en Prisma
     const numericPlayerIds = players.map((p: string) => {
       const num = parseInt(p.replace('u_', ''));
       return isNaN(num) ? 0 : num;
     });
 
-    // 2. Extraer cartas de los mazos de los jugadores
+    const hostId = numericPlayerIds[0];
+    const hostData = await prisma.user.findUnique({
+      where: { id_user: hostId },
+      select: { active_board_id: true }
+    });
+    // Si por algún error no tiene tablero activo, usamos el 1 (Classic) como fallback
+    const boardIdToUse = hostData?.active_board_id || 1;
+
+    // Extraer cartas de los mazos de los jugadores
     const userDecks = await prisma.deck.findMany({
       where: { id_user: { in: numericPlayerIds } },
       include: {
@@ -79,16 +87,15 @@ export class GameService {
       centralDeck.push(...fallbackCards.map(c => c.id_card));
     }
     else if (centralDeck.length > TARGET_DECK_SIZE) {
-      centralDeck = this.shuffleArray(centralDeck); // Mezclamos antes de cortar para que sea justo
-      centralDeck = centralDeck.slice(0, TARGET_DECK_SIZE); // Nos quedamos exactamente con 84
+      centralDeck = this.shuffleArray(centralDeck).slice(0, TARGET_DECK_SIZE); // Mezclamos antes de cortar para que sea justo
     }
 
     // Barajamos
     centralDeck = this.shuffleArray(centralDeck);
 
-    // 3. Crear el estado base
+    // Crear el estado base
     const baseState: any = {
-      lobbyCode,
+      gameId: lobbyCode,
       mode,
       players,
       disconnectedPlayers: [],
@@ -99,6 +106,8 @@ export class GameService {
       phase: 'LOBBY',
       isStarActive: false,     
       isMinigameActive: false,
+      activeConflict: null,
+      activeBoardId: boardIdToUse,
     };
 
     players.forEach((p: string) => {
@@ -106,14 +115,12 @@ export class GameService {
       baseState.hands[p] = [];
     });
 
-    // 4. Delega la creación inicial a las reglas de tu compañera
     const initAction: GameAction = { type: 'INIT_GAME', playerId: 'SYSTEM', payload: { deck: centralDeck } };
     const initialState = DixitEngine.transition(baseState, initAction);
 
-    // 5. Guardar el estado inicial en Redis
+    // Guardar el estado inicial en Redis
     await this.redisRepo.saveGame(lobbyCode, initialState);
 
-    // 6. Preparar las emisiones (el handler las ejecutará)
     const emissions: SocketEmission[] = [];
 
     emissions.push({
@@ -133,7 +140,7 @@ export class GameService {
       });
     }
 
-    // 7. Arrancar el temporizador inicial (ej: 60s)
+    // Arrancar el temporizador inicial (ej: 60s)
     await this.schedulePhaseTimeout(lobbyCode, initialState.phase, 60000);
 
     return emissions;
@@ -306,7 +313,7 @@ export class GameService {
 
     emissions.push({
       room: gameId,
-      event: 'star_spawned',
+      event: 'server:game:star_spawned',
       data: {
         starId: `star_${Date.now()}`,
         path: movement.path,
@@ -348,7 +355,7 @@ export class GameService {
     return [
       {
         room: gameId,
-        event: 'star_claimed',
+        event: 'server:game:star_claimed',
         data: { winnerId: playerId, newScores: state.scores }
       }
     ];
@@ -440,16 +447,6 @@ export class GameService {
         emissions.push(...this.applyStepEffect(state, pId, 'EVEN', SPECIAL_SQUARES.EVEN_SQUARE_1));
       if (currentPos === SPECIAL_SQUARES.EVEN_SQUARE_2)
         emissions.push(...this.applyStepEffect(state, pId, 'EVEN', SPECIAL_SQUARES.EVEN_SQUARE_2));
-
-      // BONUS ALEATORIO
-      if (
-        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_1 ||
-        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_2 ||
-        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_3 ||
-        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
-      ) {
-        emissions.push(...this.applyRandomBonus(state, pId));
-      }
 
       // SHUFFLE
       if (currentPos === SPECIAL_SQUARES.SHUFFLE_1 || currentPos === SPECIAL_SQUARES.SHUFFLE_2) {
@@ -628,49 +625,7 @@ export class GameService {
       }
     }];
   }
-
-  /**
-   * Efecto Bonus Aleatorio: Modifica el límite de cartas durante 2 rondas.
-   */
-  private applyRandomBonus(state: GameState, pId: string): SocketEmission[] {
-
-    if (state.mode === 'STELLA') {
-
-      const stellaAmount = Math.floor(Math.random() * 3) + 1; // Genera 1, 2 o 3 (siempre positivo)
-      
-      state.scores[pId] = (state.scores[pId] || 0) + stellaAmount;
-      
-      return [{
-        room: state.lobbyCode,
-        event: 'server:game:special_event',
-        data: { 
-          pId, 
-          effect: 'STELLA_BONUS_POINTS', 
-          amount: stellaAmount,
-          message: `¡Bonus de Stella! Ganas ${stellaAmount} puntos.` 
-        }
-      }];
-    }
-
-    const amount = (Math.floor(Math.random() * 3) + 1);
-    const isPositive = Math.random() > 0.5;
-    const finalAmount = isPositive ? amount : -amount;
-
-    if (!state.activeModifiers) state.activeModifiers = {};
-
-    state.activeModifiers[pId] = {
-      type: 'HAND_LIMIT',
-      value: finalAmount,
-      turnsLeft: 2 // Asegúrate de restar 1 a esto en tu función handleNextRound
-    };
-
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: { pId, effect: 'CARD_BONUS', amount: finalAmount }
-    }];
-  }
-
+  
   /**
    * Detecta si el jugador ha aterrizado en la misma puntuación que otro
    * y dispara el evento de minijuego 1vs1.

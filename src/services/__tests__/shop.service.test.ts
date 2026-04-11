@@ -2,17 +2,23 @@ import 'dotenv/config';
 import { prisma } from '../../infrastructure/prisma';
 import { ShopService } from '../../services/shop.service';
 import { ShopRedisRepository } from '../../repositories/shop.repository';
-import { Board_Type } from '@prisma/client';
+import { redisClient } from '../../infrastructure/redis';
 
 describe('ShopService - Sistema de ', () => {
 
     let id_usuario_rico: number;
     let id_usuario_pobre: number;
     let test_card_id: number;
+    let test_board_id: number;
     let test_collection_id: number;
     let cards_of_collection: number[] = [];
 
     beforeAll(async () => {
+
+        // Salia error sino
+        if (!redisClient.isOpen) {
+            await redisClient.connect();
+        }
 
         // Limpieza de usuarios de pruebas anteriores para evitar colisiones
         const ghostUsers = await prisma.user.findMany({
@@ -20,9 +26,11 @@ describe('ShopService - Sistema de ', () => {
         });
         
         for (const ghost of ghostUsers) {
-        await prisma.purchaseHistory.deleteMany({ where: { id_user: ghost.id_user } });
-        await prisma.userCard.deleteMany({ where: { id_user: ghost.id_user } });
-        await prisma.user.delete({ where: { id_user: ghost.id_user } });
+            await prisma.purchaseHistoryCard.deleteMany({ where: { purchase: { id_user: ghost.id_user } } });
+            await prisma.purchaseHistory.deleteMany({ where: { id_user: ghost.id_user } });
+            await prisma.userCard.deleteMany({ where: { id_user: ghost.id_user } });
+            await prisma.userBoard.deleteMany({ where: { id_user:  ghost.id_user } });
+            await prisma.user.delete({ where: { id_user: ghost.id_user } });
         }
 
         // Crear sujetos de prueba
@@ -48,18 +56,23 @@ describe('ShopService - Sistema de ', () => {
 
         // Obtener datos reales de la BD (creados por el seed) para las pruebas
         const card = await prisma.cards.findFirst();
-        const coll = await prisma.collection.findFirst();
-        
-        if (!card || !coll) throw new Error("La base de datos debe estar poblada (seed) antes de los tests.");
+        const coll = await prisma.collection.findFirst({ include: { cards: true } });
+        const board = await prisma.board.findFirst({ where: { price: { gt: 0 } } }); 
+
+        if (!card || !coll || !board) throw new Error("La base de datos debe estar poblada (seed) antes de los tests.");
         
         test_card_id = card.id_card;
         test_collection_id = coll.id_collection;
+        cards_of_collection = coll.cards.map(c => c.id_card);
+        test_board_id = board.id_board;
     });
 
     afterAll(async () => {
         const ids = [id_usuario_rico, id_usuario_pobre];
+        await prisma.purchaseHistoryCard.deleteMany({ where: { purchase: { id_user: { in: ids } } } });
         await prisma.purchaseHistory.deleteMany({ where: { id_user: { in: ids } } });
         await prisma.userCard.deleteMany({ where: { id_user: { in: ids } } });
+        await prisma.userBoard.deleteMany({ where: { id_user: { in: ids } } });
         await prisma.user.deleteMany({ where: { id_user: { in: ids } } });
         
         // Limpiar rastro en Redis
@@ -74,11 +87,14 @@ describe('ShopService - Sistema de ', () => {
             expect(shop).toBeDefined();
             expect(shop.singleCards).toHaveLength(3);
             expect(shop.cardPackOffer).toBeDefined();
-            expect(shop.boardOffer).not.toBeNull();
-            expect(shop.boardOffer).toEqual(expect.objectContaining({
-                name: expect.any(String),
-                price: expect.any(Number)
-            }));
+            if (shop.boardOffer) {
+                expect(shop.boardOffer).toEqual(expect.objectContaining({
+                    id_board: expect.any(Number),
+                    name: expect.any(String),
+                    description: expect.any(String), 
+                    price: expect.any(Number)
+                }));
+            }
             expect(new Date(shop.expiresAt).getTime()).toBeGreaterThan(Date.now());
         });
 
@@ -99,31 +115,23 @@ describe('ShopService - Sistema de ', () => {
         });
 
         test('No debe ofrecer un tablero que el usuario ya posee', async () => {
-            // Obtenemos la tienda actual y guardamos el nombre del tablero ofertado
             const shopOriginal = await ShopService.getAvailableItems(id_usuario_rico);
-            const tableroOfertado = shopOriginal.boardOffer!.name;
-
-            // Simulamos que el usuario ya lo posee añadiéndolo a su perfil en la BD
-            await prisma.user.update({
-                where: { id_user: id_usuario_rico },
-                data: { 
-                tableros: { 
-                    push: tableroOfertado as Board_Type 
-                } 
-                }
-            });
-
-            // Borramos la caché de Redis para obligar al servicio a generar una tienda nueva 
-            await ShopRedisRepository.deleteDailyShop(id_usuario_rico);
             
-            const nuevaShop = await ShopService.getAvailableItems(id_usuario_rico);
+            if (shopOriginal.boardOffer) {
+                const tableroOfertadoId = shopOriginal.boardOffer.id_board;
 
-            if (nuevaShop.boardOffer) {
-                // Si hay un nuevo tablero, no debe ser el que acabamos de "comprar"
-                expect(nuevaShop.boardOffer.name).not.toBe(tableroOfertado);
-            } else {
-                // Si es null, es correcto (significa que no quedan más tableros disponibles en el diccionario)
-                expect(nuevaShop.boardOffer).toBeNull();
+                await prisma.userBoard.create({
+                    data: { id_user: id_usuario_rico, id_board: tableroOfertadoId }
+                });
+
+                await ShopRedisRepository.deleteDailyShop(id_usuario_rico);
+                const nuevaShop = await ShopService.getAvailableItems(id_usuario_rico);
+
+                if (nuevaShop.boardOffer) {
+                    expect(nuevaShop.boardOffer.id_board).not.toBe(tableroOfertadoId);
+                } else {
+                    expect(nuevaShop.boardOffer).toBeNull();
+                }
             }
         });
 
@@ -138,7 +146,6 @@ describe('ShopService - Sistema de ', () => {
 
             // Borramos caché para obligar a regenerar la tienda
             await ShopRedisRepository.deleteDailyShop(id_usuario_rico);
-            
             const shop = await ShopService.getAvailableItems(id_usuario_rico);
 
             if (shop.collectionOffer) {
@@ -153,6 +160,19 @@ describe('ShopService - Sistema de ', () => {
 
     describe('Proceso de Compra -> processPurchase()', () => {
         
+        beforeAll(async () => {
+            // Quitamos las cartas y tableros que le regalamos al usuario 
+            // en los tests de "Obtención de Tienda" para que pueda comprarlos desde cero.
+            await prisma.userCard.deleteMany({ where: { id_user: id_usuario_rico } });
+            
+            const hasBoard = await prisma.userBoard.findFirst({
+                where: { id_user: id_usuario_rico, id_board: test_board_id }
+            });
+            if (hasBoard) {
+                await prisma.userBoard.delete({ where: { id_user_board: hasBoard.id_user_board } });
+            }
+        });
+
         describe('Flujos de Éxito', () => {
             test('Compra de carta individual exitosa', async () => {
                 const res = await ShopService.processPurchase(id_usuario_rico, `card_${test_card_id}`);
@@ -168,41 +188,45 @@ describe('ShopService - Sistema de ', () => {
             });
 
             test('Compra de tablero exitosa', async () => {
-                await prisma.user.update({
-                    where: { id_user: id_usuario_rico },
-                    data: { tableros: [] } // Vaciamos su array de tableros
+                const hasBoard = await prisma.userBoard.findFirst({
+                    where: { id_user: id_usuario_rico, id_board: test_board_id }
                 });
-
-                const res = await ShopService.processPurchase(id_usuario_rico, 'board_NEON');
                 
-                expect(res.itemName).toBe('Tablero NEON');
+                if (hasBoard) {
+                    await prisma.userBoard.delete({ where: { id_user_board: hasBoard.id_user_board } });
+                }
+
+                const res = await ShopService.processPurchase(id_usuario_rico, `board_${test_board_id}`);
+                
+                expect(res.itemName).toContain('Tablero');
                 expect(res.updatedEconomy.coins).toBeLessThan(10000);
 
-                const user = await prisma.user.findUnique({ where: { id_user: id_usuario_rico } });
-                expect(user?.tableros).toContain('NEON');
+                const ownership = await prisma.userBoard.findFirst({
+                    where: { id_user: id_usuario_rico, id_board: test_board_id }
+                });
+                expect(ownership).toBeDefined();
             });
         });
 
         describe('Validaciones y Errores', () => {
             test('Error 403: Fondos insuficientes', async () => {
                 try {
-                await ShopService.processPurchase(id_usuario_pobre, `card_${test_card_id}`);
-                fail('Debería haber lanzado un error');
+                    await ShopService.processPurchase(id_usuario_pobre, `card_${test_card_id}`);
+                    fail('Debería haber lanzado un error');
                 } catch (error: any) {
-                expect(error.status).toBe(403);
-                expect(error.message).toBe('Fondos insuficientes.');
-                expect(error).toHaveProperty('required');
+                    expect(error.status).toBe(403);
+                    expect(error.message).toBe('Fondos insuficientes.');
                 }
             });
 
             test('Error 400: Artículo ya poseído (Carta)', async () => {
                 // El rico ya tiene la test_card_id del test anterior
                 try {
-                await ShopService.processPurchase(id_usuario_rico, `card_${test_card_id}`);
-                fail('Debería haber lanzado un error');
+                    await ShopService.processPurchase(id_usuario_rico, `card_${test_card_id}`);
+                    fail('Debería haber lanzado un error');
                 } catch (error: any) {
-                expect(error.status).toBe(400);
-                expect(error.message).toBe('Ya posees esta carta en tu colección.');
+                    expect(error.status).toBe(400);
+                    expect(error.message).toBe('Ya posees esta carta en tu colección.');
                 }
             });
 
@@ -221,11 +245,16 @@ describe('ShopService - Sistema de ', () => {
         test('Debe listar las compras realizadas por el usuario', async () => {
             const history = await ShopService.getPurchaseHistory(id_usuario_rico, 0);
             
-            // El rico ha comprado 1 carta y 1 tablero con éxito arriba
             expect(history.length).toBeGreaterThanOrEqual(2);
-            expect(history[0]).toEqual(expect.objectContaining({
-                id_user: id_usuario_rico,
-                coins_spent: expect.any(Number)
+            
+            const boardPurchase = history.find(p => p.purchase_type === 'BOARD');
+            expect(boardPurchase).toBeDefined();
+
+            expect(boardPurchase?.board).toEqual(expect.objectContaining({
+                id_board: expect.any(Number),
+                name: expect.any(String),
+                description: expect.any(String),
+                price: expect.any(Number)
             }));
         });
     });

@@ -1,43 +1,17 @@
 // src/shared/types/shop.schema.ts
 import { Repository, Schema } from 'redis-om';
-import { safeRedis } from '../redis';
-import { Rarity, Board_Type } from '@prisma/client';
+import { redisClient } from '../redis';
 
-export interface DailyShopCard {
-  id_card: number;
-  title: string;
-  rarity: Rarity;
-  price: number;
-}
+export const DailyShopSchema = new Schema('daily-shop', {
+  // Guardamos los arrays y objetos como strings (JSON) para mantener la estructura compleja
+  singleCards: { type: 'string' },   // Array de objetos de cartas
+  cardPackOffer: { type: 'string' }, // Objeto de la oferta del sobre
+  collectionOffer: { type: 'string' }, // Objeto de la colección
+  boardOffer: { type: 'string' },     // Objeto del tablero
+  expiresAt: { type: 'string' }       // Fecha de expiración en formato ISO
+}, {
+  dataStructure: 'JSON'
+});
 
-export interface DailyShopCollection {
-  id_collection: number;
-  name: string;
-  price: number;
-}
-
-export interface DailyShopPack {
-  name: string;
-  card_ids: number[];
-  description: string;
-  price: number;
-}
-
-export interface DailyShopBoard {
-  name: Board_Type;
-  price: number;
-}
-
-export interface DailyShopState {
-  singleCards: DailyShopCard[];
-  cardPackOffer: DailyShopPack | null;
-  collectionOffer: DailyShopCollection | null;
-  boardOffer: DailyShopBoard | null;
-  expiresAt: string; 
-}
-
-
-export const shopRedisRepository = new Repository(
-  DailyShopState,
-  safeRedis as any,
-);
+// Usamos el cliente real para evitar errores en runtime 
+export const shopRepository = new Repository(DailyShopSchema, redisClient as any);

@@ -18,6 +18,10 @@ export const UserService = {
           progress_level: true,
           state: true,
           personal_state: true,
+          active_board_id: true,
+          my_boards: {
+            include: { board: true }
+          }
         },
       });
 
@@ -26,6 +30,7 @@ export const UserService = {
       return {
         ...user,
         id: `u_${user.id_user}`,
+        boards: user.my_boards.map(ub => ub.board) // Formateo para el frontend
       };
     });
   },
@@ -53,15 +58,6 @@ export const UserService = {
     const updated_user = await prisma.user.update({
       where: { id_user },
       data: { username },
-      select: {
-        id_user: true,
-        username: true,
-        email: true,
-        exp_level: true,
-        progress_level: true,
-        state: true,
-        personal_state: true,
-      },
     });
 
     await invalidateCache(`cache:user:profile:${u_id}`); // Borramos la caché
@@ -126,7 +122,18 @@ export const UserService = {
 
     const deck_ids = user_decks.map((d) => d.id_deck);
 
+    const user_purchases = await prisma.purchaseHistory.findMany({
+      where: { id_user },
+      select: { id_purchase: true }
+    });
+    const purchase_ids = user_purchases.map(p => p.id_purchase);
+
     const resultado = await prisma.$transaction([
+
+      prisma.purchaseHistoryCard.deleteMany({
+        where: { id_purchase: { in: purchase_ids } }
+      }),
+
       prisma.purchaseHistory.deleteMany({
         where: { id_user },
       }),
@@ -142,6 +149,10 @@ export const UserService = {
       }),
 
       prisma.userCard.deleteMany({
+        where: { id_user },
+      }),
+
+      prisma.userBoard.deleteMany({
         where: { id_user },
       }),
 
@@ -199,11 +210,7 @@ export const UserService = {
         select: { coins: true },
       });
 
-      if (!user) {
-        return null;
-      }
-
-      return { balance: user.coins };
+      return user ? { balance: user.coins } : null;
     });
   },
 
@@ -217,11 +224,15 @@ export const UserService = {
       });
 
       // Contamos las instancias de cada carta
-      const cardCounts: Record<number, { name: string; quantity: number }> = {};
+      const cardCounts: Record<number, { name: string; quantity: number; rarity: string }> = {};
 
       userCards.forEach((u_card) => {
         if (!cardCounts[u_card.id_card]) {
-          cardCounts[u_card.id_card] = { name: u_card.card.title, quantity: 0 };
+          cardCounts[u_card.id_card] = { 
+            name: u_card.card.title, 
+            quantity: 0,
+            rarity: u_card.card.rarity 
+          };
         }
         cardCounts[u_card.id_card].quantity += 1;
       });
@@ -230,9 +241,68 @@ export const UserService = {
         cardId: `c_${cardId}`,
         name: data.name,
         quantity: data.quantity,
+        rarity: data.rarity
       }));
     });
   },
+  // --- Tableros ---
+
+  /**
+   * Obtiene la lista de tableros comprados por el usuario.
+   */
+  getUserPurchasedBoards: async (u_id: string) => {
+    return getCachedData(`cache:user:boards:${u_id}`, async () => {
+      const id_user = parseInt(u_id.replace('u_', ''));
+
+      const userBoards = await prisma.userBoard.findMany({
+        where: { id_user },
+        include: { board: true } // Traemos los detalles de la tabla Board
+      });
+
+      return userBoards.map(ub => ({
+        id: `b_${ub.board.id_board}`,
+        name: ub.board.name,
+        description: ub.board.description
+      }));
+    });
+  },
+
+  /**
+   * Establece el tablero activo para que se muestre en las partidas del usuario.
+   */
+  setUserActiveBoard: async (u_id: string, boardId: string) => {
+    const id_user = parseInt(u_id.replace('u_', ''));
+    const id_board = parseInt(boardId.replace('b_', ''));
+
+    // Verificar propiedad
+    const ownership = await prisma.userBoard.findFirst({
+      where: { id_user, id_board }
+    });
+
+    if (!ownership) {
+      throw new Error('BOARD_NOT_OWNED');
+    }
+
+    // Actualizar el tablero activo 
+    const updatedUser = await prisma.user.update({
+      where: { id_user },
+      data: { active_board_id: id_board },
+      include: { active_board: true }
+    });
+
+    // Limpieza de caché
+    await invalidateCache(`cache:user:profile:${u_id}`);
+    await invalidateCache(`cache:user:boards:${u_id}`);
+
+    return {
+      userId: u_id,
+      activeBoard: {
+        id: `b_${updatedUser.active_board?.id_board}`,
+        name: updatedUser.active_board?.name
+      }
+    };
+  },
+
 
   // --- Mazos (Decks) ---
 
