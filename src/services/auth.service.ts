@@ -5,6 +5,7 @@ import { SignOptions } from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
 import { UserRedisRepository } from '../repositories';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -18,7 +19,7 @@ export const AuthService = {
     if (resultado == null) return null;
 
     return {
-      id: `u_${resultado.id_user}`,
+      id: `${ID_PREFIXES.USER}${resultado.id_user}`,
       username: resultado.username,
       email: resultado.email,
       coins: resultado.coins,
@@ -44,16 +45,38 @@ export const AuthService = {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(passwordRaw, saltRounds);
 
-    const newUser = await prisma.user.create({
-      data: {
-        email,
-        username,
-        password: hashedPassword,
-      },
-    });
+    const newUser = await prisma.$transaction(async (tx) => {
 
+      const user = await tx.user.create({
+        data: {
+          email,
+          username,
+          password: hashedPassword,
+          coins: 500
+        },
+      });
+
+      // Buscar el ID del tablero 'CLASSIC' (Asumimos que el ID es 1 por el Seed)
+      // Si prefieres buscarlo por nombre para ser más seguro:
+      const classicBoard = await tx.board.findUnique({ where: { name: 'CLASSIC' } });
+      const classicId = classicBoard?.id_board || 1;
+
+      // Darle la propiedad del tablero
+      await tx.userBoard.create({
+        data: {
+          id_user: user.id_user,
+          id_board: classicId,
+        }
+      });
+
+      // Establecerlo como activo
+      return await tx.user.update({
+        where: { id_user: user.id_user },
+        data: { active_board_id: classicId }
+      });
+    });
     return {
-      id: `u_${newUser.id_user}`,
+      id: `${ID_PREFIXES.USER}${newUser.id_user}`,
       username: newUser.username,
       email: newUser.email,
     };
@@ -77,7 +100,7 @@ export const AuthService = {
     // Generar el token JWT
     const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
     const token = jwt.sign(
-      { id: `u_${user.id_user}`, username: user.username },
+      { id: `${ID_PREFIXES.USER}${user.id_user}`, username: user.username },
       secretKey,
       { expiresIn: '24h' },
     );
@@ -85,7 +108,7 @@ export const AuthService = {
     return {
       token,
       user: {
-        id: `u_${user.id_user}`,
+        id: `${ID_PREFIXES.USER}${user.id_user}`,
         username: user.username,
       },
     };
