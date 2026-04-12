@@ -4,6 +4,7 @@ import { User_States } from '@prisma/client';
 
 import { prisma } from '../../infrastructure/prisma';
 import { UserService } from '../user.service';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 describe('UserService - Pruebas Funciones', () => {
   let id_deck_created: string;
@@ -41,7 +42,7 @@ describe('UserService - Pruebas Funciones', () => {
     if (dbCards.length < 12) throw new Error("No hay 12 cartas en la BD. Ejecuta el seed.");
     
     cartas_reales_ids = dbCards.map(c => c.id_card);
-    cartas_reales = cartas_reales_ids.map(id => `c_${id}`);
+    cartas_reales = cartas_reales_ids.map(id => `${ID_PREFIXES.CARD}${id}`);
 
     // Crear el Usuario Principal 
     const user_main = await prisma.user.create({
@@ -53,7 +54,7 @@ describe('UserService - Pruebas Funciones', () => {
         coins: 1000
       },
     });
-    main_u = `u_${user_main.id_user}`;
+    main_u = `${ID_PREFIXES.USER}${user_main.id_user}`;
 
     // Crear el Usuario Sacrificable
     const usuario_test = await prisma.user.create({
@@ -64,7 +65,7 @@ describe('UserService - Pruebas Funciones', () => {
         state: 'UNKNOWN',
       },
     });
-    id_usuario_a_borrar = `u_${usuario_test.id_user}`;
+    id_usuario_a_borrar = `${ID_PREFIXES.USER}${usuario_test.id_user}`;
 
     // Crear un amigo falso para las FK
     const amigo_test = await prisma.user.create({
@@ -135,13 +136,13 @@ describe('UserService - Pruebas Funciones', () => {
               ),
               personal_state:
                 resultado?.personal_state === null ? null : expect.any(String),
-              id: expect.stringMatching(/^u_\d+$/),
+              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
             }),
           );
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserProfile('u_9999999');
+          const resultado = await UserService.getUserProfile(`${ID_PREFIXES.USER}9999999`);
           expect(resultado).toBeNull();
         });
 
@@ -168,13 +169,13 @@ describe('UserService - Pruebas Funciones', () => {
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserEconomy('u_9999999');
+          const resultado = await UserService.getUserEconomy(`${ID_PREFIXES.USER}9999999`);
 
           expect(resultado).toBeNull();
         });
 
         test('Campos Incorrectos:', async () => {
-          const resultado = await UserService.getUserEconomy('u_99');
+          const resultado = await UserService.getUserEconomy(`${ID_PREFIXES.USER}99`);
 
           expect(resultado).toBeNull();
         });
@@ -192,16 +193,17 @@ describe('UserService - Pruebas Funciones', () => {
           expect(resultado).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                cardId: expect.stringMatching(/^c_\d+$/),
+                cardId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
                 name: expect.any(String),
                 quantity: expect.any(Number),
+                url_image: expect.any(String)
               }),
             ]),
           );
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserCards('u_999999');
+          const resultado = await UserService.getUserCards(`${ID_PREFIXES.USER}999999`);
 
           expect(resultado).toHaveLength(0);
         });
@@ -219,10 +221,10 @@ describe('UserService - Pruebas Funciones', () => {
           expect(resultado).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                id: expect.stringMatching(/^d_\d+$/),
+                id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
                 name: expect.any(String),
                 cardIds: expect.arrayContaining([
-                  expect.stringMatching(/^c_\d+$/),
+                  expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
                 ]),
               }),
             ]),
@@ -230,7 +232,7 @@ describe('UserService - Pruebas Funciones', () => {
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserDecks('u_999999999');
+          const resultado = await UserService.getUserDecks(`${ID_PREFIXES.USER}999999999`);
 
           expect(resultado).toHaveLength(0);
         });
@@ -249,7 +251,7 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              id: expect.stringMatching(/^u_\d+$/),
+              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
               username: expect.any(String),
             }),
           ]),
@@ -273,21 +275,21 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toBeDefined();
         expect(resultado).toEqual(
           expect.objectContaining({
-            id: expect.stringMatching(/^d_\d+$/),
+            id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
             name: expect.any(String),
-            cardIds: expect.arrayContaining([expect.stringMatching(/^c_\d+$/)]),
+            cardIds: expect.arrayContaining([expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))]),
           }),
         );
       });
 
       test('Mazo Inexistente:', async () => {
-        const resultado = await UserService.getDeckById('d_9999999');
+        const resultado = await UserService.getDeckById(`${ID_PREFIXES.DECK}9999999`);
 
         expect(resultado).toBeNull();
       });
 
       test('ID Incorrecto:', async () => {
-        await expect(UserService.getDeckById('d_s1')).rejects.toThrow();
+        await expect(UserService.getDeckById(`${ID_PREFIXES.DECK}s1`)).rejects.toThrow();
       });
     });
 
@@ -303,9 +305,9 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toBeDefined();
         expect(resultado).toEqual(
           expect.objectContaining({
-            id: expect.stringMatching(/^d_\d+$/),
+            id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
             name: expect.any(String),
-            cardIds: expect.arrayContaining([expect.stringMatching(/^c_\d+$/)]),
+            cardIds: expect.arrayContaining([expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))]),
           }),
         );
         id_deck_created = resultado.id;
@@ -315,7 +317,7 @@ describe('UserService - Pruebas Funciones', () => {
         const cartas_mazo_prueba = cartas_reales.slice(0, 8);
 
         await expect(
-          UserService.createDeck('u_999999', '', cartas_mazo_prueba),
+          UserService.createDeck(`${ID_PREFIXES.USER}999999`, '', cartas_mazo_prueba),
         ).rejects.toThrow();
       });
     });
@@ -333,9 +335,9 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toBeDefined();
         expect(resultado).toEqual(
           expect.objectContaining({
-            id: expect.stringMatching(/^d_\d+$/),
+            id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
             name: expect.any(String),
-            cardIds: expect.arrayContaining([expect.stringMatching(/^c_\d+$/)]),
+            cardIds: expect.arrayContaining([expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))]),
           }),
         );
       });
@@ -354,10 +356,10 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              id: expect.stringMatching(/^d_\d+$/),
+              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
               name: expect.any(String),
               cardIds: expect.arrayContaining([
-                expect.stringMatching(/^c_\d+$/),
+                expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))
               ]),
             }),
           ]),
@@ -368,7 +370,7 @@ describe('UserService - Pruebas Funciones', () => {
         const cartas_mazo_prueba = cartas_reales.slice(0, 8);
 
         await expect(
-          UserService.updateDeck('u_9999999', '', cartas_mazo_prueba),
+          UserService.updateDeck(`${ID_PREFIXES.USER}9999999`, '', cartas_mazo_prueba),
         ).rejects.toThrow();
       });
     });
@@ -418,7 +420,7 @@ describe('UserService - Pruebas Funciones', () => {
             ),
             personal_state:
               resultado?.personal_state === null ? null : expect.any(String),
-            id: expect.stringMatching(/^u_\d+$/),
+            id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
           }),
         );
       });
@@ -435,7 +437,7 @@ describe('UserService - Pruebas Funciones', () => {
 
       test('Usuario Inexistente: ', async () => {
         await expect(
-          UserService.updateUserProfile('u_999999999', 'noExisto'),
+          UserService.updateUserProfile(`${ID_PREFIXES.USER}999999999`, 'noExisto'),
         ).rejects.toThrow();
       });
     });
@@ -467,7 +469,7 @@ describe('UserService - Pruebas Funciones', () => {
 
       test('Usuario Inexistente: ', async () => {
         await expect(
-          UserService.updatePresence('u_9999999', 'DISCONNECTED'),
+          UserService.updatePresence(`${ID_PREFIXES.USER}9999999`, 'DISCONNECTED'),
         ).rejects.toThrow();
       });
     });
@@ -481,7 +483,7 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Usuario inexistente: ', async () => {
-        await expect(UserService.deleteUser('u_99999999')).rejects.toThrow();
+        await expect(UserService.deleteUser(`${ID_PREFIXES.USER}99999999`)).rejects.toThrow();
       });
 
       test('Entrada Incorrecta: ', async () => {

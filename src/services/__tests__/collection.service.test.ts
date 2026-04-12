@@ -2,12 +2,14 @@ import 'dotenv/config';
 
 import { prisma } from '../../infrastructure/prisma';
 import { CollectionService } from '../collection.service';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 describe('CollectionService - Pruebas Funciones', () => {
   let id_colection_test: number;
   let real_collection_with_cards_id: string; // Variable dinámica para el test real
   
   beforeAll(async () => {
+
     // Por si falla el test y no se borra la coleccion de una ejecución anterior.
     await prisma.collection.deleteMany({
       where: { name: 'Coleccion_Test' },
@@ -35,7 +37,7 @@ describe('CollectionService - Pruebas Funciones', () => {
     }
     
     // Guardamos su ID dinámico (ej: 'col_14')
-    real_collection_with_cards_id = `col_${realCollection.id_collection}`;
+    real_collection_with_cards_id = `${ID_PREFIXES.COLLECTION}${realCollection.id_collection}`;
   });
 
   beforeEach(() => {});
@@ -48,7 +50,7 @@ describe('CollectionService - Pruebas Funciones', () => {
 
     resultado?.collections.forEach((card) => {
       expect(card).toEqual({
-        id: expect.stringMatching(/^col_\d+$/),
+        id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.COLLECTION}\\d+$`)),
         name: expect.stringMatching(/.+/),
         description: card.description === null ? null : expect.any(String),
         release_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/), // Formato ISOString
@@ -59,7 +61,7 @@ describe('CollectionService - Pruebas Funciones', () => {
 
   describe('Obtener coleccion por ID. -> getCollectionById() ', () => {
     test('Colección única (debe devolver objeto directo por lógica de length)', async () => {
-      const id_col = 'col_' + id_colection_test;
+      const id_col = `${ID_PREFIXES.COLLECTION}${id_colection_test}`;
 
       // Al pasar solo uno (aunque sea en array de 1), tu lógica de .length devolverá el objeto
       const resultado = await CollectionService.getCollectionById([id_col]);
@@ -72,7 +74,7 @@ describe('CollectionService - Pruebas Funciones', () => {
 
     test('Múltiples colecciones (debe devolver objeto con array por lógica de length)', async () => {
       // Usamos el mismo ID dos veces solo para forzar el length > 1
-      const id_col = 'col_' + id_colection_test;
+      const id_col = `${ID_PREFIXES.COLLECTION}${id_colection_test}`;
       const resultado = await CollectionService.getCollectionById([id_col, id_col]);
 
       expect(resultado.collections).toBeDefined();
@@ -81,7 +83,7 @@ describe('CollectionService - Pruebas Funciones', () => {
     });
 
     test('Colección inexistente.', async () => {
-      const id_col = 'col_9999999';
+      const id_col = `${ID_PREFIXES.COLLECTION}9999999`;
 
       const resultado = await CollectionService.getCollectionById(id_col);
 
@@ -106,16 +108,18 @@ describe('CollectionService - Pruebas Funciones', () => {
       );
 
       if (catalog.cards.length > 0) {
-        expect(catalog.cards[0]).toEqual({
-          id: expect.stringMatching(/^c_\d+$/), 
+        expect(catalog.cards[0]).toMatchObject({
+          id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)), 
           name: expect.any(String),
-          rarity: expect.stringMatching(/^(COMMON|UNCOMMON|SPECIAL|EPIC|LEGENDARY)$/),
+          rarity: expect.stringMatching(/^(COMMON|UNCOMMON|SPECIAL|EPIC|LEGENDARY)$/)
         });
+
+        expect(catalog.cards[0]).toHaveProperty('url_image');
       }
     });
 
     test('Cartas de una Colección inexistente.', async () => {
-      const id_card = 'col_999999';
+      const id_card = `${ID_PREFIXES.CARD}9999999`;
 
       const resultado = await CollectionService.getCardsByCollection(id_card);
 

@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import { prisma } from '../../infrastructure/prisma';
 import { AuthService } from '../auth.service';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes'; 
 
 describe('AuthService - Pruebas Funciones', () => {
   const email_test: string = 'correo_de_prueba@gmail.com';
@@ -42,13 +43,13 @@ describe('AuthService - Pruebas Funciones', () => {
 
       expect(resultado).toBeDefined();
       expect(resultado).toEqual({
-        id: expect.stringMatching(/^u_\d+$/),
+        id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}|\d+$`)),
         username: username_test,
         email: email_test,
       });
 
       // Comprobar que se ha creado la relación de tablero
-      const userId = parseInt(resultado.id.replace('u_', ''));
+      const userId = parseInt(resultado.id.replace(ID_PREFIXES.USER, ''));
       const boardCheck = await prisma.userBoard.findFirst({
         where: { id_user: userId }
       });
@@ -69,7 +70,7 @@ describe('AuthService - Pruebas Funciones', () => {
 
       expect(resultado).toBeDefined();
       expect(resultado).toEqual({
-        id: expect.stringMatching(/^u_\d+$/),
+        id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
         username: expect.any(String),
         email: expect.stringMatching(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
         coins: expect.any(Number),
@@ -100,7 +101,7 @@ describe('AuthService - Pruebas Funciones', () => {
       expect(resultado).toEqual({
         token: expect.any(String),
         user: {
-          id: expect.stringMatching(/^u_\d+$/),
+          id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\|d+$`)),
           username: expect.any(String),
         },
       });

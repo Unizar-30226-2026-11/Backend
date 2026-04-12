@@ -2,7 +2,7 @@ import { prisma } from '../../infrastructure/prisma';
 import { GameService, gameTimeoutsQueue } from '../game.service';
 import { GameState } from '../../shared/types';
 import { BOARD_CONFIG } from '../../shared/constants/board-config';
-
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 jest.mock('bullmq', () => ({
     Queue: jest.fn().mockReturnValue({
@@ -18,7 +18,9 @@ jest.mock('../../infrastructure/prisma', () => ({
     prisma: {
         deck: { findMany: jest.fn() },
         cards: { findMany: jest.fn() },
-        user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) }
+        user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+        userGameStats: { create: jest.fn() },
+        games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) }
     }
 }));
 
@@ -58,8 +60,12 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         describe('initializeGame', () => {
             
             test('Debe extraer IDs, buscar cartas, NO usar fallback si hay suficientes, y guardar estado', async () => {
-                
-                const lobbyData = { engine: 'STANDARD', players: ['u_1', 'u_2', 'u_3'] };
+
+                const p1 = `${ID_PREFIXES.USER}1`;
+                const p2 = `${ID_PREFIXES.USER}2`;
+                const p3 = `${ID_PREFIXES.USER}3`;
+
+                const lobbyData = { engine: 'STANDARD', players: [p1, p2, p3] };
                 // 3 jugadores * 16 cartas = 48 cartas requeridas.
                 
                 // Simulamos que los jugadores traen MUCHAS cartas (ej: 60 cartas en total) para no entrar al fallback
@@ -94,7 +100,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
             });
 
             test('Debe rellenar con cartas fallback (dinámico) si faltan cartas para el mazo objetivo', async () => {
-                const lobbyData = { engine: 'STANDARD', players: ['u_1'] }; 
+                const lobbyData = { engine: 'STANDARD', players: [`${ID_PREFIXES.USER}1`] }; 
                 // 1 jugador * 16 cartas = 16 cartas requeridas.
                 
                 // Simulamos que el usuario NO tiene cartas en su mazo (0 cartas)

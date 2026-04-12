@@ -6,6 +6,7 @@ import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
 import {
   PREDEFINED_DECK_KEYS,
   PREDEFINED_DECKS,
@@ -54,7 +55,7 @@ export class GameService {
 
     // Obtener los IDs numéricos para buscar en Prisma
     const numericPlayerIds = players.map((p: string) => {
-      const num = parseInt(p.replace('u_', ''));
+      const num = parseInt(p.replace(ID_PREFIXES.USER, ''));
       return isNaN(num) ? 0 : num;
     });
 
@@ -331,7 +332,7 @@ export class GameService {
       await prisma.$transaction([
         // Registro de estadísticas por jugador
         ...ranking.map(({ playerId, points, place }) => {
-          const numericId = parseInt(playerId.replace('u_', ''));
+          const numericId = parseInt(playerId.replace(ID_PREFIXES.USER, ''));
           return prisma.userGameStats.create({
             data: {
               id_user: numericId,
@@ -343,7 +344,7 @@ export class GameService {
         }),
         // Incremento atómico de monedas (seguro ante concurrencia)
         ...ranking.map(({ playerId, coinsEarned }) => {
-          const numericId = parseInt(playerId.replace('u_', ''));
+          const numericId = parseInt(playerId.replace(ID_PREFIXES.USER, ''));
           return prisma.user.update({
             where: { id_user: numericId },
             data: { coins: { increment: coinsEarned } },
@@ -354,7 +355,7 @@ export class GameService {
       // 3. Obtener el saldo actualizado de cada jugador para el evento WALLET_UPDATED
       const updatedBalances = await Promise.all(
         ranking.map(async ({ playerId }) => {
-          const numericId = parseInt(playerId.replace('u_', ''));
+          const numericId = parseInt(playerId.replace(ID_PREFIXES.USER, ''));
           const user = await prisma.user.findUnique({
             where: { id_user: numericId },
             select: { coins: true },

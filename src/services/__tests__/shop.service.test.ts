@@ -3,6 +3,7 @@ import { prisma } from '../../infrastructure/prisma';
 import { ShopService } from '../../services/shop.service';
 import { ShopRedisRepository } from '../../repositories/shop.repository';
 import { redisClient } from '../../infrastructure/redis';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes'; 
 
 describe('ShopService - Sistema de ', () => {
 
@@ -86,10 +87,14 @@ describe('ShopService - Sistema de ', () => {
 
             expect(shop).toBeDefined();
             expect(shop.singleCards).toHaveLength(3);
+            expect(shop.singleCards[0]).toEqual(expect.objectContaining({
+                id_card: expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
+                url_image: expect.any(String)
+            }));
             expect(shop.cardPackOffer).toBeDefined();
             if (shop.boardOffer) {
                 expect(shop.boardOffer).toEqual(expect.objectContaining({
-                    id_board: expect.any(Number),
+                    id_board: expect.stringMatching(new RegExp(`^${ID_PREFIXES.BOARD}\\d+$`)),
                     name: expect.any(String),
                     description: expect.any(String), 
                     price: expect.any(Number)
@@ -118,8 +123,9 @@ describe('ShopService - Sistema de ', () => {
             const shopOriginal = await ShopService.getAvailableItems(id_usuario_rico);
             
             if (shopOriginal.boardOffer) {
-                const tableroOfertadoId = shopOriginal.boardOffer.id_board;
-
+                const tableroOfertadoIdRaw = shopOriginal.boardOffer.id_board;
+                const tableroOfertadoId = parseInt(tableroOfertadoIdRaw.replace(ID_PREFIXES.BOARD, ''));
+                
                 await prisma.userBoard.create({
                     data: { id_user: id_usuario_rico, id_board: tableroOfertadoId }
                 });
@@ -175,7 +181,7 @@ describe('ShopService - Sistema de ', () => {
 
         describe('Flujos de Éxito', () => {
             test('Compra de carta individual exitosa', async () => {
-                const res = await ShopService.processPurchase(id_usuario_rico, `card_${test_card_id}`);
+                const res = await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}${test_card_id}`);
                 
                 expect(res.itemName).toContain('Carta');
                 expect(res.updatedEconomy.coins).toBeLessThan(10000);
@@ -196,7 +202,7 @@ describe('ShopService - Sistema de ', () => {
                     await prisma.userBoard.delete({ where: { id_user_board: hasBoard.id_user_board } });
                 }
 
-                const res = await ShopService.processPurchase(id_usuario_rico, `board_${test_board_id}`);
+                const res = await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.BOARD}${test_board_id}`);
                 
                 expect(res.itemName).toContain('Tablero');
                 expect(res.updatedEconomy.coins).toBeLessThan(10000);
@@ -211,7 +217,7 @@ describe('ShopService - Sistema de ', () => {
         describe('Validaciones y Errores', () => {
             test('Error 403: Fondos insuficientes', async () => {
                 try {
-                    await ShopService.processPurchase(id_usuario_pobre, `card_${test_card_id}`);
+                    await ShopService.processPurchase(id_usuario_pobre, `${ID_PREFIXES.CARD}${test_card_id}`);
                     fail('Debería haber lanzado un error');
                 } catch (error: any) {
                     expect(error.status).toBe(403);
@@ -222,7 +228,7 @@ describe('ShopService - Sistema de ', () => {
             test('Error 400: Artículo ya poseído (Carta)', async () => {
                 // El rico ya tiene la test_card_id del test anterior
                 try {
-                    await ShopService.processPurchase(id_usuario_rico, `card_${test_card_id}`);
+                    await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}${test_card_id}`);
                     fail('Debería haber lanzado un error');
                 } catch (error: any) {
                     expect(error.status).toBe(400);
@@ -232,10 +238,10 @@ describe('ShopService - Sistema de ', () => {
 
             test('Error 404: Artículo no encontrado', async () => {
                 try {
-                await ShopService.processPurchase(id_usuario_rico, 'card_999999');
-                fail('Debería haber lanzado un error');
+                    await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}999999`);
+                    fail('Debería haber lanzado un error');
                 } catch (error: any) {
-                expect(error.status).toBe(404);
+                    expect(error.status).toBe(404);
                 }
             });
         });
@@ -247,14 +253,12 @@ describe('ShopService - Sistema de ', () => {
             
             expect(history.length).toBeGreaterThanOrEqual(2);
             
-            const boardPurchase = history.find(p => p.purchase_type === 'BOARD');
+            const boardPurchase = history.find(p => p.type === 'BOARD');
             expect(boardPurchase).toBeDefined();
 
-            expect(boardPurchase?.board).toEqual(expect.objectContaining({
-                id_board: expect.any(Number),
-                name: expect.any(String),
-                description: expect.any(String),
-                price: expect.any(Number)
+            expect(boardPurchase?.items[0]).toEqual(expect.objectContaining({
+                id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.BOARD}\\d+$`)),
+                name: expect.any(String)
             }));
         });
     });

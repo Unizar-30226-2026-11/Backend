@@ -5,6 +5,7 @@ import { SignOptions } from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
 import { UserRedisRepository } from '../repositories';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -18,7 +19,7 @@ export const AuthService = {
     if (resultado == null) return null;
 
     return {
-      id: `u_${resultado.id_user}`,
+      id: `${ID_PREFIXES.USER}${resultado.id_user}`,
       username: resultado.username,
       email: resultado.email,
       coins: resultado.coins,
@@ -75,7 +76,7 @@ export const AuthService = {
       });
     });
     return {
-      id: `u_${newUser.id_user}`,
+      id: `${ID_PREFIXES.USER}${newUser.id_user}`,
       username: newUser.username,
       email: newUser.email,
     };
@@ -99,7 +100,7 @@ export const AuthService = {
     // Generar el token JWT
     const secretKey = process.env.JWT_SECRET || 'super_secret_fallback_key';
     const token = jwt.sign(
-      { id: `u_${user.id_user}`, username: user.username },
+      { id: `${ID_PREFIXES.USER}${user.id_user}`, username: user.username },
       secretKey,
       { expiresIn: '24h' },
     );
@@ -107,7 +108,7 @@ export const AuthService = {
     return {
       token,
       user: {
-        id: `u_${user.id_user}`,
+        id: `${ID_PREFIXES.USER}${user.id_user}`,
         username: user.username,
       },
     };

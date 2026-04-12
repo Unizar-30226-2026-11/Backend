@@ -4,6 +4,7 @@ import { Friendship_States } from '@prisma/client';
 
 import { prisma } from '../../infrastructure/prisma';
 import { FriendService } from '../friend.service';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 describe('FriendService - Pruebas Funciones', () => {
 
@@ -30,9 +31,9 @@ describe('FriendService - Pruebas Funciones', () => {
       users.push(u.id_user);
     }
 
-    main_u = `u_${users[0]}`;
-    friend_u = `u_${users[1]}`;
-    stranger_u = `u_${users[9]}`;
+    main_u = `${ID_PREFIXES.USER}${users[0]}`;
+    friend_u = `${ID_PREFIXES.USER}${users[1]}`;
+    stranger_u = `${ID_PREFIXES.USER}${users[9]}`;
 
     // Crear una amistad confirmada (User 0 y User 1)
     await prisma.friendships.create({
@@ -66,7 +67,7 @@ describe('FriendService - Pruebas Funciones', () => {
         expect(resultado).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              id: expect.stringMatching(/^u_\d+$/),
+              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
               username: expect.stringMatching(/.+/),
               status: expect.stringMatching(
                 /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
@@ -77,7 +78,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Usuario Inexistente:', async () => {
-        const resultado = await FriendService.getConfirmedFriends('u_999999');
+        const resultado = await FriendService.getConfirmedFriends(`${ID_PREFIXES.USER}999999`);
 
         expect(resultado).toHaveLength(0);
       });
@@ -101,9 +102,9 @@ describe('FriendService - Pruebas Funciones', () => {
         expect(resultado).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              id: expect.stringMatching(/^req_\d+_\d+$/),
-              fromUserId: expect.stringMatching(/^u_\d+$/),
-              toUserId: expect.stringMatching(/^u_\d+$/),
+              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.REQ}\\d+_\\d+$`)),
+              fromUserId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
+              toUserId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
               createdAt: expect.anything(),
             }),
           ]),
@@ -111,7 +112,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Usuario Inexistente:', async () => {
-        const resultado = await FriendService.getPendingRequests('u_999999');
+        const resultado = await FriendService.getPendingRequests(`${ID_PREFIXES.USER}999999`);
 
         expect(resultado).toHaveLength(0);
       });
@@ -169,9 +170,9 @@ describe('FriendService - Pruebas Funciones', () => {
         expect(resultado).toBeDefined();
         expect(resultado).toEqual(
           expect.objectContaining({
-            id: expect.stringMatching(/^req_\d+_\d+$/),
-            fromUserId: expect.stringMatching(/^u_\d+$/),
-            toUserId: expect.stringMatching(/^u_\d+$/),
+            id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.REQ}\\d+_\\d+$`)),
+            fromUserId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
+            toUserId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
           }),
         );
         expect(resultado?.toUserId).toBe(stranger_u);
@@ -198,27 +199,23 @@ describe('FriendService - Pruebas Funciones', () => {
 
     describe('Buscar Peticion de Amistad -> findRequestById() ', () => {
       test('Relación Inexistente:', async () => {
-        const resultado = await FriendService.findRequestById('req_999999999_999999');
+        const resultado = await FriendService.findRequestById(`${ID_PREFIXES.REQ}999999999_999999`);
 
         expect(resultado).toHaveLength(0);
       });
 
       test('Relación Existente:', async () => {
         for (let i = 0; i < 5; i++) {
-          const relation =
-            'req_' +
-            dynamic_relations[i].id_user_1 +
-            '_' +
-            dynamic_relations[i].id_user_2;
+          const relation = `${ID_PREFIXES.REQ}${dynamic_relations[i].id_user_1}_${dynamic_relations[i].id_user_2}`;
           const resultado = await FriendService.findRequestById(relation);
 
           expect(resultado).toBeDefined();
           expect(resultado).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                id: expect.stringMatching(/^req_\d+_\d+$/),
-                fromUserId: expect.stringMatching(/^u_\d+$/),
-                toUserId: expect.stringMatching(/^u_\d+$/),
+                id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.REQ}\\d+_\\d+$`)),
+                fromUserId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
+                toUserId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
               }),
             ]),
           );
@@ -231,7 +228,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Campos Incorrectos:', async () => {
-        const resultado = await FriendService.findRequestById('u_14-u_12');
+        const resultado = await FriendService.findRequestById(`${ID_PREFIXES.USER}14-${ID_PREFIXES.USER}12`);
         expect(resultado).toBeNull();
       });
     });
@@ -239,11 +236,7 @@ describe('FriendService - Pruebas Funciones', () => {
     describe('Aceptar Peticion de Amistad -> acceptFriendRequest() ', () => {
       test('Petición Existente:', async () => {
         for (let i = 0; i < 5; i++) {
-          const relation =
-            'req_' +
-            dynamic_relations[i].id_user_1 +
-            '_' +
-            dynamic_relations[i].id_user_2;
+          const relation = `${ID_PREFIXES.REQ}${dynamic_relations[i].id_user_1}_${dynamic_relations[i].id_user_2}`;
           const resultado = await FriendService.acceptFriendRequest(relation);
 
           expect(resultado).toBeDefined();
@@ -252,7 +245,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Petición Inexistente:', async () => {
-        const resultado = await FriendService.acceptFriendRequest('req_999999999_999999');
+        const resultado = await FriendService.acceptFriendRequest(`${ID_PREFIXES.REQ}999999999_999999`);
 
         expect(resultado).toBeDefined();
         expect(resultado).toBeFalsy();
@@ -266,7 +259,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Campos Incorrectos:', async () => {
-        const resultado = await FriendService.acceptFriendRequest('u_14-u_12');
+        const resultado = await FriendService.acceptFriendRequest(`${ID_PREFIXES.USER}14-${ID_PREFIXES.USER}12`);
 
         expect(resultado).toBeDefined();
         expect(resultado).toBeFalsy();
@@ -276,11 +269,7 @@ describe('FriendService - Pruebas Funciones', () => {
     describe('Rechazar Peticion de Amistad -> rejectFriendRequest() ', () => {
       test('Petición Existente:', async () => {
         for (let i = 5; i < 8; i++) {
-          const relation =
-            'req_' +
-            dynamic_relations[i].id_user_1 +
-            '_' +
-            dynamic_relations[i].id_user_2;
+          const relation = `${ID_PREFIXES.REQ}${dynamic_relations[i].id_user_1}_${dynamic_relations[i].id_user_2}`;
           const resultado = await FriendService.rejectFriendRequest(relation);
 
           expect(resultado).toBeDefined();
@@ -289,7 +278,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Petición Inexistente:', async () => {
-        const resultado = await FriendService.rejectFriendRequest('req_999999999_999999');
+        const resultado = await FriendService.rejectFriendRequest(`${ID_PREFIXES.REQ}999999999_999999`);
 
         expect(resultado).toBeDefined();
         expect(resultado).toBeFalsy();
@@ -303,7 +292,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Campos Incorrectos:', async () => {
-        const resultado = await FriendService.rejectFriendRequest('u_14-u_12');
+        const resultado = await FriendService.rejectFriendRequest(`${ID_PREFIXES.USER}14-${ID_PREFIXES.USER}12`);
 
         expect(resultado).toBeDefined();
         expect(resultado).toBeFalsy();
@@ -314,8 +303,8 @@ describe('FriendService - Pruebas Funciones', () => {
       test('Relacion Existente:', async () => {
         for (let i = 0; i < 5; i++) {
          const resultado = await FriendService.removeFriend(
-            'u_' + dynamic_relations[i].id_user_1,
-            'u_' + dynamic_relations[i].id_user_2,
+            `${ID_PREFIXES.USER}${dynamic_relations[i].id_user_1}`,
+            `${ID_PREFIXES.USER}${dynamic_relations[i].id_user_2}`,
           );
 
           expect(resultado).toBeDefined();
@@ -324,7 +313,7 @@ describe('FriendService - Pruebas Funciones', () => {
       });
 
       test('Relacion Inexistente:', async () => {
-        const resultado = await FriendService.removeFriend('u_999999999', 'u_99999999');
+        const resultado = await FriendService.removeFriend(`${ID_PREFIXES.USER}999999999`, `${ID_PREFIXES.USER}99999999`);
 
         expect(resultado).toBeDefined();
         expect(resultado).toBeFalsy();
@@ -336,7 +325,7 @@ describe('FriendService - Pruebas Funciones', () => {
 
       test('Campos Incorrectos:', async () => {
         await expect(
-          FriendService.removeFriend('req_1', 'req_2'),
+          FriendService.removeFriend(`${ID_PREFIXES.REQ}1`, `${ID_PREFIXES.REQ}2`),
         ).rejects.toThrow();
       });
     });

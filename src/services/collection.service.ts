@@ -4,6 +4,7 @@ import {
   getCachedItem,
   setCachedData,
 } from '../shared/utils/cache.utils';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
 
 export const CollectionService = {
   // Obtiene todas las colecciones disponibles
@@ -20,7 +21,7 @@ export const CollectionService = {
         if (collections == null) return null;
 
         const mappedCollections = collections.map((collection) => ({
-          id: `col_${collection.id_collection}`,
+          id: `${ID_PREFIXES.COLLECTION}${collection.id_collection}`,
           name: collection.name,
           description: collection.description,
           release_date: collection.releaseDate.toISOString(),
@@ -39,7 +40,7 @@ export const CollectionService = {
     const idsToProcess = isArrayInput ? col_ids : [col_ids];
 
     const numericIds = idsToProcess.map((id) =>
-      parseInt(id.replace('col_', '')),
+      parseInt(id.replace(ID_PREFIXES.COLLECTION, '')),
     );
 
     const finalCollections: any[] = [];
@@ -72,7 +73,7 @@ export const CollectionService = {
       for (const collection of bbddCollections) {
 
         const formattedCollection = {
-          id: `col_${collection.id_collection}`,
+          id: `${ID_PREFIXES.COLLECTION}${collection.id_collection}`,
           name: collection.name,
           description: collection.description,
           releaseDate: collection.releaseDate.toISOString(),
@@ -102,8 +103,10 @@ export const CollectionService = {
     const idsToProcess = isArrayInput ? col_ids : [col_ids];
 
     const numericIds = idsToProcess.map((id) =>
-      parseInt(id.replace('col_', '')),
-    );
+      parseInt(id.replace(ID_PREFIXES.COLLECTION, '')),)
+      .filter((id) => !isNaN(id));
+
+    if (numericIds.length === 0) return null; 
 
     const finalCatalogs: any[] = [];
     const missingIdsInCache: number[] = [];
@@ -133,7 +136,7 @@ export const CollectionService = {
 
     if (bbddCollections.length > 0) {
       for (const collection of bbddCollections) {
-        const collection_id = `col_${collection.id_collection}`;
+        const collection_id = `${ID_PREFIXES.COLLECTION}${collection.id_collection}`;
 
         const formattedCatalog = {
           collection: {
@@ -141,9 +144,10 @@ export const CollectionService = {
             name: collection.name,
           },
           cards: collection.cards.map((card) => ({
-            id: `c_${card.id_card}`,
+            id: `${ID_PREFIXES.CARD}${card.id_card}`,
             name: card.title,
             rarity: card.rarity,
+            url_image: card.url_image,
           })),
         };
 

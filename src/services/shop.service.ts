@@ -2,7 +2,7 @@
 import { prisma } from '../infrastructure/prisma';
 import { Purchase_Type } from '@prisma/client'; 
 import { ShopRedisRepository } from '../repositories/shop.repository';
-
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 
 // ==========================================
 // DICCIONARIOS DE PRECIOS
@@ -80,20 +80,27 @@ class ShopServiceClass {
     const pack = allCards.sort(() => 0.5 - Math.random()).slice(0,5);
 
     const shop = {
-      singleCards: singles.map(c => ({ id_card: c.id_card, title: c.title, rarity: c.rarity, price: RARITY_PRICES[c.rarity] })),
+      singleCards: singles.map(c => ({ 
+        id_card: `${ID_PREFIXES.CARD}${c.id_card}`,
+        title: c.title,
+        rarity: c.rarity,
+        price: RARITY_PRICES[c.rarity],
+        url_image: c.url_image
+      })),
       cardPackOffer: {
+        id_pack: 'pack_daily',
         name: "Sobre Diario",
         card_ids: pack.map(c => c.id_card),
         description: "5 cartas con 25% de descuento",
         price: calculateCleanPrice(pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.75)
       },
       collectionOffer: randomColl ? {
-        id_collection: randomColl.id_collection,
+        id_collection: `${ID_PREFIXES.COLLECTION}${randomColl.id_collection}`,
         name: randomColl.name,
         price: calculateCleanPrice(randomColl.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.80)
       } : null,
       boardOffer: selectedBoard ? { 
-        id_board: selectedBoard.id_board, 
+        id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`, 
         name: selectedBoard.name, 
         price: selectedBoard.price,
         description: selectedBoard.description 
@@ -122,9 +129,9 @@ class ShopServiceClass {
       let itemNameForResponse = ''; // Para devolverlo en el success al controlador
 
       // Identificacion del artículo y validación
-      if (itemId.startsWith('board_')) {
+      if (itemId.startsWith(ID_PREFIXES.BOARD)) {
         purchaseType = 'BOARD';
-        boardToAddId = parseInt(itemId.replace('board_', ''));
+        boardToAddId = parseInt(itemId.replace(ID_PREFIXES.BOARD, ''));
 
         const board = await tx.board.findUnique({ where: { id_board: boardToAddId } });
         if (!board) throw { status: 404, message: 'Tablero no encontrado.' };
@@ -137,9 +144,9 @@ class ShopServiceClass {
         totalCost = board.price;
         itemNameForResponse = `Tablero: ${board.name}`;
 
-      } else if (itemId.startsWith('card_')) {
+      } else if (itemId.startsWith(ID_PREFIXES.CARD)) {
         purchaseType = 'SINGLE_CARD';
-        const cardId = parseInt(itemId.replace('card_', ''));
+        const cardId = parseInt(itemId.replace(ID_PREFIXES.CARD, ''));
 
         const alreadyOwned = await tx.userCard.findFirst({ where: { id_user: userId, id_card: cardId } });
         if (alreadyOwned) throw { status: 400, message: 'Ya posees esta carta en tu colección.' };
@@ -151,9 +158,9 @@ class ShopServiceClass {
         cardsToAdd.push(card.id_card);
         itemNameForResponse = `Carta: ${card.title}`;
 
-      } else if (itemId.startsWith('collection_')) {
+      } else if (itemId.startsWith(ID_PREFIXES.COLLECTION)) {
         purchaseType = 'COLLECTION';
-        const collId = parseInt(itemId.replace('collection_', ''));
+        const collId = parseInt(itemId.replace(ID_PREFIXES.COLLECTION, ''));
 
         const collection = await tx.collection.findUnique({
           where: { id_collection: collId }, include: { cards: true } 
@@ -220,7 +227,7 @@ class ShopServiceClass {
           id_user: userId, 
           purchase_type: purchaseType, 
           coins_spent: totalCost,
-          board_id: boardToAddId // Ahora se guarda el ID real del tablero
+          board_id: boardToAddId
         }
       });
 
@@ -244,7 +251,7 @@ class ShopServiceClass {
    * @param amount Cantidad de registros a devolver (Por defecto 25. Pasa 0 para obtener TODOS).
    */
   public async getPurchaseHistory(userId: number, amount: number = 25) {
-    return await prisma.purchaseHistory.findMany({
+    const history = await prisma.purchaseHistory.findMany({
       where: { id_user: userId },
       orderBy: { purchased_at: 'desc' },
       take: amount === 0 ? undefined : amount,
@@ -253,6 +260,24 @@ class ShopServiceClass {
         cards: { include: { card: true } } // Trae info de las cartas compradas
       }
     });
+
+    // Mapeamos para que el frontend reciba exactamente lo mismo que en user.service
+    return history.map(record => ({
+      id_purchase: record.id_purchase,
+      type: record.purchase_type,
+      cost: record.coins_spent,
+      date: record.purchased_at,
+      items: record.purchase_type === 'BOARD' && record.board 
+        ? [{ 
+            id: `${ID_PREFIXES.BOARD}${record.board.id_board}`, 
+            name: record.board.name 
+          }]
+        : record.cards.map(c => ({ 
+            id: `${ID_PREFIXES.CARD}${c.card.id_card}`, 
+            name: c.card.title,
+            url_image: c.card.url_image 
+          }))
+    }));
   }
 }
 
