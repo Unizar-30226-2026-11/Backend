@@ -159,6 +159,8 @@ model Cards {
   id_card       Int        @id @default(autoincrement())
   title         String     @unique
   rarity        Rarity     @default(COMMON)
+  url_image     String
+  
   id_collection Int
   collection    Collection @relation(fields: [id_collection], references: [id_collection])
 

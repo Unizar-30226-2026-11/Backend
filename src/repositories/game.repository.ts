@@ -5,11 +5,11 @@ export const GameRedisRepository = {
   /**
    * Recupera el estado de la partida e "hidrata" los campos JSON.
    */
-  async getGame(gameId: string): Promise<GameState | null> {
-    const data = await gameRepository.fetch(gameId);
+  async getGame(lobbyCode: string): Promise<GameState | null> {
+    const data = await gameRepository.fetch(lobbyCode);
 
     // Si el objeto recuperado no tiene ID, es que no existe en Redis
-    if (!data || !data.gameId) return null;
+    if (!data || !data.lobbyCode) return null;
 
     // Convertimos los strings de Redis en los tipos reales de TS
     return {
@@ -30,8 +30,8 @@ export const GameRedisRepository = {
   /**
    * "Deshidrata" el GameState convirtiendo objetos a strings para Redis.
    */
-  async saveGame(gameId: string, state: GameState): Promise<void> {
-    await gameRepository.save(gameId, {
+  async saveGame(lobbyCode: string, state: GameState): Promise<void> {
+    await gameRepository.save(lobbyCode, {
       ...state,
       // Serializamos los objetos complejos antes de guardar
       scores: JSON.stringify(state.scores),
@@ -47,8 +47,8 @@ export const GameRedisRepository = {
   /**
    * Elimina la partida de Redis (útil al finalizar).
    */
-  async deleteGame(gameId: string): Promise<void> {
-    await gameRepository.remove(gameId);
+  async deleteGame(lobbyCode: string): Promise<void> {
+    await gameRepository.remove(lobbyCode);
   },
 
   /**
@@ -61,7 +61,7 @@ export const GameRedisRepository = {
       .where('phase').not.equalTo('FINISHED')
       .return.all();
 
-    // Usamos .gameId porque es como se llama en tu gameStateSchema
-    return activeGames.map(game => game.gameId as string); 
+    // Usamos .lobbyCode porque es como se llama en tu gameStateSchema
+    return activeGames.map(game => game.lobbyCode as string); 
   }
 };

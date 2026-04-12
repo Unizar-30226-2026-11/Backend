@@ -370,7 +370,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
             // Ahora que hemos "espiado" la cola correctamente, pasará sin problema
             expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
                 'star-expiration',
-                { gameId: 'LOBBY1' },
+                { lobbyCode: 'LOBBY1' },
                 expect.objectContaining({ removeOnComplete: true })
             );
         });

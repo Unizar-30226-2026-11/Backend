@@ -35,6 +35,12 @@ export const AuthService = {
     username: string,
     passwordRaw: string,
   ) => {
+    if (!email.trim() || !username.trim() || !passwordRaw.trim()) {
+      throw new Error(
+        'Los campos email, username y password son obligatorios.',
+      );
+    }
+
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(passwordRaw, saltRounds);
 

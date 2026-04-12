@@ -485,6 +485,7 @@ export const UserService = {
 
     return resultado[1].count > 0;
   },
+
 };
 
 // Funcion Auxiliar

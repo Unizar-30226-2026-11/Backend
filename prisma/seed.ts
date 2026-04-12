@@ -76,6 +76,7 @@ async function main() {
           title: `Carta ${i}-${j + 1}`,
           rarity: rarities[j],
           id_collection: collection.id_collection,
+          url_image: 'https://ejemplo.com/placeholder.jpg'
         },
       });
       allCards.push(card);

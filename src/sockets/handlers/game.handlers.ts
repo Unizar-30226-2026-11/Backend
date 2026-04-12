@@ -73,8 +73,8 @@ export const registerGameHandlers = (
       const { lobbyCode } = rawPayload as { lobbyCode: string };
       const emissions = await gameService.triggerStarEvent(lobbyCode);
       dispatchEmissions(io, emissions);
-    } catch (error: any) {
-      socket.emit('server:error', { message: error.message });
+    } catch (error: unknown) {
+      socket.emit('server:error', { message: (error as Error).message });
     }
   });
 
@@ -92,8 +92,19 @@ export const registerGameHandlers = (
 
       const emissions = await gameService.claimStar(lobbyCode, userId);
       dispatchEmissions(io, emissions);
-    } catch (error: any) {
-      socket.emit('server:error', { message: error.message });
+    } catch (error: unknown) {
+      socket.emit('server:error', { message: (error as Error).message });
+    }
+  });
+
+  //Finalizar partida
+  socket.on('client:game:end', async (rawPayload: unknown) => {
+    try {
+      const { lobbyCode } = rawPayload as { lobbyCode: string };
+      const emissions = await gameService.finalizeGame(lobbyCode);
+      dispatchEmissions(io, emissions);
+    } catch (error: unknown) {
+      socket.emit('server:error', { message: (error as Error).message });
     }
   });
 };

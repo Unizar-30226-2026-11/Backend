@@ -5,7 +5,8 @@ import { CollectionService } from '../collection.service';
 
 describe('CollectionService - Pruebas Funciones', () => {
   let id_colection_test: number;
-
+  let real_collection_with_cards_id: string; // Variable dinámica para el test real
+  
   beforeAll(async () => {
     // Por si falla el test y no se borra la coleccion de una ejecución anterior.
     await prisma.collection.deleteMany({
@@ -21,6 +22,20 @@ describe('CollectionService - Pruebas Funciones', () => {
     });
 
     id_colection_test = colection_test.id_collection;
+
+    // Buscamos una coleccion con cartas
+    const realCollection = await prisma.collection.findFirst({
+      where: {
+        cards: { some: {} } // al menos una carta
+      }
+    });
+
+    if (!realCollection) {
+      throw new Error('No hay colecciones con cartas en la BD. Ejecuta el seed.');
+    }
+    
+    // Guardamos su ID dinámico (ej: 'col_14')
+    real_collection_with_cards_id = `col_${realCollection.id_collection}`;
   });
 
   beforeEach(() => {});
@@ -76,17 +91,16 @@ describe('CollectionService - Pruebas Funciones', () => {
 
   describe('Obtener cartas de una coleccion por ID.  -> getCardsByCollection() ', () => {
     test('Cartas de una Colección existente.', async () => {
-      const id_col = 'col_1';
 
-      const resultado = await CollectionService.getCardsByCollection(id_col);
+      const resultado = await CollectionService.getCardsByCollection(real_collection_with_cards_id);
 
       expect(resultado).toBeDefined();
       if (resultado == null) throw Error('El resultado no deberia ser nulo.');
 
       const catalog = Array.isArray(resultado) ? resultado[0] : resultado;
-     expect(catalog).toEqual(
+      expect(catalog).toEqual(
         expect.objectContaining({
-          collection: expect.objectContaining({ id: id_col }),
+          collection: expect.objectContaining({ id: real_collection_with_cards_id }),
           cards: expect.any(Array)
         })
       );
@@ -101,7 +115,7 @@ describe('CollectionService - Pruebas Funciones', () => {
     });
 
     test('Cartas de una Colección inexistente.', async () => {
-      const id_card = 'col_' + (13 + id_colection_test).toString();
+      const id_card = 'col_999999';
 
       const resultado = await CollectionService.getCardsByCollection(id_card);
 

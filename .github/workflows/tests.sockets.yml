@@ -1,0 +1,109 @@
+name: Socket Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/sockets/**'
+      - 'src/services/**'
+      - 'src/repositories/**'
+      - 'src/infrastructure/**'
+      - 'src/core/**'
+      - 'src/shared/**'
+      - 'src/api/middlewares/**'
+      - 'src/sockets/middleware/**'
+      - 'src/workers/**'
+      - 'src/index.ts'
+      - 'src/app.ts'
+      - 'prisma/**'
+      - 'package.json'
+      - 'prisma.config.ts'
+
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/sockets/**'
+      - 'src/services/**'
+      - 'src/repositories/**'
+      - 'src/infrastructure/**'
+      - 'src/core/**'
+      - 'src/shared/**'
+      - 'src/api/middlewares/**'
+      - 'src/sockets/middleware/**'
+      - 'src/workers/**'
+      - 'src/index.ts'
+      - 'src/app.ts'
+      - 'prisma/**'
+      - 'package.json'
+      - 'prisma.config.ts'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Ejecutar Test Completo de Sockets
+    runs-on: ubuntu-latest
+
+    env:
+      PORT: 3000
+      DB_USER: user
+      DB_PASSWORD: pass
+      DB_NAME: mydb
+      DB_PORT: 5432
+      DATABASE_URL: postgresql://user:pass@localhost:5432/mydb?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: super_secret_fallback_key
+      AES_KEY: 32_characters_long_key_for_aes_256
+
+    steps:
+      - name: 📥 Checkout del código
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🐘 Levantar PostgreSQL y Redis
+        run: docker compose up -d postgres redis
+
+      - name: ⏳ Esperar a PostgreSQL
+        run: until docker exec A_Tale_of_Recognition_PostgreSQL pg_isready -U user -d mydb; do sleep 2; done
+
+      - name: ⏳ Esperar a Redis
+        run: until docker exec redis_stack_server redis-cli ping | grep PONG; do sleep 2; done
+
+      - name: 🗄️ Preparar Prisma y datos de prueba
+        run: |
+          npx prisma generate
+          npx prisma db push
+          npx prisma db seed
+
+      - name: 🚀 Arrancar backend y ejecutar el test de sockets
+        run: |
+          npm run dev > backend.log 2>&1 &
+          backend_pid=$!
+          trap 'kill $backend_pid || true' EXIT
+
+          attempts=0
+          until curl -fsS http://127.0.0.1:3000/api-docs >/dev/null; do
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 60 ]; then
+              echo 'El backend no arrancó a tiempo'
+              cat backend.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          npx --yes tsx src/sockets/__tests__/full-flow.socket.test.ts

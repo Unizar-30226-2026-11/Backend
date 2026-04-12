@@ -1,24 +1,34 @@
 // src/services/game.service.ts
 import { Queue } from 'bullmq';
-import { bullmqConnection } from '../infrastructure/redis';
+
 import { DixitEngine } from '../core/engines';
-import { GameAction, GameState } from '../shared/types';
+import { prisma } from '../infrastructure/prisma';
+import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
-import { prisma } from '../infrastructure/prisma';
+import {
+  PREDEFINED_DECK_KEYS,
+  PREDEFINED_DECKS,
+} from '../shared/constants/decks';
+import {
+  COIN_REWARDS_BY_RANK,
+  COIN_REWARDS_DEFAULT,
+} from '../shared/constants/rewards';
+import { GameAction, GameState } from '../shared/types';
+import { invalidateCache } from '../shared/utils/cache.utils';
 
 // ==========================================
 // CONFIGURACIÓN DE BULLMQ (Timeouts de turnos)
 // ==========================================
 export const gameTimeoutsQueue = new Queue('game-timeouts', {
-  connection: bullmqConnection
+  connection: bullmqConnection,
 });
 
 // ==========================================
 // TIPO DE RETORNO: Lista de emisiones que el handler ejecutará
 // ==========================================
 export interface SocketEmission {
-  room: string;       // ID de sala o de jugador (socket.id / lobbyCode)
+  room: string; // ID de sala o de jugador (socket.id / lobbyCode)
   event: string;
   data: unknown;
 }
@@ -29,15 +39,17 @@ export interface IGameEngine {
 }
 
 export class GameService {
-  constructor(
-    private readonly redisRepo: typeof GameRedisRepository,
-  ) { }
+  constructor(private readonly redisRepo: typeof GameRedisRepository) {}
 
   /**
    * INICIALIZA LA PARTIDA DESDE EL LOBBY.
    * Devuelve la lista de emisiones que el handler debe enviar por socket.
    */
-  public async initializeGame(lobbyCode: string, lobbyData: any): Promise<SocketEmission[]> {
+  public async initializeGame(
+    lobbyCode: string,
+    lobbyData: any,
+    options: { useDynamicPool: boolean } = { useDynamicPool: true },
+  ): Promise<SocketEmission[]> {
     const { engine: mode, players } = lobbyData;
 
     // Obtener los IDs numéricos para buscar en Prisma
@@ -46,29 +58,37 @@ export class GameService {
       return isNaN(num) ? 0 : num;
     });
 
+    let centralDeck: number[] = [];
+    let boardIdToUse: number;
+    // Extraer cartas de los mazos (o usar el predeterminado al azar)
+    if (options.useDynamicPool) {
+    
+      // Extraer cartas de los mazos de los jugadores
+      const userDecks = await prisma.deck.findMany({
+        where: { id_user: { in: numericPlayerIds } },
+        include: {
+          cards: { include: { user_card: true } }
+        }
+      });
+
+      userDecks.forEach(deck => {
+        deck.cards.forEach(dc => {
+          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+        });
+      });
+    } else {
+      const keys = PREDEFINED_DECK_KEYS;
+      const randomKey = keys[Math.floor(Math.random() * keys.length)];
+      centralDeck = [...PREDEFINED_DECKS[randomKey]];
+    }
+
     const hostId = numericPlayerIds[0];
     const hostData = await prisma.user.findUnique({
       where: { id_user: hostId },
       select: { active_board_id: true }
     });
     // Si por algún error no tiene tablero activo, usamos el 1 (Classic) como fallback
-    const boardIdToUse = hostData?.active_board_id || 1;
-
-    // Extraer cartas de los mazos de los jugadores
-    const userDecks = await prisma.deck.findMany({
-      where: { id_user: { in: numericPlayerIds } },
-      include: {
-        cards: { include: { user_card: true } }
-      }
-    });
-
-    
-    let centralDeck: number[] = [];
-    userDecks.forEach(deck => {
-      deck.cards.forEach(dc => {
-        if (dc.user_card) centralDeck.push(dc.user_card.id_card);
-      });
-    });
+    boardIdToUse = hostData?.active_board_id || 1;
 
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
@@ -95,7 +115,7 @@ export class GameService {
 
     // Crear el estado base
     const baseState: any = {
-      gameId: lobbyCode,
+      lobbyCode,
       mode,
       players,
       disconnectedPlayers: [],
@@ -150,9 +170,9 @@ export class GameService {
    * PROCESA ACCIONES DURANTE LA PARTIDA.
    * Devuelve la lista de emisiones que el handler debe enviar por socket.
    */
-  public async handleAction(gameId: string, action: GameAction): Promise<SocketEmission[]> {
+  public async handleAction(lobbyCode: string, action: GameAction): Promise<SocketEmission[]> {
     // 1. Recuperar estado crudo desde Redis
-    const currentState = await this.redisRepo.getGame(gameId);
+    const currentState = await this.redisRepo.getGame(lobbyCode);
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
@@ -170,7 +190,7 @@ export class GameService {
         const winnerId = disconnectedId === player1 ? player2 : player1;
         
         // Usamos la función que ya tenemos para resolverlo, dándole la victoria al que se quedó
-        return this.submitConflictResult(gameId, winnerId, disconnectedId, isDuel);
+        return this.submitConflictResult(lobbyCode, winnerId, disconnectedId, isDuel);
       }
     }
 
@@ -190,13 +210,13 @@ export class GameService {
           player2: targetId, 
           isDuel: true 
       };
-      await this.redisRepo.saveGame(gameId, currentState);
+      await this.redisRepo.saveGame(lobbyCode, currentState);
 
       // Programamos la cancelación automática por si el frontend falla.
       // Le damos los 15s que dura el juego + 5s de margen de red.
       await gameTimeoutsQueue.add(
         'minigame-fallback',
-        { gameId: currentState.lobbyCode },
+        { lobbyCode: currentState.lobbyCode },
         { delay: (20 * 1000), jobId: `conflict-${currentState.lobbyCode}-${Date.now()}`, removeOnComplete: true }
       );
 
@@ -226,7 +246,7 @@ export class GameService {
     const specialEmissions = await this.checkSpecialSquares(newState, previousScores);
 
     // 5. Guardar el nuevo estado machacando el anterior
-    await this.redisRepo.saveGame(gameId, newState);
+    await this.redisRepo.saveGame(lobbyCode, newState);
 
     const emissions: SocketEmission[] = [];
 
@@ -263,11 +283,125 @@ export class GameService {
       };
       const delay = timeLimits[newState.phase];
       if (delay) {
-        await this.schedulePhaseTimeout(gameId, newState.phase, delay);
+        await this.schedulePhaseTimeout(lobbyCode, newState.phase, delay);
       }
     }
 
+    // 11. Fin de Partida: Ranking y Monedas
+
+    if (newState.phase === 'FINISHED') {
+      const finalEmissions = await this.finalizeGame(lobbyCode);
+      emissions.push(...finalEmissions);
+    }
+
     return emissions;
+  }
+
+   // ==========================================
+  // FIN DE PARTIDA: RANKING Y MONEDAS
+  // ==========================================
+
+  /**
+   * Cierra la partida: calcula el ranking, reparte monedas según la tabla
+   * COIN_REWARDS_BY_RANK, persiste los resultados en Prisma y devuelve
+   * las emisiones socket (resultado sala + saldo personal por RF-14).
+   */
+  public async finalizeGame(lobbyCode: string): Promise<SocketEmission[]> {
+    // 2. Ordenar jugadores por puntuación (de mayor a menor)
+    const currentState = await this.redisRepo.getGame(lobbyCode);
+    if (!currentState) {
+      throw new Error('Partida no encontrada o expirada.');
+    }
+    const ranking = Object.entries(currentState.scores)
+      .sort(([, a], [, b]) => b - a)
+      .map(([playerId, points], index) => ({
+        playerId,
+        points,
+        place: index + 1,
+        coinsEarned: COIN_REWARDS_BY_RANK[index + 1] ?? COIN_REWARDS_DEFAULT,
+      }));
+
+    // 2. Persistir en Prisma dentro de una transacción
+    try {
+      const gameDuration = 0; // TODO: calcular duración real cuando se almacene el startedAt
+      const gameLog = await prisma.games_log.create({
+        data: { duration: gameDuration },
+      });
+
+      await prisma.$transaction([
+        // Registro de estadísticas por jugador
+        ...ranking.map(({ playerId, points, place }) => {
+          const numericId = parseInt(playerId.replace('u_', ''));
+          return prisma.userGameStats.create({
+            data: {
+              id_user: numericId,
+              id_game: gameLog.id_game,
+              points,
+              place,
+            },
+          });
+        }),
+        // Incremento atómico de monedas (seguro ante concurrencia)
+        ...ranking.map(({ playerId, coinsEarned }) => {
+          const numericId = parseInt(playerId.replace('u_', ''));
+          return prisma.user.update({
+            where: { id_user: numericId },
+            data: { coins: { increment: coinsEarned } },
+          });
+        }),
+      ]);
+
+      // 3. Obtener el saldo actualizado de cada jugador para el evento WALLET_UPDATED
+      const updatedBalances = await Promise.all(
+        ranking.map(async ({ playerId }) => {
+          const numericId = parseInt(playerId.replace('u_', ''));
+          const user = await prisma.user.findUnique({
+            where: { id_user: numericId },
+            select: { coins: true },
+          });
+          return { playerId, balance: user?.coins ?? 0 };
+        }),
+      );
+
+      // 4. Invalidar caché de economía de cada jugador (RF-14)
+      await Promise.all(
+        ranking.map(({ playerId }) =>
+          invalidateCache(`cache:user:economy:${playerId}`),
+        ),
+      );
+
+      const emissions: SocketEmission[] = [];
+
+      // 5a. Emitir resultados a toda la sala
+      emissions.push({
+        room: lobbyCode,
+        event: 'server:game:ended',
+        data: { ranking },
+      });
+
+      // 5b. Emitir saldo actualizado a cada jugador por su sala personal (RF-14)
+      for (const { playerId, balance } of updatedBalances) {
+        emissions.push({
+          room: playerId, // Sala personal del jugador (socket.join(userId))
+          event: 'server:economy:wallet_updated',
+          data: { balance },
+        });
+      }
+
+      return emissions;
+    } catch (error) {
+      console.error(
+        `[GameService] Error al finalizar la partida ${lobbyCode}:`,
+        error,
+      );
+      return [
+        {
+          room: lobbyCode,
+          event: 'server:game:ended',
+          data: { ranking, error: 'No se pudieron guardar las estadísticas.' },
+        },
+      ];
+    }
   }
 
   // ==========================================
@@ -299,20 +433,20 @@ export class GameService {
   // ESTRELLA SÍNCRONA
   //
 
-  public async triggerStarEvent(gameId: string): Promise<SocketEmission[]> {
-    const state = await this.redisRepo.getGame(gameId);
+  public async triggerStarEvent(lobbyCode: string): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
     if (!state || state.isStarActive) return [];
 
     const movement = this.calculateStarPath();
 
     state.isStarActive = true;
     state.starExpiresAt = Date.now() + movement.duration;
-    await this.redisRepo.saveGame(gameId, state);
+    await this.redisRepo.saveGame(lobbyCode, state);
 
     const emissions: SocketEmission[] = [];
 
     emissions.push({
-      room: gameId,
+      room: lobbyCode,
       event: 'server:game:star_spawned',
       data: {
         starId: `star_${Date.now()}`,
@@ -324,7 +458,7 @@ export class GameService {
     // Si nadie la pulsa, se desactiva al terminar la duración
     await gameTimeoutsQueue.add(
       'star-expiration',
-      { gameId },
+      { lobbyCode },
       { 
         delay: movement.duration, 
         removeOnComplete: true 
@@ -340,8 +474,8 @@ export class GameService {
    */
   public _deferredEmitCallback?: (emission: SocketEmission) => void;
 
-  public async claimStar(gameId: string, playerId: string): Promise<SocketEmission[]> {
-    const state = await this.redisRepo.getGame(gameId);
+  public async claimStar(lobbyCode: string, playerId: string): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
 
     if (!state || !state.isStarActive || Date.now() > state.starExpiresAt) {
       return []; // El click llegó tarde o no hay estrella
@@ -350,11 +484,11 @@ export class GameService {
     state.isStarActive = false;
     state.scores[playerId] = (state.scores[playerId] || 0) + 3;
 
-    await this.redisRepo.saveGame(gameId, state);
+    await this.redisRepo.saveGame(lobbyCode, state);
 
     return [
       {
-        room: gameId,
+        room: lobbyCode,
         event: 'server:game:star_claimed',
         data: { winnerId: playerId, newScores: state.scores }
       }
@@ -660,7 +794,7 @@ export class GameService {
     // Le damos los 15s que dura el juego + 5s de margen de red.
     await gameTimeoutsQueue.add(
       'minigame-fallback',
-      { gameId: state.lobbyCode },
+      { lobbyCode: state.lobbyCode },
       { delay: (20 * 1000), jobId: `conflict-${state.lobbyCode}-${Date.now()}`, removeOnComplete: true }
     );
 
@@ -682,13 +816,13 @@ export class GameService {
    * Desbloquea la partida y aplica los puntos correspondientes.
    */
   public async submitConflictResult(
-    gameId: string, 
+    lobbyCode: string, 
     winnerId: string, 
     loserId: string, 
     isDuel: boolean
   ): Promise<SocketEmission[]> {
     
-    const state = await this.redisRepo.getGame(gameId);
+    const state = await this.redisRepo.getGame(lobbyCode);
     if (!state || !state.isMinigameActive) return [];
 
     // 1. Aplicamos los puntos según el tipo de conflicto
@@ -704,7 +838,7 @@ export class GameService {
     // 2. Liberamos la partida para que continúe
     state.isMinigameActive = false;
     state.activeConflict = null;
-    await this.redisRepo.saveGame(gameId, state);
+    await this.redisRepo.saveGame(lobbyCode, state);
 
     // 3. Preparamos las notificaciones
     const emissions: SocketEmission[] = [];
@@ -733,8 +867,8 @@ export class GameService {
    * Llamado por el Worker de BullMQ si el Frontend nunca responde al minijuego.
    * Cancela el conflicto sin repartir puntos para evitar que la partida muera.
    */
-  public async forceUnlockMinigame(gameId: string): Promise<SocketEmission[]> {
-    const state = await this.redisRepo.getGame(gameId);
+  public async forceUnlockMinigame(lobbyCode: string): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
     
     // Si ya no está activo, el frontend respondió a tiempo
     if (!state || !state.isMinigameActive) return [];
@@ -742,7 +876,7 @@ export class GameService {
     // Limpiamos los bloqueos forzosamente
     state.isMinigameActive = false;
     state.activeConflict = null;
-    await this.redisRepo.saveGame(gameId, state);
+    await this.redisRepo.saveGame(lobbyCode, state);
 
     return [
       {
