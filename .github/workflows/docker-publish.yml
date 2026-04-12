@@ -1,0 +1,39 @@
+name: Publicar Imagen Docker
+
+on:
+  push:
+    branches: ['main'] # Se activa con push y con merge a main
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions: # Esto da permiso al GITHUB_TOKEN para subir la imagen
+      contents: read
+      packages: write
+
+    steps:
+      - name: Descargar código del repo
+        uses: actions/checkout@v4
+
+      - name: Normalizar nombre de imagen (minúsculas)
+        shell: bash
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Iniciar sesión en el registro (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }} # Tu usuario o el de la acción
+          password: ${{ secrets.GITHUB_TOKEN }} # El secreto automático
+
+      - name: Construir y subir imagen
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Donde esté el Dockerfile (en la raíz)
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
