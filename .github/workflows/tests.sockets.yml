@@ -106,4 +106,4 @@ jobs:
             sleep 2
           done
 
-          npx --yes tsx src/sockets/__tests__/full-flow.socket.test.ts
+          npx jest src/sockets/__tests__/full-flow.socket.test.ts --forceExit
