@@ -225,17 +225,6 @@ describe('ShopService - Sistema de ', () => {
                 }
             });
 
-            test('Error 400: Artículo ya poseído (Carta)', async () => {
-                // El rico ya tiene la test_card_id del test anterior
-                try {
-                    await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}${test_card_id}`);
-                    fail('Debería haber lanzado un error');
-                } catch (error: any) {
-                    expect(error.status).toBe(400);
-                    expect(error.message).toBe('Ya posees esta carta en tu colección.');
-                }
-            });
-
             test('Error 404: Artículo no encontrado', async () => {
                 try {
                     await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}999999`);

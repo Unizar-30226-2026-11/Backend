@@ -148,9 +148,6 @@ class ShopServiceClass {
         purchaseType = 'SINGLE_CARD';
         const cardId = parseInt(itemId.replace(ID_PREFIXES.CARD, ''));
 
-        const alreadyOwned = await tx.userCard.findFirst({ where: { id_user: userId, id_card: cardId } });
-        if (alreadyOwned) throw { status: 400, message: 'Ya posees esta carta en tu colección.' };
-
         const card = await tx.cards.findUnique({ where: { id_card: cardId } });
         if (!card) throw { status: 404, message: 'Carta no encontrada.' };
         

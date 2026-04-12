@@ -766,6 +766,9 @@ export class GameService {
    * y dispara el evento de minijuego 1vs1.
    */
   private async checkConflictMinigame(state: GameState, movingPlayerId: string): Promise<SocketEmission[]> {
+
+    if (state.isMinigameActive) return [];
+    
     const currentScore = state.scores[movingPlayerId];
     
     // Ignorar la posición 0 (inicio) para no saturar al empezar

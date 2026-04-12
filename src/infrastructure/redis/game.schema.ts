@@ -27,7 +27,9 @@ export const gameStateSchema = new Schema(
     // Registro de visitas a casillas: Record<SquareID, PlayerID[]>
     boardRegistry: { type: 'string' },
 
-    isMinigameActive: { type: 'boolean' }
+    isMinigameActive: { type: 'boolean' },
+    activeConflict: { type: 'string' }, // JSON: { player1, player2, isDuel }
+    activeBoardId: { type: 'number' }
   },
   { dataStructure: 'JSON' },
 );

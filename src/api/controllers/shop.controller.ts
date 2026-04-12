@@ -4,12 +4,20 @@ import { Response } from 'express';
 import { ShopService } from '../../services/shop.service';
 import { AuthenticatedRequest } from '../../shared/types';
 import { LockManager } from '../../shared/utils/lockManager';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 export const getShopItems = async (
   req: AuthenticatedRequest,
   res: Response,
 ): Promise<void> => {
-  const userId = Number(req.user!.id);
+  const rawId = req.user!.id;
+  const userId = parseInt(rawId.replace(ID_PREFIXES.USER, ''));
+
+  if (isNaN(userId)) {
+    res.status(400).json({ message: 'Usuario no válido.' });
+    return;
+  }
+
   try {
     // Obtener el catálogo disponible en la tienda
     const items = await ShopService.getAvailableItems(userId);

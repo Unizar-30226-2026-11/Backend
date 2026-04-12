@@ -55,7 +55,9 @@ export const CollectionService = {
     }
 
     if (missingIdsInCache.length == 0) {
-      return { collections: finalCollections };
+      return idsToProcess.length > 1 
+        ? { collections: finalCollections } 
+        : finalCollections[0];
     }
 
     const bbddCollections = await prisma.collection.findMany({

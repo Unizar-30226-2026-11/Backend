@@ -7,8 +7,8 @@ export const ShopRedisRepository = {
     const entity = {
       singleCards: JSON.stringify(state.singleCards),
       cardPackOffer: JSON.stringify(state.cardPackOffer),
-      collectionOffer: state.collectionOffer ? JSON.stringify(state.collectionOffer) : null,
-      boardOffer: state.boardOffer ? JSON.stringify(state.boardOffer) : null,
+      collectionOffer: JSON.stringify(state.collectionOffer ?? null),
+      boardOffer: JSON.stringify(state.boardOffer ?? null),
       expiresAt: state.expiresAt
     };
 
@@ -27,8 +27,8 @@ export const ShopRedisRepository = {
     return {
       singleCards: (JSON.parse(entity.singleCards as string) || '[]'),
       cardPackOffer: (JSON.parse(entity.cardPackOffer as string) || 'null'),
-      collectionOffer: entity.collectionOffer ? JSON.parse(entity.collectionOffer as string) : null,
-      boardOffer: entity.boardOffer ? JSON.parse(entity.boardOffer as string) : null,
+      collectionOffer: JSON.parse(entity.collectionOffer as string || 'null'),
+      boardOffer: JSON.parse(entity.boardOffer as string || 'null'),
       expiresAt: entity.expiresAt
     };
   },
