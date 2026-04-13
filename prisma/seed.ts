@@ -13,15 +13,46 @@ async function main() {
   const hashedBasePassword = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
 
   console.log('--- Limpiando base de datos ---');
+  await prisma.purchaseHistoryCard.deleteMany();
+  await prisma.purchaseHistory.deleteMany();
   await prisma.userGameStats.deleteMany();
   await prisma.games_log.deleteMany();
   await prisma.deckCard.deleteMany();
   await prisma.deck.deleteMany();
   await prisma.userCard.deleteMany();
+  await prisma.userBoard.deleteMany();
   await prisma.friendships.deleteMany();
   await prisma.cards.deleteMany();
   await prisma.collection.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.board.deleteMany();
+
+
+  console.log('--- Creando Tableros (Boards) ---');
+  // Creamos el tablero clásico con ID 1 explícitamente para mayor seguridad
+  const classicBoard = await prisma.board.create({
+    data: {
+      name: 'CLASSIC',
+      description: 'El tablero original de madera y estrellas.',
+      price: 0,
+    },
+  });
+
+  await prisma.board.create({
+    data: {
+      name: 'NEON',
+      description: 'Un estilo futurista con luces vibrantes y efectos ciberpunk.',
+      price: 2000,
+    },
+  });
+
+  await prisma.board.create({
+    data: {
+      name: 'STELLAR_GALAXY',
+      description: 'Viaja a través del cosmos con este tablero espacial.',
+      price: 2000,
+    },
+  });
 
   console.log('--- Creando Colecciones y Cartas ---'); // 12 Colecciones x 12 Cartas = 144 cartas en total
 
@@ -45,14 +76,17 @@ async function main() {
           title: `Carta ${i}-${j + 1}`,
           rarity: rarities[j],
           id_collection: collection.id_collection,
+          url_image: 'https://ejemplo.com/placeholder.jpg'
         },
       });
       allCards.push(card);
     }
   }
 
-  // Definir las 48 cartas "base" (las de las primeras 4 colecciones)
+  // Definir las 48 cartas "base" (las de las primeras 4 colecciones) (2 veces para tener 2 instancias al crear mazos)
   const baseCards = allCards.slice(0, 48);
+
+  const doubleCards = [ ... baseCards ,  ... baseCards]
 
   console.log('--- Creando Usuarios y sus Colecciones ---');
   const users = [];
@@ -62,13 +96,23 @@ async function main() {
         username: `Jugador${i}`,
         email: `jugador${i}@ejemplo.com`,
         password: hashedBasePassword,
+        coins: 1000,
+        active_board_id: classicBoard.id_board,
       },
     });
     users.push(user);
 
+    // Asignar propiedad del tablero clásico (Gratis por registro)
+    await prisma.userBoard.create({
+      data: {
+        id_user: user.id_user,
+        id_board: classicBoard.id_board,
+      },
+    });
+
     // Asignar las 48 cartas base a cada usuario
     await prisma.userCard.createMany({
-      data: baseCards.map((card) => ({
+      data: doubleCards.map((card) => ({
         id_user: user.id_user,
         id_card: card.id_card,
       })),
@@ -86,7 +130,13 @@ async function main() {
       })),
     });
 
-    // Crear al menos 1 Mazo de 12 cartas (usando las base)
+    const createdUserCards = await prisma.userCard.findMany({
+      where: { id_user: user.id_user },
+      select: { id_user_card: true },
+      take: 12 // Solo necesitamos 12 para el mazo
+    });
+
+    // Crear al menos 1 Mazo de 12 cartas
     const deck = await prisma.deck.create({
       data: {
         name: `Mazo Principal de ${user.username}`,
@@ -94,11 +144,11 @@ async function main() {
       },
     });
 
-    const deckSelection = baseCards.slice(0, 12);
+    const deckSelection = createdUserCards.slice(0, 12);
     await prisma.deckCard.createMany({
       data: deckSelection.map((card) => ({
         id_deck: deck.id_deck,
-        id_user_card: card.id_card,
+        id_user_card: card.id_user_card,
       })),
     });
   }
@@ -117,7 +167,6 @@ async function main() {
   console.log('--- Generando 15 Partidas Multijugador (4-8 jugadores) ---');
   for (let i = 0; i < 15; i++) {
     // Definir duracion aleatoria entre 60 y 115 minutos
-
     const duration = Math.floor(Math.random() * 60) + 45;
 
     // Crear la partida

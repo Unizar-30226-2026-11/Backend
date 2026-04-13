@@ -201,3 +201,38 @@ export const deleteDeck = async (
     res.status(500).json({ message: 'Error al eliminar el mazo.' });
   }
 };
+
+export const getPurchasedBoards = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const purchasedBoards = await UserService.getUserPurchasedBoards(userId);
+
+    res.status(200).json({ boards: purchasedBoards });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error al obtener los tableros comprados del usuario.',
+    });
+  }
+};
+
+export const selectActiveBoard = async (
+  req: AuthenticatedRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { boardId } = req.body;
+
+    const result = await UserService.setUserActiveBoard(userId, boardId);
+
+    res.status(200).json({
+      message: 'Tablero seleccionado correctamente.',
+      activeBoard: result,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al seleccionar el tablero.' });
+  }
+};

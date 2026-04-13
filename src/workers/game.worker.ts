@@ -1,125 +1,208 @@
-//Este código lee el estado, deduce quién falta por jugar y genera las acciones correspondientes.
-
 // src/workers/game.worker.ts
 import { Job, Worker } from 'bullmq';
 import { Server } from 'socket.io';
 
-import { bullmqConnection, GameRepository } from '../infrastructure/redis';
+import { bullmqConnection } from '../infrastructure/redis';
+import { GameRedisRepository } from '../repositories/game.repository';
 import { GameService } from '../services/game.service';
-import { GameAction } from '../shared/types';
+import { GameAction } from '../shared/types/game.types';
 
 export const initializeGameWorker = (io: Server) => {
-  // Necesitamos instanciar el GameService para poder llamarlo
-  const gameService = new GameService(io);
+  const gameService = new GameService(GameRedisRepository);
 
   const gameWorker = new Worker(
-    'game-timeouts', // Mismo nombre que la Queue en game.service.ts
+    'game-timeouts',
     async (job: Job) => {
-      const { lobbyCode, expectedPhase } = job.data;
+      // Extraemos las propiedades. Nota: a veces usáis lobbyCode y otras gameId para referiros al mismo ID de sala.
+      const { lobbyCode, expectedPhase, gameId } = job.data;
+
+      // Unificamos el ID de la sala por si acaso en el frontend/backend usan diferentes nombres de variable en el payload
+      const targetRoomId = gameId || lobbyCode;
 
       try {
-        console.log(
-          `[Worker] Evaluando timeout para la sala ${lobbyCode} (Fase: ${expectedPhase})`,
-        );
-
-        // 1. Obtener estado actual
-        const state: any = await GameRepository.getGameState(lobbyCode);
-        if (!state) return;
-
-        // 2. Comprobar que no hayan avanzado ya de fase manualmente
-        if (state.phase !== expectedPhase) {
-          console.log(
-            `[Worker] La sala ${lobbyCode} ya no está en ${expectedPhase}. Ignorando timer.`,
-          );
-          return;
-        }
-
-        // 3. ACTUAR COMO UN BOT DEPENDIENDO DE LA FASE
-        switch (expectedPhase) {
-          case 'STORYTELLING': {
-            // Si el Narrador no ha puesto pista, lo forzamos.
-            const storytellerId = state.currentRound.storytellerId;
-            if (!state.currentRound.clue) {
-              const hand = state.hands[storytellerId];
-              const randomCard = hand[Math.floor(Math.random() * hand.length)];
-
-              const action: GameAction = {
-                type: 'SEND_STORY',
-                playerId: storytellerId,
-                payload: { cardId: randomCard, clue: 'El tiempo es oro (AFK)' },
-              };
-              await gameService.handleAction(lobbyCode, action);
-            }
-            break;
-          }
-
-          case 'SUBMISSION': {
-            // Buscamos a los jugadores que NO están en playedCards
-            const playedPlayers = Object.keys(
-              state.currentRound.playedCards || {},
-            );
-            const afkPlayers = state.players.filter(
-              (pId: string) =>
-                pId !== state.currentRound.storytellerId &&
-                !playedPlayers.includes(pId),
+        switch (job.name) {
+          // ==========================================
+          // 1. TIMEOUTS DE FASE (AFK)
+          // ==========================================
+          case 'phase-timeout': {
+            console.log(
+              `[Worker] Evaluando timeout para la sala ${targetRoomId} (Fase: ${expectedPhase})`,
             );
 
-            // Jugamos una carta aleatoria por cada uno
-            for (const afkId of afkPlayers) {
-              const hand = state.hands[afkId];
-              const randomCard = hand[Math.floor(Math.random() * hand.length)];
+            const state: any = await GameRedisRepository.getGame(targetRoomId);
+            if (!state) return;
 
-              const action: GameAction = {
-                type: 'SUBMIT_CARD',
-                playerId: afkId,
-                payload: { cardId: randomCard },
-              };
-              await gameService.handleAction(lobbyCode, action);
-            }
-            break;
-          }
-
-          case 'VOTING': {
-            // Buscamos quién no ha votado
-            const votedPlayers =
-              state.currentRound.votes?.map((v: any) => v.voterId) || [];
-            const afkPlayers = state.players.filter(
-              (pId: string) =>
-                pId !== state.currentRound.storytellerId &&
-                !votedPlayers.includes(pId),
-            );
-
-            // Votamos aleatoriamente por ellos (que no sea su propia carta)
-            for (const afkId of afkPlayers) {
-              const myCard = state.currentRound.playedCards[afkId];
-              const validOptions = state.currentRound.boardCards.filter(
-                (cId: number) => cId !== myCard,
+            if (state.phase !== expectedPhase) {
+              console.log(
+                `[Worker] La sala ${targetRoomId} ya está en ${state.phase}. Ignorando timer.`,
               );
-              const randomVote =
-                validOptions[Math.floor(Math.random() * validOptions.length)];
+              return;
+            }
 
-              const action: GameAction = {
-                type: 'CAST_VOTE',
-                playerId: afkId,
-                payload: { cardId: randomVote },
-              };
-              await gameService.handleAction(lobbyCode, action);
+            console.log(
+              `[Worker] ¡Tiempo agotado en ${targetRoomId}! Ejecutando lógica AFK para ${expectedPhase}...`,
+            );
+            const actionsToExecute: GameAction[] = [];
+
+            switch (expectedPhase) {
+              case 'STORYTELLING': {
+                const storytellerId = state.currentRound.storytellerId;
+                const hand = state.hands[storytellerId] || [];
+                if (hand.length > 0) {
+                  const randomCard =
+                    hand[Math.floor(Math.random() * hand.length)];
+                  actionsToExecute.push({
+                    type: 'SEND_STORY',
+                    playerId: storytellerId,
+                    payload: {
+                      cardId: randomCard,
+                      clue: 'Tiempo agotado (Bot)',
+                    },
+                  });
+                }
+                break;
+              }
+              case 'SUBMISSION': {
+                const playedCards = state.currentRound.playedCards || {};
+                const missingPlayers = state.players.filter(
+                  (pId: string) =>
+                    pId !== state.currentRound.storytellerId &&
+                    playedCards[pId] === undefined,
+                );
+
+                for (const pId of missingPlayers) {
+                  const hand = state.hands[pId] || [];
+                  if (hand.length > 0) {
+                    const randomCard =
+                      hand[Math.floor(Math.random() * hand.length)];
+                    actionsToExecute.push({
+                      type: 'SUBMIT_CARD',
+                      playerId: pId,
+                      payload: { cardId: randomCard },
+                    });
+                  }
+                }
+                break;
+              }
+              case 'VOTING': {
+                const votes = state.currentRound.votes || {};
+                const boardCards = state.currentRound.boardCards || [];
+
+                const missingPlayers = state.players.filter(
+                  (pId: string) =>
+                    pId !== state.currentRound.storytellerId &&
+                    votes[pId] === undefined,
+                );
+
+                for (const pId of missingPlayers) {
+                  const myCard = state.currentRound.playedCards[pId];
+                  const validOptions = boardCards.filter(
+                    (cId: number) => cId !== myCard,
+                  );
+
+                  if (validOptions.length > 0) {
+                    const randomVote =
+                      validOptions[
+                        Math.floor(Math.random() * validOptions.length)
+                      ];
+                    actionsToExecute.push({
+                      type: 'CAST_VOTE',
+                      playerId: pId,
+                      payload: { cardId: randomVote },
+                    });
+                  }
+                }
+                break;
+              }
+              case 'SCORING': {
+                actionsToExecute.push({
+                  type: 'NEXT_ROUND',
+                  playerId: 'SYSTEM',
+                });
+                break;
+              }
+            }
+
+            for (const action of actionsToExecute) {
+              const emissions = await gameService.handleAction(
+                targetRoomId,
+                action,
+              );
+              if (emissions && emissions.length > 0) {
+                for (const { room, event, data } of emissions) {
+                  io.to(room).emit(event, data);
+                }
+              }
             }
             break;
           }
 
-          case 'SCORING': {
-            // En SCORING no hay acción del jugador, simplemente avanzamos de ronda
-            const action: GameAction = {
-              type: 'NEXT_ROUND',
-              playerId: 'SYSTEM',
-            };
-            await gameService.handleAction(lobbyCode, action);
+          // ==========================================
+          // 2. EXPIRACIÓN DE LA ESTRELLA FUGAZ
+          // ==========================================
+          case 'star-expiration': {
+            console.log(
+              `[Worker] Evaluando expiración de la estrella para la sala ${targetRoomId}...`,
+            );
+            // 1. Recuperar el estado actual
+            const state: any = await GameRedisRepository.getGame(targetRoomId);
+            if (!state) return;
+            // 2. Comprobar si la estrella sigue activa
+            if (!state.isStarActive) {
+              console.log(
+                `[Worker] La estrella en ${targetRoomId} ya fue reclamada. Job ignorado.`,
+              );
+              return;
+            }
+            // 3. Si sigue activa, desactivarla y guardar
+            console.log(
+              `[Worker] La estrella en ${targetRoomId} no fue reclamada a tiempo. Desactivando.`,
+            );
+            state.isStarActive = false;
+            await GameRedisRepository.saveGame(targetRoomId, state);
+
             break;
           }
+
+          // ==========================================
+          // 3. FALLBACK ANTI-CUELGUES (MINIJUEGOS)
+          // ==========================================
+          case 'minigame-fallback': {
+            console.log(
+              `[Worker] Evaluando posible cuelgue de minijuego en la sala ${targetRoomId}...`,
+            );
+
+            // 1. Delegamos toda la lógica de validación al método de tu compañero
+            const emissions =
+              await gameService.forceUnlockMinigame(targetRoomId);
+
+            // 2. Si el método nos devuelve emisiones, significa que estaba colgado y lo acaba de desbloquear
+            if (emissions && emissions.length > 0) {
+              console.log(
+                `[Worker] ¡Alerta! Minijuego colgado en ${targetRoomId}. Desbloqueando forzosamente y avisando a los jugadores...`,
+              );
+              for (const { room, event, data } of emissions) {
+                io.to(room).emit(event, data);
+              }
+            } else {
+              // Si nos devuelve un array vacío, significa que el frontend sí contestó a tiempo y el minijuego ya estaba en false
+              console.log(
+                `[Worker] El minijuego en ${targetRoomId} se resolvió correctamente a tiempo. Job ignorado.`,
+              );
+            }
+
+            break;
+          }
+
+          default:
+            console.warn(`[Worker] Job desconocido recibido: ${job.name}`);
+            break;
         }
       } catch (error: any) {
-        console.error(`[Worker Error] ${lobbyCode}:`, error.message);
+        console.error(
+          `[Worker Error] Job ${job.name} falló para sala ${targetRoomId}:`,
+          error.message,
+        );
       }
     },
     {
@@ -130,8 +213,13 @@ export const initializeGameWorker = (io: Server) => {
   );
 
   gameWorker.on('failed', (job, err) => {
-    console.error(`[Worker] Fallo en timer de ${job?.data.lobbyCode}:`, err);
+    console.error(
+      `[Worker] Error fatal en el job ${job?.name} (Data: ${JSON.stringify(job?.data)}):`,
+      err,
+    );
   });
 
-  console.log('Game Worker (BullMQ) inicializado y vigilando turnos AFK.');
+  console.log(
+    '🚀 Game Worker inicializado y escuchando la cola "game-timeouts"',
+  );
 };

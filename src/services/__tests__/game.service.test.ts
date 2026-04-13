@@ -1,5 +1,6 @@
 import { prisma } from '../../infrastructure/prisma';
 import { BOARD_CONFIG } from '../../shared/constants/board-config';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { GameState } from '../../shared/types';
 import { GameService, gameTimeoutsQueue } from '../game.service';
 
@@ -9,10 +10,17 @@ jest.mock('bullmq', () => ({
   }),
 }));
 
+jest.mock('../../infrastructure/redis', () => ({
+  bullmqConnection: {},
+}));
+
 jest.mock('../../infrastructure/prisma', () => ({
   prisma: {
     deck: { findMany: jest.fn() },
     cards: { findMany: jest.fn() },
+    user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+    userGameStats: { create: jest.fn() },
+    games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) },
   },
 }));
 
@@ -20,7 +28,7 @@ jest.mock('../../core/engines', () => ({
   DixitEngine: { transition: jest.fn((state) => state) },
 }));
 
-describe('GameService - Suite Completa de Tablero y Powerups', () => {
+describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () => {
   let gameService: GameService;
   let mockRedisRepo: any;
 
@@ -47,10 +55,11 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
   describe('Flujo Principal: Inicialización y Acciones', () => {
     describe('initializeGame', () => {
       test('Debe extraer IDs, buscar cartas, NO usar fallback si hay suficientes, y guardar estado', async () => {
-        const lobbyData = {
-          engine: 'STANDARD',
-          players: ['u_1', 'u_2', 'u_3'],
-        };
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STANDARD', players: [p1, p2, p3] };
         // 3 jugadores * 16 cartas = 48 cartas requeridas.
 
         // Simulamos que los jugadores traen MUCHAS cartas (ej: 60 cartas en total) para no entrar al fallback
@@ -98,7 +107,10 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
       });
 
       test('Debe rellenar con cartas fallback (dinámico) si faltan cartas para el mazo objetivo', async () => {
-        const lobbyData = { engine: 'STANDARD', players: ['u_1'] };
+        const lobbyData = {
+          engine: 'STANDARD',
+          players: [`${ID_PREFIXES.USER}1`],
+        };
         // 1 jugador * 16 cartas = 16 cartas requeridas.
 
         // Simulamos que el usuario NO tiene cartas en su mazo (0 cartas)
@@ -270,17 +282,19 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
   });
 
   // ==========================================
-  // CASILLA DE SHUFFLE
+  // CASILLA DE SHUFFLE E INTERCAMBIO (STELLA)
   // ==========================================
-  describe('Casilla de Shuffle', () => {
-    test('Debe cambiar la mano del jugador, añadir descarte y emitir los avisos', async () => {
+  describe('Casilla de Shuffle / Intercambio', () => {
+    test('Debe cambiar la mano del jugador y emitir los avisos en STANDARD', async () => {
       const mockState = {
         lobbyCode: 'LOBBY-1',
+        mode: 'STANDARD',
         players: ['p1'],
         scores: { p1: BOARD_CONFIG.SPECIAL_SQUARES.SHUFFLE_1 },
         hands: { p1: [10, 11] },
         centralDeck: [99, 100],
         discardPile: [],
+        isMinigameActive: false,
       } as unknown as GameState;
 
       const previousScores = { p1: 0 };
@@ -291,13 +305,15 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
       expect(mockState.centralDeck.length).toBe(0);
     });
 
-    test('Debe emitir reshuffled si el mazo central se queda a cero', () => {
+    test('Debe emitir reshuffled si el mazo central se queda a cero en STANDARD', () => {
       const mockState = {
         lobbyCode: 'LOBBY-1',
+        mode: 'STANDARD',
         players: ['p1'],
         hands: { p1: [10, 11, 12] },
         centralDeck: [99],
         discardPile: [50, 51, 52],
+        isMinigameActive: false,
       } as unknown as GameState;
 
       const emissions = gameService['applyShuffleEffect'](mockState, 'p1');
@@ -310,50 +326,39 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
       );
       expect(reshuffleEmission).toBeDefined();
     });
-  });
 
-  // ==========================================
-  // CASILLA DE BONUS ALEATORIO
-  // ==========================================
-  describe('Casilla de Bonus Aleatorio', () => {
-    test('Debe aplicar el modificador HAND_LIMIT en modo STANDARD', async () => {
-      const mockState = {
-        lobbyCode: 'LOBBY-1',
-        mode: 'STANDARD',
-        players: ['p1'],
-        scores: { p1: BOARD_CONFIG.SPECIAL_SQUARES.BONUS_RANDOM_1 },
-      } as unknown as GameState;
-
-      const previousScores = { p1: 0 };
-      const emissions = await gameService['checkSpecialSquares'](
-        mockState,
-        previousScores,
-      );
-
-      expect(mockState.activeModifiers).toBeDefined();
-      expect(mockState.activeModifiers!['p1'].type).toBe('HAND_LIMIT');
-      expect(emissions[0].data).toHaveProperty('effect', 'CARD_BONUS');
-    });
-
-    test('Debe usar el Placeholder en modo STELLA', async () => {
+    test('Debe intercambiar puntos con otro jugador al azar en modo STELLA', async () => {
+      const square = BOARD_CONFIG.SPECIAL_SQUARES.SHUFFLE_1;
       const mockState = {
         lobbyCode: 'LOBBY-1',
         mode: 'STELLA',
-        players: ['p1'],
-        scores: { p1: BOARD_CONFIG.SPECIAL_SQUARES.BONUS_RANDOM_1 },
+        players: ['p1', 'p2', 'p3'],
+        scores: { p1: square, p2: 50, p3: 15 },
+        boardRegistry: {},
+        isMinigameActive: false,
       } as unknown as GameState;
 
-      const previousScores = { p1: 0 };
+      const previousScores = { p1: 0, p2: 50, p3: 15 };
+
+      // Forzamos Math.random para que elija al índice 1 del array de rivales (['p2', 'p3'][1] -> 'p3')
+      jest.spyOn(global.Math, 'random').mockReturnValueOnce(0.9);
+
       const emissions = await gameService['checkSpecialSquares'](
         mockState,
         previousScores,
       );
 
-      expect(mockState.activeModifiers).toBeUndefined();
-      expect(emissions[0].data).toHaveProperty(
-        'effect',
-        'STELLA_BONUS_PLACEHOLDER',
+      // Verificamos el intercambio (p1 se queda con los 15 de p3, y p3 se queda con la casilla actual de p1)
+      expect(mockState.scores['p1']).toBe(15);
+      expect(mockState.scores['p3']).toBe(square);
+
+      const swapEmission = emissions.find(
+        (e) => e.data && (e.data as any).effect === 'STELLA_SCORE_SWAP',
       );
+      expect(swapEmission).toBeDefined();
+      expect((swapEmission!.data as any).targetId).toBe('p3');
+
+      jest.spyOn(global.Math, 'random').mockRestore();
     });
   });
 
@@ -422,12 +427,12 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
 
       expect(mockState.isStarActive).toBe(true);
       expect(mockRedisRepo.saveGame).toHaveBeenCalled();
-      expect(emissions[0].event).toBe('star_spawned');
+      expect(emissions[0].event).toBe('server:game:star_spawned');
 
       // Ahora que hemos "espiado" la cola correctamente, pasará sin problema
       expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
         'star-expiration',
-        { gameId: 'LOBBY1' },
+        { lobbyCode: 'LOBBY1' },
         expect.objectContaining({ removeOnComplete: true }),
       );
     });
@@ -460,6 +465,240 @@ describe('GameService - Suite Completa de Tablero y Powerups', () => {
 
       expect(mockState.scores['player1']).toBe(10);
       expect(emissions).toHaveLength(0);
+    });
+  });
+
+  // ==========================================
+  // SISTEMA DE CONFLICTOS: DUELOS Y EMPATES
+  // ==========================================
+  describe('Sistema de Conflictos y Minijuegos', () => {
+    test('Debe bloquear acciones normales si hay un minijuego activo', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true, // Partida bloqueada
+      });
+
+      const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
+
+      await expect(gameService.handleAction('ROOM-1', action)).rejects.toThrow(
+        'Hay un conflicto en curso. Espera a que termine el minijuego.',
+      );
+    });
+
+    test('Debe iniciar un Duelo y bloquear la partida al recibir RESOLVE_DUEL', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: false,
+        phase: 'LOBBY',
+        scores: {},
+      };
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+      const action = {
+        type: 'RESOLVE_DUEL',
+        playerId: 'p1',
+        payload: { targetId: 'p2' },
+      } as any;
+
+      // Forzamos el tipo de minijuego (0)
+      jest.spyOn(global.Math, 'random').mockReturnValueOnce(0.1);
+
+      const emissions = await gameService.handleAction('ROOM-1', action);
+
+      // Verificamos que se bloqueó la partida
+      expect(mockState.isMinigameActive).toBe(true);
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-1', mockState);
+
+      // Verificamos la emisión del duelo
+      const minigameEmission = emissions.find(
+        (e) => e.event === 'server:game:minigame_start',
+      );
+      expect(minigameEmission).toBeDefined();
+      expect(minigameEmission?.data).toEqual({
+        player1: 'p1',
+        player2: 'p2',
+        type: 0,
+        duration: 15000,
+        isDuel: true,
+      });
+
+      jest.spyOn(global.Math, 'random').mockRestore();
+    });
+
+    test('Debe iniciar un Empate si dos jugadores caen en la misma casilla', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        players: ['p1', 'p2'],
+        scores: { p1: 10, p2: 10 }, // Ambos en la casilla 10
+        boardRegistry: {},
+      } as unknown as GameState;
+
+      // Simulamos que p1 acaba de moverse a la casilla 10, pero p2 ya estaba ahí
+      const previousScores = { p1: 5, p2: 10 };
+
+      const emissions = await gameService['checkSpecialSquares'](
+        mockState,
+        previousScores,
+      );
+
+      // Verificamos que se detecta el empate y se bloquea la partida
+      expect(mockState.isMinigameActive).toBe(true);
+      const minigameEmission = emissions.find(
+        (e) => e.event === 'server:game:minigame_start',
+      );
+      expect(minigameEmission).toBeDefined();
+      expect((minigameEmission?.data as any).isDuel).toBe(false); // Es empate, no duelo
+    });
+
+    describe('Resolución de Resultados (submitConflictResult)', () => {
+      test('Debe aplicar puntuación de Duelo (+2 / -2) y desbloquear partida', async () => {
+        const mockState = {
+          lobbyCode: 'ROOM-1',
+          isMinigameActive: true,
+          scores: { p1: 10, p2: 5 },
+        } as unknown as GameState;
+        mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        // p1 gana, p2 pierde, ES un duelo
+        const emissions = await gameService.submitConflictResult(
+          'ROOM-1',
+          'p1',
+          'p2',
+          true,
+        );
+
+        expect(mockState.scores['p1']).toBe(12); // 10 + 2
+        expect(mockState.scores['p2']).toBe(3); // 5 - 2
+        expect(mockState.isMinigameActive).toBe(false); // Desbloqueado
+
+        const specialEvent = emissions.find(
+          (e) => e.event === 'server:game:special_event',
+        );
+        expect((specialEvent?.data as any).effect).toBe('CONFLICT_RESOLVED');
+      });
+
+      test('Debe aplicar puntuación de Empate (+1 / 0) y desbloquear partida', async () => {
+        const mockState = {
+          lobbyCode: 'ROOM-1',
+          isMinigameActive: true,
+          scores: { p1: 10, p2: 10 },
+        } as unknown as GameState;
+        mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        // p1 gana, p2 pierde, NO es un duelo
+        await gameService.submitConflictResult('ROOM-1', 'p1', 'p2', false);
+
+        expect(mockState.scores['p1']).toBe(11); // 10 + 1
+        expect(mockState.scores['p2']).toBe(10); // 10 + 0
+        expect(mockState.isMinigameActive).toBe(false); // Desbloqueado
+      });
+
+      test('No debe bajar de 0 puntos a un jugador en un Duelo', async () => {
+        const mockState = {
+          lobbyCode: 'ROOM-1',
+          isMinigameActive: true,
+          scores: { p1: 10, p2: 1 }, // p2 solo tiene 1 punto
+        } as unknown as GameState;
+        mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        await gameService.submitConflictResult('ROOM-1', 'p1', 'p2', true);
+
+        expect(mockState.scores['p2']).toBe(0); // 1 - 2 = -1 -> Limitado a 0 por Math.max
+      });
+    });
+  });
+
+  // ==========================================
+  // REDES DE SEGURIDAD (DESCONEXIÓN Y TIMEOUTS)
+  // ==========================================
+  describe('Redes de Seguridad (Desconexión y Watchdog)', () => {
+    test('Debe dar la victoria del Duelo (+2/-2) si el oponente tira del cable', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true,
+        activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+        scores: { p1: 10, p2: 10 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+      // p2 se desconecta en mitad del duelo
+      const action = { type: 'DISCONNECT_PLAYER', playerId: 'p2' } as any;
+      const emissions = await gameService.handleAction('ROOM-1', action);
+
+      // Verificamos que p1 gana instantáneamente por abandono de p2
+      expect(mockState.scores['p1']).toBe(12); // 10 + 2
+      expect(mockState.scores['p2']).toBe(8); // 10 - 2
+      expect(mockState.isMinigameActive).toBe(false); // La partida se desbloquea
+
+      const specialEvent = emissions.find(
+        (e) => e.event === 'server:game:special_event',
+      );
+      expect(specialEvent).toBeDefined();
+    });
+
+    test('Debe dar la victoria del Empate (+1/0) si el oponente tira del cable', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true,
+        activeConflict: { player1: 'p1', player2: 'p2', isDuel: false },
+        scores: { p1: 10, p2: 10 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+      // En este caso, p1 pierde la conexión
+      const action = { type: 'DISCONNECT_PLAYER', playerId: 'p1' } as any;
+      await gameService.handleAction('ROOM-1', action);
+
+      // Verificamos que p2 gana instantáneamente
+      expect(mockState.scores['p2']).toBe(11); // 10 + 1
+      expect(mockState.scores['p1']).toBe(10); // 10 + 0
+      expect(mockState.isMinigameActive).toBe(false);
+    });
+
+    test('Debe ignorar la desconexión (y mantener el bloqueo) si se cae un espectador', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true,
+        activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+        scores: { p1: 10, p2: 10, p3: 5 }, // p3 está mirando
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+      // Se desconecta p3 (que NO está en el duelo)
+      const action = { type: 'DISCONNECT_PLAYER', playerId: 'p3' } as any;
+
+      // Debe rebotar la acción con el mensaje de bloqueo, sin afectar a los puntos
+      await expect(gameService.handleAction('ROOM-1', action)).rejects.toThrow(
+        'Hay un conflicto en curso. Espera a que termine el minijuego.',
+      );
+    });
+
+    test('forceUnlockMinigame debe cancelar el duelo sin dar puntos si el Frontend falla', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true,
+        activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+        scores: { p1: 10, p2: 10 }, // Puntuaciones iniciales
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+      // Simulamos que BullMQ llama a la función de rescate a los 20 segundos
+      const emissions = await gameService.forceUnlockMinigame('ROOM-1');
+
+      // Verificamos que el estado se limpia por la fuerza
+      expect(mockState.isMinigameActive).toBe(false);
+      expect(mockState.activeConflict).toBeNull();
+
+      // Verificamos que nadie ha ganado ni perdido puntos
+      expect(mockState.scores['p1']).toBe(10);
+      expect(mockState.scores['p2']).toBe(10);
+
+      // Verificamos la emisión de cancelación
+      const cancelEmission = emissions.find(
+        (e) => e.event === 'server:game:special_event',
+      );
+      expect((cancelEmission?.data as any).effect).toBe('CONFLICT_CANCELLED');
     });
   });
 });

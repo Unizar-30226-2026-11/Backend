@@ -39,10 +39,10 @@ Casillas Especiales:
 
     Casilla de pares:   1º -1, 2º +1, 3º -2, 4º +2...
 
-    Casilla de duelo: Se reta a un jugador a tirar 2 dados apostando 2 puntos cada uno.
+    Casilla de duelo: Se reta a un jugador  apostando 2 puntos cada uno.
 
-    Casilla Bonus Aleatorio: +-(1-3) cartas en las proximas 2 rondas.
+    Casilla Bonus Aleatorio: +-(1-3) cartas en las proximas 2 rondas (Normal). Puntos en stella
 
-    Casilla Shuffle: Cambia todas tus cartas por unas nuevas
+    Casilla Shuffle: Cambia todas tus cartas por unas nuevas (Normal). Cambia tu puntuacion con otro al azar(Stella)
 
 */

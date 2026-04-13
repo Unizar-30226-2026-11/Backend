@@ -28,24 +28,3 @@ export const connectRedis = async () => {
     await redisClient.connect();
   }
 };
-
-// REPOSITORIO DE ESTADO DEL JUEGO
-
-//Esto encapsula la lectura/escritura del JSON de la partida para que el Service quede limpio.
-export const GameRepository = {
-  async saveGameState(lobbyCode: string, state: any): Promise<void> {
-    // Expiración de 2 horas (7200s) para limpiar memoria automáticamente
-    await redisClient.set(`game:${lobbyCode}`, JSON.stringify(state), {
-      EX: 7200,
-    });
-  },
-
-  async getGameState(lobbyCode: string): Promise<any | null> {
-    const data = await redisClient.get(`game:${lobbyCode}`);
-    return data ? JSON.parse(data) : null;
-  },
-
-  async deleteGameState(lobbyCode: string): Promise<void> {
-    await redisClient.del(`game:${lobbyCode}`);
-  },
-};

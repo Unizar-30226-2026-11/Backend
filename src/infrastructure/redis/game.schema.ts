@@ -27,8 +27,9 @@ export const gameStateSchema = new Schema(
     // Registro de visitas a casillas: Record<SquareID, PlayerID[]>
     boardRegistry: { type: 'string' },
 
-    // Modificadores temporales (como el bonus de cartas)
-    activeModifiers: { type: 'string' },
+    isMinigameActive: { type: 'boolean' },
+    activeConflict: { type: 'string' }, // JSON: { player1, player2, isDuel }
+    activeBoardId: { type: 'number' },
   },
   { dataStructure: 'JSON' },
 );

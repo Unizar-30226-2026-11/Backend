@@ -33,6 +33,19 @@ enum Rarity {
   LEGENDARY
 }
 
+enum Purchase_Type {
+  SINGLE_CARD
+  CARD_PACK
+  COLLECTION
+  BOARD
+}
+
+enum Board_Type {
+  CLASSIC
+  NEON                  // Añadir los que comunique el frontend (He sacado el NEON del mockup)
+  STELLAR_GALAXY
+}
+
 model User {
   id_user        Int         @id @default(autoincrement())
   username       String      @unique
@@ -43,13 +56,68 @@ model User {
   progress_level Int         @default(0)
   state          User_States @default(UNKNOWN)
   personal_state String? // Para añadir 
+  active_board_id   Int?        // Campo nuevo: ID del tablero seleccionado
+  active_board      Board?      @relation("ActiveBoard", fields: [active_board_id], references: [id_board])
 
-  my_cards UserCard[]
-  my_deck  Deck[]
-  games    UserGameStats[]
+  my_boards      UserBoard[]
+  my_cards       UserCard[]
+  my_deck        Deck[]
+  purchases      PurchaseHistory[]
+  games          UserGameStats[]
 
   friends_sent     Friendships[] @relation("Enviadas")
   friends_received Friendships[] @relation("Recibidas")
+}
+
+model Board {
+  id_board    Int      @id @default(autoincrement())
+  name        String   @unique
+  description String
+  price       Int
+
+  owners      UserBoard[]
+  active_in_users User[] @relation("ActiveBoard")
+
+  purchases   PurchaseHistory[]
+}
+
+model UserBoard {
+  id_user_board Int      @id @default(autoincrement())
+  id_user       Int
+  id_board      Int
+
+  user  User  @relation(fields: [id_user], references: [id_user])
+  board Board @relation(fields: [id_board], references: [id_board])
+
+  @@index([id_user])
+  @@unique([id_user, id_board]) // Un usuario no puede tener el mismo tablero repetido
+}
+
+model PurchaseHistory {
+  id_purchase   Int           @id @default(autoincrement())
+  id_user       Int
+  purchase_type Purchase_Type
+  coins_spent   Int
+  purchased_at  DateTime      @default(now())
+ 
+  // Si es un tablero, se conecta aquí
+  board_id      Int?
+  board         Board?        @relation(fields: [board_id], references: [id_board])
+
+  // Si son cartas (packs/colecciones/sueltas), se conectan aquí
+  cards         PurchaseHistoryCard[]
+
+  user          User          @relation(fields: [id_user], references: [id_user])
+}
+
+// Tabla intermedia para saber qué cartas se compraron en esa transacción
+model PurchaseHistoryCard {
+  id_purchase Int
+  id_card     Int
+  purchase    PurchaseHistory @relation(fields: [id_purchase], references: [id_purchase])
+  card        Cards           @relation(fields: [id_card], references: [id_card])
+
+  @@id([id_purchase, id_card])
 }
 
 model UserCard {
@@ -91,11 +159,16 @@ model Cards {
   id_card       Int        @id @default(autoincrement())
   title         String     @unique
   rarity        Rarity     @default(COMMON)
+  url_image     String     @default("")
+  
   id_collection Int
   collection    Collection @relation(fields: [id_collection], references: [id_collection])
 
   // Relación con los inventarios de los usuarios
   owners UserCard[]
+
+  // Relación con el historial de compras
+  purchases PurchaseHistoryCard[]
 }
 
 model Collection {

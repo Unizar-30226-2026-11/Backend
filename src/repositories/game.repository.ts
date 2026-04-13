@@ -5,8 +5,8 @@ export const GameRedisRepository = {
   /**
    * Recupera el estado de la partida e "hidrata" los campos JSON.
    */
-  async getGame(gameId: string): Promise<GameState | null> {
-    const data = await gameRepository.fetch(gameId);
+  async getGame(lobbyCode: string): Promise<GameState | null> {
+    const data = await gameRepository.fetch(lobbyCode);
 
     // Si el objeto recuperado no tiene ID, es que no existe en Redis
     if (!data || !data.lobbyCode) return null;
@@ -23,7 +23,7 @@ export const GameRedisRepository = {
       discardPile: JSON.parse((data.discardPile as string) || '[]'),
       currentRound: JSON.parse((data.currentRound as string) || '{}'),
       boardRegistry: JSON.parse((data.boardRegistry as string) || '{}'),
-      activeModifiers: JSON.parse((data.activeModifiers as string) || '{}'),
+      activeConflict: JSON.parse((data.activeConflict as string) || 'null'),
     } as unknown as GameState;
   },
 
@@ -40,14 +40,29 @@ export const GameRedisRepository = {
       discardPile: JSON.stringify(state.discardPile),
       currentRound: JSON.stringify(state.currentRound),
       boardRegistry: JSON.stringify(state.boardRegistry),
-      activeModifiers: JSON.stringify(state.activeModifiers),
+      activeConflict: JSON.stringify(state.activeConflict ?? null),
     });
   },
 
   /**
    * Elimina la partida de Redis (útil al finalizar).
    */
-  async deleteGame(gameId: string): Promise<void> {
-    await gameRepository.remove(gameId);
+  async deleteGame(lobbyCode: string): Promise<void> {
+    await gameRepository.remove(lobbyCode);
+  },
+
+  /**
+   * Obtiene todos los IDs de partidas que no han finalizado.
+   * Requiere que el campo 'phase' esté indexado como 'string' en game.schema.ts
+   */
+  async getAllActiveLobbies(): Promise<string[]> {
+    const activeGames = await gameRepository
+      .search()
+      .where('phase')
+      .not.equalTo('FINISHED')
+      .return.all();
+
+    // Usamos .lobbyCode porque es como se llama en tu gameStateSchema
+    return activeGames.map((game) => game.lobbyCode as string);
   },
 };
