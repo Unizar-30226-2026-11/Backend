@@ -90,6 +90,11 @@ class ShopServiceClass {
       cardPackOffer: {
         id_pack: 'pack_daily',
         name: "Sobre Diario",
+        cards: pack.map(c => ({
+          id_card: `${ID_PREFIXES.CARD}${c.id_card}`,
+          title: c.title,
+          url_image: c.url_image
+        })),
         card_ids: pack.map(c => c.id_card),
         description: "5 cartas con 25% de descuento",
         price: calculateCleanPrice(pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.75)
@@ -103,7 +108,8 @@ class ShopServiceClass {
         id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`, 
         name: selectedBoard.name, 
         price: selectedBoard.price,
-        description: selectedBoard.description 
+        description: selectedBoard.description,
+        url_image: selectedBoard.url_image
       } : null,
       expiresAt: nextMidnight.toISOString()
     };
@@ -116,9 +122,9 @@ class ShopServiceClass {
   /**
    * Procesa la compra mediante Transacción de Prisma.
    */
-  public async processPurchase(rawUserId: string | number, itemId: string) {
+  public async processPurchase(u_Id: string, itemId: string) {
 
-    const userId = Number(rawUserId);
+    const userId = parseInt(u_Id.replace(ID_PREFIXES.USER, ''));
 
     return await prisma.$transaction(async (tx) => {
 
@@ -267,7 +273,8 @@ class ShopServiceClass {
       items: record.purchase_type === 'BOARD' && record.board 
         ? [{ 
             id: `${ID_PREFIXES.BOARD}${record.board.id_board}`, 
-            name: record.board.name 
+            name: record.board.name,
+            url_image: record.board.url_image
           }]
         : record.cards.map(c => ({ 
             id: `${ID_PREFIXES.CARD}${c.card.id_card}`, 

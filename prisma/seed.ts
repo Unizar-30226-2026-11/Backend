@@ -35,6 +35,7 @@ async function main() {
       name: 'CLASSIC',
       description: 'El tablero original de madera y estrellas.',
       price: 0,
+      url_image: "https://midominio.com/boards/classic.png"
     },
   });
 
@@ -43,6 +44,7 @@ async function main() {
       name: 'NEON',
       description: 'Un estilo futurista con luces vibrantes y efectos ciberpunk.',
       price: 2000,
+      url_image: "https://midominio.com/boards/neon.png"
     },
   });
 
@@ -51,6 +53,7 @@ async function main() {
       name: 'STELLAR_GALAXY',
       description: 'Viaja a través del cosmos con este tablero espacial.',
       price: 2000,
+      url_image: "https://midominio.com/boards/stellar.png"
     },
   });
 
