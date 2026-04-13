@@ -17,7 +17,13 @@ jest.mock('../../infrastructure/redis', () => ({
 jest.mock('../../infrastructure/prisma', () => ({
     prisma: {
         deck: { findMany: jest.fn() },
-        cards: { findMany: jest.fn() },
+        cards: { 
+            findMany: jest.fn().mockResolvedValue([
+                { id_card: 1, url_image: 'url1.jpg' },
+                { id_card: 2, url_image: 'url2.jpg' },
+                { id_card: 3, url_image: 'url3.jpg' }
+            ]) 
+        },
         user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
         userGameStats: { create: jest.fn() },
         games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) }
@@ -70,7 +76,14 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                 
                 // Simulamos que los jugadores traen MUCHAS cartas (ej: 60 cartas en total) para no entrar al fallback
                 const mockDecks = [
-                    { cards: Array(60).fill({ user_card: { id_card: 100 } }) }
+                   { 
+                      cards: Array(60).fill({ 
+                        user_card: { 
+                          id_card: 100, 
+                          card: { id_card: 100, url_image: 'img.png' }
+                        } 
+                      }) 
+                    }
                 ];
                 (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
 
@@ -107,7 +120,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                 (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce([]); 
                 
                 // Simulamos la respuesta del fallback
-                (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(Array(16).fill({ id_card: 99 }));
+                (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(Array(16).fill({ id_card: 99, url_image: 'img99.png' }));
 
                 await gameService.initializeGame('ROOM-FALLBACK', lobbyData);
 

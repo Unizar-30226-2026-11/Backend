@@ -26,7 +26,8 @@ describe('AuthService - Pruebas Funciones', () => {
         id_board: 1,
         name: 'CLASSIC',
         description: 'Tablero inicial',
-        price: 0
+        price: 0,
+        url_image: 'https://midominio.com/boards/classic.png'
       }
     });
   });

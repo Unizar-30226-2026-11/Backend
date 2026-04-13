@@ -181,7 +181,7 @@ describe('ShopService - Sistema de ', () => {
 
         describe('Flujos de Éxito', () => {
             test('Compra de carta individual exitosa', async () => {
-                const res = await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}${test_card_id}`);
+                const res = await ShopService.processPurchase(`${ID_PREFIXES.USER}${id_usuario_rico}`, `${ID_PREFIXES.CARD}${test_card_id}`);
                 
                 expect(res.itemName).toContain('Carta');
                 expect(res.updatedEconomy.coins).toBeLessThan(10000);
@@ -202,7 +202,7 @@ describe('ShopService - Sistema de ', () => {
                     await prisma.userBoard.delete({ where: { id_user_board: hasBoard.id_user_board } });
                 }
 
-                const res = await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.BOARD}${test_board_id}`);
+                const res = await ShopService.processPurchase(`${ID_PREFIXES.USER}${id_usuario_rico}`, `${ID_PREFIXES.BOARD}${test_board_id}`);
                 
                 expect(res.itemName).toContain('Tablero');
                 expect(res.updatedEconomy.coins).toBeLessThan(10000);
@@ -217,7 +217,7 @@ describe('ShopService - Sistema de ', () => {
         describe('Validaciones y Errores', () => {
             test('Error 403: Fondos insuficientes', async () => {
                 try {
-                    await ShopService.processPurchase(id_usuario_pobre, `${ID_PREFIXES.CARD}${test_card_id}`);
+                    await ShopService.processPurchase(`${ID_PREFIXES.USER}${id_usuario_pobre}`, `${ID_PREFIXES.CARD}${test_card_id}`);
                     fail('Debería haber lanzado un error');
                 } catch (error: any) {
                     expect(error.status).toBe(403);
@@ -227,7 +227,7 @@ describe('ShopService - Sistema de ', () => {
 
             test('Error 404: Artículo no encontrado', async () => {
                 try {
-                    await ShopService.processPurchase(id_usuario_rico, `${ID_PREFIXES.CARD}999999`);
+                    await ShopService.processPurchase(`${ID_PREFIXES.USER}${id_usuario_rico}`, `${ID_PREFIXES.CARD}999999`);
                     fail('Debería haber lanzado un error');
                 } catch (error: any) {
                     expect(error.status).toBe(404);

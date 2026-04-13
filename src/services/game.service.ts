@@ -61,6 +61,8 @@ export class GameService {
 
     let centralDeck: number[] = [];
     let boardIdToUse: number;
+    let dbCardsCache: any[] = [];
+
     // Extraer cartas de los mazos (o usar el predeterminado al azar)
     if (options.useDynamicPool) {
     
@@ -68,13 +70,21 @@ export class GameService {
       const userDecks = await prisma.deck.findMany({
         where: { id_user: { in: numericPlayerIds } },
         include: {
-          cards: { include: { user_card: true } }
+          cards: { 
+            include: { 
+              user_card: {
+                include: { card: true } 
+              } 
+            } 
+          }
         }
       });
 
       userDecks.forEach(deck => {
         deck.cards.forEach(dc => {
-          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+          if (dc.user_card) 
+            centralDeck.push(dc.user_card.id_card);
+            dbCardsCache.push(dc.user_card.card);
         });
       });
     } else {
@@ -137,7 +147,7 @@ export class GameService {
     });
 
     const initAction: GameAction = { type: 'INIT_GAME', playerId: 'SYSTEM', payload: { deck: centralDeck } };
-    const initialState = DixitEngine.transition(baseState, initAction);
+    const initialState = this.getEngine().transition(baseState, initAction);
 
     // Guardar el estado inicial en Redis
     await this.redisRepo.saveGame(lobbyCode, initialState);
@@ -154,10 +164,21 @@ export class GameService {
     });
 
     for (const playerId of initialState.players) {
+      const handIds = initialState.hands[playerId] as number[];
+      
+      // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
+      const hydratedHand = handIds.map(id => {
+        const cardInfo = dbCardsCache.find(c => c.id_card === id);
+        return {
+          id: `${ID_PREFIXES.CARD}${id}`, // Se lo enviamos con el prefijo como en todo el sistema
+          url_image: cardInfo?.url_image || '' // Si por algún motivo no hay imagen en BD, va vacía
+        };
+      });
+
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: initialState.hands[playerId] }
+        data: { hand: hydratedHand } 
       });
     }
 

@@ -30,7 +30,13 @@ export const UserService = {
       return {
         ...user,
         id: `${ID_PREFIXES.USER}${user.id_user}`,
-        boards: user.my_boards.map(ub => ub.board) // Formateo para el frontend
+        boards: user.my_boards.map(ub => ({
+          id: `${ID_PREFIXES.BOARD}${ub.board.id_board}`,
+          name: ub.board.name,
+          description: ub.board.description,
+          price: ub.board.price,
+          url_image: ub.board.url_image
+        })) // Formateo para el frontend
       };
     });
   },
@@ -62,8 +68,10 @@ export const UserService = {
 
     await invalidateCache(`cache:user:profile:${u_id}`); // Borramos la caché
 
+    const { password, ...userWithoutPassword } = updated_user;
+
     return {
-      ...updated_user,
+      ...userWithoutPassword,
       id: `${ID_PREFIXES.USER}${updated_user.id_user}`,
     };
   },
@@ -264,7 +272,8 @@ export const UserService = {
       return userBoards.map(ub => ({
         id: `${ID_PREFIXES.BOARD}${ub.board.id_board}`,
         name: ub.board.name,
-        description: ub.board.description
+        description: ub.board.description,
+        url_image: ub.board.url_image
       }));
     });
   },
