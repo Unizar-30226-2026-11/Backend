@@ -156,6 +156,11 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                 };
                 mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
+                (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+                    { id_card: 5, url_image: 'img5.png' },
+                    { id_card: 6, url_image: 'img6.png' }
+                ]);
+
                 const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
                 const emissions = await gameService.handleAction('ROOM-ACTION', action);
 
@@ -170,6 +175,35 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                 // Verifica que se emite la mano privada solo a p1
                 const handEmission = emissions.find(e => e.event === 'server:game:private_hand');
                 expect(handEmission).toBeDefined();
+            });
+
+            test('Debe rehidratar y enviar SOLO la mano privada al jugador que se reconecta', async () => {
+                const mockState = {
+                    lobbyCode: 'ROOM-RECONNECT',
+                    players: ['p1', 'p2'],
+                    scores: {},
+                    hands: { p1: [10, 20], p2: [30, 40] },
+                    phase: 'STORYTELLING'
+                };
+                mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+                // Mock de la base de datos para buscar las cartas de p1
+                (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+                    { id_card: 10, url_image: 'url10.png' },
+                    { id_card: 20, url_image: 'url20.png' }
+                ]);
+
+                const action = { type: 'RECONNECT_PLAYER', playerId: 'p1' } as any;
+                const emissions = await gameService.handleAction('ROOM-RECONNECT', action);
+
+                // Debe emitir la mano de p1
+                const handEmissions = emissions.filter(e => e.event === 'server:game:private_hand');
+                expect(handEmissions).toHaveLength(1); // SOLO se envía a p1, no a p2
+                expect(handEmissions[0].room).toBe('p1');
+                
+                // Debe comprobar que la mano va hidratada
+                const sentHand = (handEmissions[0].data as any).hand;
+                expect(sentHand[0]).toHaveProperty('url_image', 'url10.png');
             });
 
             test('Debe programar un nuevo Timeout en BullMQ si hay un cambio de fase', async () => {
@@ -604,16 +638,30 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                 lobbyCode: 'ROOM-1',
                 isMinigameActive: true,
                 activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
-                scores: { p1: 10, p2: 10, p3: 5 } // p3 está mirando
+                scores: { p1: 10, p2: 10, p3: 5 }, // p3 está mirando
+                players: ['p1', 'p2', 'p3'], 
+                disconnectedPlayers: [],
+                hands: { p1: [], p2: [], p3: [] },
+                phase: 'STORYTELLING',
+                mode: 'STANDARD'
             } as unknown as GameState;
             mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
             // Se desconecta p3 (que NO está en el duelo)
             const action = { type: 'DISCONNECT_PLAYER', playerId: 'p3' } as any;
             
-            // Debe rebotar la acción con el mensaje de bloqueo, sin afectar a los puntos
-            await expect(gameService.handleAction('ROOM-1', action))
-                .rejects.toThrow('Hay un conflicto en curso. Espera a que termine el minijuego.');
+            // Debe procesar la acción y devolver el estado.
+            const emissions = await gameService.handleAction('ROOM-1', action)
+            
+            // Verificamos que el duelo SIGUE ACTIVO (nadie ha ganado aún)
+            expect(mockState.isMinigameActive).toBe(true);
+            expect(mockState.scores['p1']).toBe(10);
+            expect(mockState.scores['p2']).toBe(10);
+
+            const stateUpdateEmission = emissions.find(e => e.event === 'server:game:state_updated');
+            expect(stateUpdateEmission).toBeDefined();
+            // Verificamos que la acción reflejada en el socket fue la de desconexión
+            expect((stateUpdateEmission!.data as any).lastAction).toBe('DISCONNECT_PLAYER');
         });
 
         test('forceUnlockMinigame debe cancelar el duelo sin dar puntos si el Frontend falla', async () => {
