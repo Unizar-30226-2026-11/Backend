@@ -25,6 +25,7 @@ jest.mock('../../infrastructure/prisma', () => ({
             ]) 
         },
         user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+        board: { findUnique: jest.fn().mockResolvedValue({ id_board: 1, name: 'Tablero Classic', url_image: 'classic.png' }) },
         userGameStats: { create: jest.fn() },
         games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) }
     }
@@ -86,6 +87,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                     }
                 ];
                 (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
+                (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([{ id_card: 100, url_image: 'img.png' }]);
 
                 const emissions = await gameService.initializeGame('ROOM-INIT', lobbyData);
 
@@ -95,13 +97,14 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                 });
 
                 // 1. Verifica que NO se llamó al fallback porque tenían 60 cartas (más de las 48 necesarias)
-                expect(prisma.cards.findMany).not.toHaveBeenCalled();
+                //    (se llama 1 vez obligatoria para las URLs de las cartas) 
+                expect(prisma.cards.findMany).toHaveBeenCalledTimes(1);
 
                 // 2. Verifica guardado en Redis y programación del temporizador
                 expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-INIT', expect.any(Object));
                 expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
                     'phase-timeout', 
-                    expect.objectContaining({ lobbyCode: 'ROOM-INIT', expectedPhase: 'LOBBY' }), 
+                    expect.objectContaining({ lobbyCode: 'ROOM-INIT', expectedPhase: 'STORYTELLING' }), 
                     expect.objectContaining({ delay: 60000 })
                 );
 
@@ -149,7 +152,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                     scores: { p1: 0 },
                     hands: { p1: [5, 6] },
                     centralDeck: [1, 2, 3],
-                    phase: 'LOBBY'
+                    phase: 'STORYTELLING'
                 };
                 mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
@@ -175,22 +178,22 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
                     players: ['p1'],
                     scores: { p1: 0 },
                     hands: { p1: [] },
-                    phase: 'LOBBY'
+                    phase: 'STORYTELLING'
                 };
                 mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
-                // Forzamos al mock del Motor a devolver un estado en fase STORYTELLING
+                // Forzamos al mock del Motor a devolver un estado en fase SUBMISSION
                 const dixitEngineMock = require('../../core/engines').DixitEngine;
-                dixitEngineMock.transition.mockReturnValueOnce({ ...mockState, phase: 'STORYTELLING' });
+                dixitEngineMock.transition.mockReturnValueOnce({ ...mockState, phase: 'SUBMISSION' });
 
                 const action = { type: 'NEXT_ROUND', playerId: 'SYS' } as any;
                 await gameService.handleAction('ROOM-PHASE', action);
                 
-                // Verifica que BullMQ recibe la tarea con el retraso correcto (60000ms para STORYTELLING)
+                // Verifica que BullMQ recibe la tarea con el retraso correcto (45000ms para SUBMISSION)
                 expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
                     'phase-timeout',
-                    { lobbyCode: 'ROOM-PHASE', expectedPhase: 'STORYTELLING' },
-                    expect.objectContaining({ delay: 60000 })
+                    { lobbyCode: 'ROOM-PHASE', expectedPhase: 'SUBMISSION' },
+                    expect.objectContaining({ delay: 45000 })
                 );
             });
         });

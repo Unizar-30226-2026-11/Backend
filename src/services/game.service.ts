@@ -1,7 +1,5 @@
 // src/services/game.service.ts
 import { Queue } from 'bullmq';
-
-import { DixitEngine } from '../core/engines';
 import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
@@ -60,8 +58,19 @@ export class GameService {
     });
 
     let centralDeck: number[] = [];
-    let boardIdToUse: number;
-    let dbCardsCache: any[] = [];
+  
+    const hostId = numericPlayerIds[0];
+    const hostData = await prisma.user.findUnique({
+      where: { id_user: hostId },
+      select: { active_board_id: true }
+    });
+
+    const boardIdToUse = hostData?.active_board_id || 1;
+    const boardData = await prisma.board.findUnique({ where: { id_board: boardIdToUse } });
+
+    const boardPayload = boardData 
+      ? { id: `${ID_PREFIXES.BOARD}${boardData.id_board}`, name: boardData.name, url_image: (boardData as any).url_image || '' }
+      : { id: `${ID_PREFIXES.BOARD}1`, name: "CLASSIC", url_image: "tablero_classic.png" };
 
     // Extraer cartas de los mazos (o usar el predeterminado al azar)
     if (options.useDynamicPool) {
@@ -69,22 +78,13 @@ export class GameService {
       // Extraer cartas de los mazos de los jugadores
       const userDecks = await prisma.deck.findMany({
         where: { id_user: { in: numericPlayerIds } },
-        include: {
-          cards: { 
-            include: { 
-              user_card: {
-                include: { card: true } 
-              } 
-            } 
-          }
-        }
+        include: { cards: { include: { user_card: true } } }
       });
 
       userDecks.forEach(deck => {
         deck.cards.forEach(dc => {
           if (dc.user_card) 
             centralDeck.push(dc.user_card.id_card);
-            dbCardsCache.push(dc.user_card.card);
         });
       });
     } else {
@@ -92,14 +92,6 @@ export class GameService {
       const randomKey = keys[Math.floor(Math.random() * keys.length)];
       centralDeck = [...PREDEFINED_DECKS[randomKey]];
     }
-
-    const hostId = numericPlayerIds[0];
-    const hostData = await prisma.user.findUnique({
-      where: { id_user: hostId },
-      select: { active_board_id: true }
-    });
-    // Si por algún error no tiene tablero activo, usamos el 1 (Classic) como fallback
-    boardIdToUse = hostData?.active_board_id || 1;
 
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
@@ -124,21 +116,32 @@ export class GameService {
     // Barajamos
     centralDeck = this.shuffleArray(centralDeck);
 
+    const allCardsInfo = await prisma.cards.findMany({
+      where: { id_card: { in: centralDeck } },
+      select: { id_card: true, url_image: true }
+    });
+
+    const cardDictionary: Record<number, string> = {};
+    allCardsInfo.forEach(c => { cardDictionary[c.id_card] = c.url_image || ''; });
+
+    const safeMode = (mode === 'STELLA' || mode === 'STANDARD') ? mode : 'STANDARD';
+
     // Crear el estado base
     const baseState: any = {
       lobbyCode,
-      mode,
+      mode: safeMode,
       players,
       disconnectedPlayers: [],
       scores: {},
       hands: {},
       centralDeck,
       discardPile: [],
-      phase: 'LOBBY',
+      phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,     
       isMinigameActive: false,
       activeConflict: null,
       activeBoardId: boardIdToUse,
+      boardRegistry: {},
     };
 
     players.forEach((p: string) => {
@@ -159,6 +162,7 @@ export class GameService {
       event: 'server:game:started',
       data: {
         state: this.maskPrivateState(initialState),
+        board: boardPayload,
         message: '¡La partida ha comenzado!'
       }
     });
@@ -167,13 +171,10 @@ export class GameService {
       const handIds = initialState.hands[playerId] as number[];
       
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
-      const hydratedHand = handIds.map(id => {
-        const cardInfo = dbCardsCache.find(c => c.id_card === id);
-        return {
-          id: `${ID_PREFIXES.CARD}${id}`, // Se lo enviamos con el prefijo como en todo el sistema
-          url_image: cardInfo?.url_image || '' // Si por algún motivo no hay imagen en BD, va vacía
-        };
-      });
+      const hydratedHand = handIds.map(id => ({
+        id: `${ID_PREFIXES.CARD}${id}`, 
+        url_image: cardDictionary[id] || ''
+      }));
 
       emissions.push({
         room: playerId,
@@ -518,7 +519,7 @@ export class GameService {
   }
 
   private getEngine(): IGameEngine {
-    // DixitEngine es el motor universal del juego.
+    const { DixitEngine } = require('../core/engines');
     return DixitEngine;
   }
 
