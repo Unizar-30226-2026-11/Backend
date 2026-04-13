@@ -201,6 +201,38 @@ export class GameService {
     }
 
     // ==========================================
+    // SISTEMA DE RECONEXIÓN DE USUARIOS
+    // ==========================================
+    // Si la acción es reconectar, hidratamos su mano y la preparamos para emitir
+    const reconnectEmissions: SocketEmission[] = [];
+    if (action.type === 'RECONNECT_PLAYER') {
+      const reconnectingPlayerId = action.playerId;
+      const handIds = currentState.hands[reconnectingPlayerId] || [];
+      
+      if (handIds.length > 0) {
+        // Necesitamos buscar las URLs en la BD de las cartas de su mano
+        const cardInfo = await prisma.cards.findMany({
+          where: { id_card: { in: handIds } },
+          select: { id_card: true, url_image: true }
+        });
+
+        const hydratedHand = handIds.map(id => {
+          const card = cardInfo.find(c => c.id_card === id);
+          return {
+            id: `${ID_PREFIXES.CARD}${id}`,
+            url_image: card?.url_image || ''
+          };
+        });
+
+        reconnectEmissions.push({
+          room: reconnectingPlayerId,
+          event: 'server:game:private_hand',
+          data: { hand: hydratedHand }
+        });
+      }
+    }
+
+    // ==========================================
     // SISTEMA DE DESCONEXIÓN DURANTE MINIJUEGO
     // ==========================================
     if (action.type === 'DISCONNECT_PLAYER' && currentState.isMinigameActive && currentState.activeConflict) {
@@ -220,7 +252,7 @@ export class GameService {
     // ==========================================
     // SISTEMA DE BLOQUEO Y DUELOS
     // ==========================================
-    if (currentState.isMinigameActive) {
+    if (currentState.isMinigameActive && action.type !== 'RECONNECT_PLAYER' && action.type !== 'DISCONNECT_PLAYER') {
       throw new Error('Hay un conflicto en curso. Espera a que termine el minijuego.');
     }
 
@@ -272,25 +304,49 @@ export class GameService {
     await this.redisRepo.saveGame(lobbyCode, newState);
 
     const emissions: SocketEmission[] = [];
+    emissions.push(...reconnectEmissions);
 
     // 6. Ocultar información privada ANTES de enviar a la red general
     const publicState = this.maskPrivateState(newState);
 
-    // 7. Emitir estado público a toda la sala
+     // 7. Emitir estado público a toda la sala
     emissions.push({
       room: newState.lobbyCode,
       event: 'server:game:state_updated',
       data: { state: publicState, lastAction: action.type }
     });
 
-    // 8. Notificación de estado privado (manos de cartas) para cada jugador
-    for (let i = 0; i < newState.players.length; i++) {
-      const playerId = newState.players[i];
-      emissions.push({
-        room: playerId,
-        event: 'server:game:private_hand',
-        data: { hand: newState.hands[playerId] }
+    // Filtramos para no enviar las manos privadas a todos en las reconexiones
+    if (action.type !== 'RECONNECT_PLAYER' && action.type !== 'DISCONNECT_PLAYER') {
+
+      const allHandCards = new Set<number>();
+      Object.values(newState.hands).forEach((hand: number[]) => hand.forEach(id => allHandCards.add(id)));
+
+      const cardInfo = await prisma.cards.findMany({
+        where: { id_card: { in: Array.from(allHandCards) } },
+        select: { id_card: true, url_image: true }
       });
+
+      const cardDictionary: Record<number, string> = {};
+      cardInfo.forEach(c => { cardDictionary[c.id_card] = c.url_image || ''; });
+
+      for (let i = 0; i < newState.players.length; i++) {
+        const playerId = newState.players[i];
+        const handIds = newState.hands[playerId] as number[];
+
+        // Hidratamos la mano
+        const hydratedHand = handIds.map(id => ({
+          id: `${ID_PREFIXES.CARD}${id}`,
+          url_image: cardDictionary[id] || ''
+        }));
+
+        emissions.push({
+          room: playerId,
+          event: 'server:game:private_hand',
+          data: { hand: hydratedHand }
+        });
+      }
+
     }
 
     // 9. Añadir emisiones de casillas especiales
