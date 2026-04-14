@@ -1,7 +1,6 @@
 // src/services/game.service.ts
 import { Queue } from 'bullmq';
 
-import { DixitEngine } from '../core/engines';
 import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
@@ -61,15 +60,35 @@ export class GameService {
 
     console.log('IDs obtenidos');
 
-    let centralDeck: number[] = [];
+    const hostId = numericPlayerIds[0];
+    const hostData = await prisma.user.findUnique({
+      where: { id_user: hostId },
+      select: { active_board_id: true },
+    });
+
+    const boardIdToUse = hostData?.active_board_id || 1;
+    const boardData = await prisma.board.findUnique({
+      where: { id_board: boardIdToUse },
+    });
+
+    const boardPayload = boardData
+      ? {
+          id: `${ID_PREFIXES.BOARD}${boardData.id_board}`,
+          name: boardData.name,
+          url_image: (boardData as any).url_image || '',
+        }
+      : {
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'CLASSIC',
+          url_image: 'tablero_classic.png',
+        };
+
     // Extraer cartas de los mazos (o usar el predeterminado al azar)
     if (options.useDynamicPool) {
       // Extraer cartas de los mazos de los jugadores
       const userDecks = await prisma.deck.findMany({
         where: { id_user: { in: numericPlayerIds } },
-        include: {
-          cards: { include: { user_card: true } },
-        },
+        include: { cards: { include: { user_card: true } } },
       });
 
       userDecks.forEach((deck) => {
@@ -113,21 +132,35 @@ export class GameService {
     // Barajamos
     centralDeck = this.shuffleArray(centralDeck);
 
+    const allCardsInfo = await prisma.cards.findMany({
+      where: { id_card: { in: centralDeck } },
+      select: { id_card: true, url_image: true },
+    });
+
+    const cardDictionary: Record<number, string> = {};
+    allCardsInfo.forEach((c) => {
+      cardDictionary[c.id_card] = c.url_image || '';
+    });
+
+    const safeMode =
+      mode === 'STELLA' || mode === 'STANDARD' ? mode : 'STANDARD';
+
     // Crear el estado base
     const baseState: any = {
       lobbyCode,
-      mode,
+      mode: safeMode,
       players,
       disconnectedPlayers: [],
       scores: {},
       hands: {},
       centralDeck,
       discardPile: [],
-      phase: 'LOBBY',
+      phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,
       isMinigameActive: false,
       activeConflict: null,
       activeBoardId: boardIdToUse,
+      boardRegistry: {},
     };
 
     players.forEach((p: string) => {
@@ -140,7 +173,7 @@ export class GameService {
       playerId: 'SYSTEM',
       payload: { deck: centralDeck },
     };
-    const initialState = DixitEngine.transition(baseState, initAction);
+    const initialState = this.getEngine().transition(baseState, initAction);
 
     // Guardar el estado inicial en Redis
     await this.redisRepo.saveGame(lobbyCode, initialState);
@@ -152,15 +185,24 @@ export class GameService {
       event: 'server:game:started',
       data: {
         state: this.maskPrivateState(initialState),
+        board: boardPayload,
         message: '¡La partida ha comenzado!',
       },
     });
 
     for (const playerId of initialState.players) {
+      const handIds = initialState.hands[playerId] as number[];
+
+      // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
+      const hydratedHand = handIds.map((id) => ({
+        id: `${ID_PREFIXES.CARD}${id}`,
+        url_image: cardDictionary[id] || '',
+      }));
+
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: initialState.hands[playerId] },
+        data: { hand: hydratedHand },
       });
     }
 
@@ -182,6 +224,38 @@ export class GameService {
     const currentState = await this.redisRepo.getGame(lobbyCode);
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
+    }
+
+    // ==========================================
+    // SISTEMA DE RECONEXIÓN DE USUARIOS
+    // ==========================================
+    // Si la acción es reconectar, hidratamos su mano y la preparamos para emitir
+    const reconnectEmissions: SocketEmission[] = [];
+    if (action.type === 'RECONNECT_PLAYER') {
+      const reconnectingPlayerId = action.playerId;
+      const handIds = currentState.hands[reconnectingPlayerId] || [];
+
+      if (handIds.length > 0) {
+        // Necesitamos buscar las URLs en la BD de las cartas de su mano
+        const cardInfo = await prisma.cards.findMany({
+          where: { id_card: { in: handIds } },
+          select: { id_card: true, url_image: true },
+        });
+
+        const hydratedHand = handIds.map((id) => {
+          const card = cardInfo.find((c) => c.id_card === id);
+          return {
+            id: `${ID_PREFIXES.CARD}${id}`,
+            url_image: card?.url_image || '',
+          };
+        });
+
+        reconnectEmissions.push({
+          room: reconnectingPlayerId,
+          event: 'server:game:private_hand',
+          data: { hand: hydratedHand },
+        });
+      }
     }
 
     // ==========================================
@@ -212,7 +286,11 @@ export class GameService {
     // ==========================================
     // SISTEMA DE BLOQUEO Y DUELOS
     // ==========================================
-    if (currentState.isMinigameActive) {
+    if (
+      currentState.isMinigameActive &&
+      action.type !== 'RECONNECT_PLAYER' &&
+      action.type !== 'DISCONNECT_PLAYER'
+    ) {
       throw new Error(
         'Hay un conflicto en curso. Espera a que termine el minijuego.',
       );
@@ -275,6 +353,7 @@ export class GameService {
     await this.redisRepo.saveGame(lobbyCode, newState);
 
     const emissions: SocketEmission[] = [];
+    emissions.push(...reconnectEmissions);
 
     // 6. Ocultar información privada ANTES de enviar a la red general
     const publicState = this.maskPrivateState(newState);
@@ -286,14 +365,42 @@ export class GameService {
       data: { state: publicState, lastAction: action.type },
     });
 
-    // 8. Notificación de estado privado (manos de cartas) para cada jugador
-    for (let i = 0; i < newState.players.length; i++) {
-      const playerId = newState.players[i];
-      emissions.push({
-        room: playerId,
-        event: 'server:game:private_hand',
-        data: { hand: newState.hands[playerId] },
+    // Filtramos para no enviar las manos privadas a todos en las reconexiones
+    if (
+      action.type !== 'RECONNECT_PLAYER' &&
+      action.type !== 'DISCONNECT_PLAYER'
+    ) {
+      const allHandCards = new Set<number>();
+      Object.values(newState.hands).forEach((hand: number[]) =>
+        hand.forEach((id) => allHandCards.add(id)),
+      );
+
+      const cardInfo = await prisma.cards.findMany({
+        where: { id_card: { in: Array.from(allHandCards) } },
+        select: { id_card: true, url_image: true },
       });
+
+      const cardDictionary: Record<number, string> = {};
+      cardInfo.forEach((c) => {
+        cardDictionary[c.id_card] = c.url_image || '';
+      });
+
+      for (let i = 0; i < newState.players.length; i++) {
+        const playerId = newState.players[i];
+        const handIds = newState.hands[playerId] as number[];
+
+        // Hidratamos la mano
+        const hydratedHand = handIds.map((id) => ({
+          id: `${ID_PREFIXES.CARD}${id}`,
+          url_image: cardDictionary[id] || '',
+        }));
+
+        emissions.push({
+          room: playerId,
+          event: 'server:game:private_hand',
+          data: { hand: hydratedHand },
+        });
+      }
     }
 
     // 9. Añadir emisiones de casillas especiales
@@ -584,7 +691,7 @@ export class GameService {
   }
 
   private getEngine(): IGameEngine {
-    // DixitEngine es el motor universal del juego.
+    const { DixitEngine } = require('../core/engines');
     return DixitEngine;
   }
 

@@ -132,9 +132,6 @@ interface BaseGameState {
   discardPile: number[];
   /** Registro de visitas a casillas especiales. { ID_Casilla: [IDs_Jugadores_En_Orden] } */
   boardRegistry: Record<number, string[]>;
-  /** Modificadores activos temporales. { ID_Jugador: Datos_Modificador } */
-  activeModifiers: Record<string, ModifierData>;
-
   /** Indica si hay una estrella fugaz activa en pantalla */
   isStarActive: boolean;
   /** Timestamp en milisegundos de cuándo debe desaparecer la estrella */

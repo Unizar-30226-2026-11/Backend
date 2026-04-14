@@ -23,7 +23,10 @@ export const setupSockets = (io: Server) => {
     const userId = socket.user?.id;
     const lobbyCode = socket.data?.lobbyCode;
 
-    if (!userId) return socket.disconnect(true);
+    if (!userId) {
+      socket.disconnect(true);
+      return;
+    }
 
     //Manejo de AFK
     // 1. REGISTRAMOS SU ACTIVIDAD INICIAL

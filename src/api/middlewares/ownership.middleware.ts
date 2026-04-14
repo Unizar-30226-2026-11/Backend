@@ -12,21 +12,26 @@ export const isDeckOwner = async (
   try {
     const userId = req.user!.id;
     const { deckId } = req.params;
+    const normalizedDeckId = Array.isArray(deckId) ? deckId[0] : deckId;
 
-    if (!deckId) {
+    if (!normalizedDeckId) {
       res.status(400).json({ message: 'El ID del mazo es requerido.' });
       return;
     }
 
-    const deck = await UserService.getDeckById(deckId);
+    const deck = await UserService.getDeckById(normalizedDeckId);
 
     if (!deck) {
       res.status(404).json({ message: 'Mazo no encontrado.' });
       return;
     }
 
+    const userDecks = await UserService.getUserDecks(userId);
+    const safeUserDecks = userDecks ?? [];
+    const isOwner = safeUserDecks.some((userDeck) => userDeck.id === deck.id);
+
     // Validación de propiedad
-    if (deck.userId !== userId) {
+    if (!isOwner) {
       res
         .status(403)
         .json({ message: 'No tienes permiso para acceder a este recurso.' });
@@ -61,9 +66,10 @@ export const hasCardsInCollection = async (
 
     // Obtenemos las cartas que el usuario posee realmente
     const ownedCards = await UserService.getUserCards(userId);
+    const safeOwnedCards = ownedCards ?? [];
 
     // Creamos un Set o un Map para que la búsqueda sea ultra rápida O(1)
-    const ownedCardIds = new Set(ownedCards.map((c) => c.cardId));
+    const ownedCardIds = new Set(safeOwnedCards.map((c) => c.cardId));
 
     // Verificamos si CADA carta enviada está en su colección
     const missingCards = cardIds.filter((id) => !ownedCardIds.has(id));
@@ -93,9 +99,15 @@ export const checkItemNotOwned = async (
   try {
     const userId = req.user!.id;
     const { itemId } = req.body;
+    const normalizedItemId = Array.isArray(itemId) ? itemId[0] : itemId;
+
+    if (typeof normalizedItemId !== 'string' || normalizedItemId.length === 0) {
+      res.status(400).json({ message: 'El ID del artículo es inválido.' });
+      return;
+    }
 
     // Verificar si el usuario ya posee el artículo (mazo temático o cosmético)
-    const isOwned = await ShopService.checkOwnership(userId, itemId);
+    const isOwned = await ShopService.checkOwnership(userId, normalizedItemId);
 
     if (isOwned) {
       res.status(400).json({
@@ -131,13 +143,7 @@ export const isBoardOwner = async (
 
     const boards = await UserService.getUserPurchasedBoards(userId);
     const ownedBoard = Array.isArray(boards)
-      ? boards.find(
-          (board): board is { id: string } =>
-            typeof board === 'object' &&
-            board !== null &&
-            'id' in board &&
-            (board as { id: unknown }).id === boardId,
-        )
+      ? boards.find((board) => board.id === boardId)
       : null;
 
     if (!ownedBoard) {

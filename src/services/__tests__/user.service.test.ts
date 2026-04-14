@@ -57,6 +57,9 @@ describe('UserService - Pruebas Funciones', () => {
       await prisma.user.delete({ where: { id_user: ghost.id_user } });
     }
 
+    // Limpiamos tableros residuales del test
+    await prisma.board.deleteMany({ where: { name: 'Tablero Test User' } });
+
     // Extraer cartas reales de la base de datos (necesitamos al menos 12 para los tests)
     const dbCards = await prisma.cards.findMany({ take: 12 });
     if (dbCards.length < 12)
@@ -64,6 +67,16 @@ describe('UserService - Pruebas Funciones', () => {
 
     cartas_reales_ids = dbCards.map((c) => c.id_card);
     cartas_reales = cartas_reales_ids.map((id) => `${ID_PREFIXES.CARD}${id}`);
+
+    //Creamos un tablero para el usuario
+    const testBoard = await prisma.board.create({
+      data: {
+        name: 'Tablero Test User',
+        description: 'Tablero para pruebas de usuario',
+        price: 100,
+        url_image: 'https://test.com/board.png',
+      },
+    });
 
     // Crear el Usuario Principal
     const user_main = await prisma.user.create({
@@ -73,9 +86,17 @@ describe('UserService - Pruebas Funciones', () => {
         password: 'hashed_password',
         state: 'CONNECTED',
         coins: 1000,
+        active_board_id: testBoard.id_board,
       },
     });
     main_u = `${ID_PREFIXES.USER}${user_main.id_user}`;
+
+    await prisma.userBoard.create({
+      data: {
+        id_user: user_main.id_user,
+        id_board: testBoard.id_board,
+      },
+    });
 
     // Crear el Usuario Sacrificable
     const usuario_test = await prisma.user.create({
@@ -170,6 +191,15 @@ describe('UserService - Pruebas Funciones', () => {
               id: expect.stringMatching(
                 new RegExp(`^${ID_PREFIXES.USER}\\d+$`),
               ),
+              boards: expect.arrayContaining([
+                expect.objectContaining({
+                  id: expect.stringMatching(
+                    new RegExp(`^${ID_PREFIXES.BOARD}\\d+$`),
+                  ),
+                  name: expect.any(String),
+                  url_image: expect.any(String),
+                }),
+              ]),
             }),
           );
         });
@@ -182,8 +212,9 @@ describe('UserService - Pruebas Funciones', () => {
         });
 
         test('Campos Incorrectos:', async () => {
-          const resultado = await UserService.getUserProfile('99');
-          expect(resultado).toBeNull();
+          await expect(
+            UserService.getUserProfile(`${ID_PREFIXES.USER}abc`),
+          ).rejects.toThrow();
         });
 
         test('Campos Vacios:', async () => {
@@ -212,11 +243,9 @@ describe('UserService - Pruebas Funciones', () => {
         });
 
         test('Campos Incorrectos:', async () => {
-          const resultado = await UserService.getUserEconomy(
-            `${ID_PREFIXES.USER}99`,
-          );
-
-          expect(resultado).toBeNull();
+          await expect(
+            UserService.getUserEconomy(`${ID_PREFIXES.USER}abc`),
+          ).rejects.toThrow();
         });
 
         test('Campos Vacios:', async () => {

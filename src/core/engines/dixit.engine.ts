@@ -116,7 +116,7 @@ export class DixitEngine {
       state.hands[pId] = state.centralDeck.splice(-6);
     }
 
-    state.mode = 'STANDARD';
+    state.mode = state.mode || 'STANDARD';
 
     // Delegamos la creación de la `currentRound` a la estrategia inicial
     const readyState = state as GameState;

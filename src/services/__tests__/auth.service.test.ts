@@ -31,6 +31,7 @@ describe('AuthService - Pruebas Funciones', () => {
         name: 'CLASSIC',
         description: 'Tablero inicial',
         price: 0,
+        url_image: 'https://midominio.com/boards/classic.png',
       },
     });
   });

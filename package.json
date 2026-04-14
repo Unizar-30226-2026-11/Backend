@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
     "build": "tsc && tsc-alias",
+    "sync:cards": "ts-node-dev --transpile-only src/scripts/sync-cards.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test": "jest"
+    "test": "jest --forceExit"
   },
   "repository": {
     "type": "git",
@@ -26,8 +27,9 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
+    "@supabase/supabase-js": "^2.103.0",
     "bcrypt": "^6.0.0",
-    "bullmq": "^5.71.1",
+    "bullmq": "^5.72.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",

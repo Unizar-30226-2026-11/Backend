@@ -17,8 +17,21 @@ jest.mock('../../infrastructure/redis', () => ({
 jest.mock('../../infrastructure/prisma', () => ({
   prisma: {
     deck: { findMany: jest.fn() },
-    cards: { findMany: jest.fn() },
+    cards: {
+      findMany: jest.fn().mockResolvedValue([
+        { id_card: 1, url_image: 'url1.jpg' },
+        { id_card: 2, url_image: 'url2.jpg' },
+        { id_card: 3, url_image: 'url3.jpg' },
+      ]),
+    },
     user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+    board: {
+      findUnique: jest.fn().mockResolvedValue({
+        id_board: 1,
+        name: 'Tablero Classic',
+        url_image: 'classic.png',
+      }),
+    },
     userGameStats: { create: jest.fn() },
     games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) },
   },
@@ -64,9 +77,19 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         // Simulamos que los jugadores traen MUCHAS cartas (ej: 60 cartas en total) para no entrar al fallback
         const mockDecks = [
-          { cards: Array(60).fill({ user_card: { id_card: 100 } }) },
+          {
+            cards: Array(60).fill({
+              user_card: {
+                id_card: 100,
+                card: { id_card: 100, url_image: 'img.png' },
+              },
+            }),
+          },
         ];
         (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 100, url_image: 'img.png' },
+        ]);
 
         const emissions = await gameService.initializeGame(
           'ROOM-INIT',
@@ -79,7 +102,8 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         });
 
         // 1. Verifica que NO se llamó al fallback porque tenían 60 cartas (más de las 48 necesarias)
-        expect(prisma.cards.findMany).not.toHaveBeenCalled();
+        //    (se llama 1 vez obligatoria para las URLs de las cartas)
+        expect(prisma.cards.findMany).toHaveBeenCalledTimes(1);
 
         // 2. Verifica guardado en Redis y programación del temporizador
         expect(mockRedisRepo.saveGame).toHaveBeenCalledWith(
@@ -90,7 +114,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           'phase-timeout',
           expect.objectContaining({
             lobbyCode: 'ROOM-INIT',
-            expectedPhase: 'LOBBY',
+            expectedPhase: 'STORYTELLING',
           }),
           expect.objectContaining({ delay: 60000 }),
         );
@@ -118,7 +142,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         // Simulamos la respuesta del fallback
         (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
-          Array(16).fill({ id_card: 99 }),
+          Array(16).fill({ id_card: 99, url_image: 'img99.png' }),
         );
 
         await gameService.initializeGame('ROOM-FALLBACK', lobbyData);
@@ -148,9 +172,14 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           scores: { p1: 0 },
           hands: { p1: [5, 6] },
           centralDeck: [1, 2, 3],
-          phase: 'LOBBY',
+          phase: 'STORYTELLING',
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 5, url_image: 'img5.png' },
+          { id_card: 6, url_image: 'img6.png' },
+        ]);
 
         const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
         const emissions = await gameService.handleAction('ROOM-ACTION', action);
@@ -175,31 +204,65 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         expect(handEmission).toBeDefined();
       });
 
+      test('Debe rehidratar y enviar SOLO la mano privada al jugador que se reconecta', async () => {
+        const mockState = {
+          lobbyCode: 'ROOM-RECONNECT',
+          players: ['p1', 'p2'],
+          scores: {},
+          hands: { p1: [10, 20], p2: [30, 40] },
+          phase: 'STORYTELLING',
+        };
+        mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        // Mock de la base de datos para buscar las cartas de p1
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 10, url_image: 'url10.png' },
+          { id_card: 20, url_image: 'url20.png' },
+        ]);
+
+        const action = { type: 'RECONNECT_PLAYER', playerId: 'p1' } as any;
+        const emissions = await gameService.handleAction(
+          'ROOM-RECONNECT',
+          action,
+        );
+
+        // Debe emitir la mano de p1
+        const handEmissions = emissions.filter(
+          (e) => e.event === 'server:game:private_hand',
+        );
+        expect(handEmissions).toHaveLength(1); // SOLO se envía a p1, no a p2
+        expect(handEmissions[0].room).toBe('p1');
+
+        // Debe comprobar que la mano va hidratada
+        const sentHand = (handEmissions[0].data as any).hand;
+        expect(sentHand[0]).toHaveProperty('url_image', 'url10.png');
+      });
+
       test('Debe programar un nuevo Timeout en BullMQ si hay un cambio de fase', async () => {
         const mockState = {
           lobbyCode: 'ROOM-PHASE',
           players: ['p1'],
           scores: { p1: 0 },
           hands: { p1: [] },
-          phase: 'LOBBY',
+          phase: 'STORYTELLING',
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
-        // Forzamos al mock del Motor a devolver un estado en fase STORYTELLING
+        // Forzamos al mock del Motor a devolver un estado en fase SUBMISSION
         const dixitEngineMock = require('../../core/engines').DixitEngine;
         dixitEngineMock.transition.mockReturnValueOnce({
           ...mockState,
-          phase: 'STORYTELLING',
+          phase: 'SUBMISSION',
         });
 
         const action = { type: 'NEXT_ROUND', playerId: 'SYS' } as any;
         await gameService.handleAction('ROOM-PHASE', action);
 
-        // Verifica que BullMQ recibe la tarea con el retraso correcto (60000ms para STORYTELLING)
+        // Verifica que BullMQ recibe la tarea con el retraso correcto (45000ms para SUBMISSION)
         expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
           'phase-timeout',
-          { lobbyCode: 'ROOM-PHASE', expectedPhase: 'STORYTELLING' },
-          expect.objectContaining({ delay: 60000 }),
+          { lobbyCode: 'ROOM-PHASE', expectedPhase: 'SUBMISSION' },
+          expect.objectContaining({ delay: 45000 }),
         );
       });
     });
@@ -662,15 +725,32 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: true,
         activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
         scores: { p1: 10, p2: 10, p3: 5 }, // p3 está mirando
+        players: ['p1', 'p2', 'p3'],
+        disconnectedPlayers: [],
+        hands: { p1: [], p2: [], p3: [] },
+        phase: 'STORYTELLING',
+        mode: 'STANDARD',
       } as unknown as GameState;
       mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
       // Se desconecta p3 (que NO está en el duelo)
       const action = { type: 'DISCONNECT_PLAYER', playerId: 'p3' } as any;
 
-      // Debe rebotar la acción con el mensaje de bloqueo, sin afectar a los puntos
-      await expect(gameService.handleAction('ROOM-1', action)).rejects.toThrow(
-        'Hay un conflicto en curso. Espera a que termine el minijuego.',
+      // Debe procesar la acción y devolver el estado.
+      const emissions = await gameService.handleAction('ROOM-1', action);
+
+      // Verificamos que el duelo SIGUE ACTIVO (nadie ha ganado aún)
+      expect(mockState.isMinigameActive).toBe(true);
+      expect(mockState.scores['p1']).toBe(10);
+      expect(mockState.scores['p2']).toBe(10);
+
+      const stateUpdateEmission = emissions.find(
+        (e) => e.event === 'server:game:state_updated',
+      );
+      expect(stateUpdateEmission).toBeDefined();
+      // Verificamos que la acción reflejada en el socket fue la de desconexión
+      expect((stateUpdateEmission!.data as any).lastAction).toBe(
+        'DISCONNECT_PLAYER',
       );
     });
 

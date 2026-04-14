@@ -205,7 +205,7 @@ describe('ShopService - Sistema de ', () => {
     describe('Flujos de Éxito', () => {
       test('Compra de carta individual exitosa', async () => {
         const res = await ShopService.processPurchase(
-          id_usuario_rico,
+          `${ID_PREFIXES.USER}${id_usuario_rico}`,
           `${ID_PREFIXES.CARD}${test_card_id}`,
         );
 
@@ -231,7 +231,7 @@ describe('ShopService - Sistema de ', () => {
         }
 
         const res = await ShopService.processPurchase(
-          id_usuario_rico,
+          `${ID_PREFIXES.USER}${id_usuario_rico}`,
           `${ID_PREFIXES.BOARD}${test_board_id}`,
         );
 
@@ -249,7 +249,7 @@ describe('ShopService - Sistema de ', () => {
       test('Error 403: Fondos insuficientes', async () => {
         try {
           await ShopService.processPurchase(
-            id_usuario_pobre,
+            `${ID_PREFIXES.USER}${id_usuario_pobre}`,
             `${ID_PREFIXES.CARD}${test_card_id}`,
           );
           fail('Debería haber lanzado un error');
@@ -262,7 +262,7 @@ describe('ShopService - Sistema de ', () => {
       test('Error 404: Artículo no encontrado', async () => {
         try {
           await ShopService.processPurchase(
-            id_usuario_rico,
+            `${ID_PREFIXES.USER}${id_usuario_rico}`,
             `${ID_PREFIXES.CARD}999999`,
           );
           fail('Debería haber lanzado un error');
