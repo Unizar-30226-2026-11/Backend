@@ -1,15 +1,17 @@
 import { prisma } from '../infrastructure/prisma';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import {
   getCachedData,
   getCachedItem,
   setCachedData,
 } from '../shared/utils/cache.utils';
-import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
 
 export const CollectionService = {
   // Obtiene todas las colecciones disponibles
   getAllCollections: async () => {
-    return getCachedData('cache:collections:all', async () => {
+    return getCachedData(
+      'cache:collections:all',
+      async () => {
         const collections = await prisma.collection.findMany({
           include: {
             _count: {
@@ -55,8 +57,8 @@ export const CollectionService = {
     }
 
     if (missingIdsInCache.length == 0) {
-      return idsToProcess.length > 1 
-        ? { collections: finalCollections } 
+      return idsToProcess.length > 1
+        ? { collections: finalCollections }
         : finalCollections[0];
     }
 
@@ -73,7 +75,6 @@ export const CollectionService = {
 
     if (bbddCollections.length > 0) {
       for (const collection of bbddCollections) {
-
         const formattedCollection = {
           id: `${ID_PREFIXES.COLLECTION}${collection.id_collection}`,
           name: collection.name,
@@ -94,8 +95,8 @@ export const CollectionService = {
 
     // Si pedimos más de uno, devolvemos el objeto con el array.
     // Si solo pedimos uno, devolvemos el objeto directo.
-    return idsToProcess.length > 1 
-      ? { collections: finalCollections } 
+    return idsToProcess.length > 1
+      ? { collections: finalCollections }
       : finalCollections[0];
   },
 
@@ -104,11 +105,11 @@ export const CollectionService = {
     const isArrayInput = Array.isArray(col_ids);
     const idsToProcess = isArrayInput ? col_ids : [col_ids];
 
-    const numericIds = idsToProcess.map((id) =>
-      parseInt(id.replace(ID_PREFIXES.COLLECTION, '')),)
+    const numericIds = idsToProcess
+      .map((id) => parseInt(id.replace(ID_PREFIXES.COLLECTION, '')))
       .filter((id) => !isNaN(id));
 
-    if (numericIds.length === 0) return null; 
+    if (numericIds.length === 0) return null;
 
     const finalCatalogs: any[] = [];
     const missingIdsInCache: number[] = [];
@@ -167,8 +168,8 @@ export const CollectionService = {
 
     // Si pedimos más de uno, devolvemos el objeto con el array.
     // Si solo pedimos uno, devolvemos el objeto directo.
-    return idsToProcess.length > 1 
-      ? { collections: finalCatalogs } 
+    return idsToProcess.length > 1
+      ? { collections: finalCatalogs }
       : finalCatalogs[0];
   },
 };

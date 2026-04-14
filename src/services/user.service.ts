@@ -1,6 +1,7 @@
 import { User_States } from '@prisma/client';
-import { ID_PREFIXES } from '../shared/constants/id-prefixes';
+
 import { prisma } from '../infrastructure/prisma';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
 
 export const UserService = {
@@ -20,8 +21,8 @@ export const UserService = {
           personal_state: true,
           active_board_id: true,
           my_boards: {
-            include: { board: true }
-          }
+            include: { board: true },
+          },
         },
       });
 
@@ -30,13 +31,13 @@ export const UserService = {
       return {
         ...user,
         id: `${ID_PREFIXES.USER}${user.id_user}`,
-        boards: user.my_boards.map(ub => ({
+        boards: user.my_boards.map((ub) => ({
           id: `${ID_PREFIXES.BOARD}${ub.board.id_board}`,
           name: ub.board.name,
           description: ub.board.description,
           price: ub.board.price,
-          url_image: ub.board.url_image
-        })) // Formateo para el frontend
+          url_image: ub.board.url_image,
+        })), // Formateo para el frontend
       };
     });
   },
@@ -132,20 +133,19 @@ export const UserService = {
 
     const user_purchases = await prisma.purchaseHistory.findMany({
       where: { id_user },
-      select: { id_purchase: true }
+      select: { id_purchase: true },
     });
-    const purchase_ids = user_purchases.map(p => p.id_purchase);
+    const purchase_ids = user_purchases.map((p) => p.id_purchase);
 
     const resultado = await prisma.$transaction([
-
       prisma.purchaseHistoryCard.deleteMany({
-        where: { id_purchase: { in: purchase_ids } }
+        where: { id_purchase: { in: purchase_ids } },
       }),
 
       prisma.purchaseHistory.deleteMany({
         where: { id_user },
       }),
-      
+
       prisma.userGameStats.deleteMany({
         where: { id_user },
       }),
@@ -232,15 +232,18 @@ export const UserService = {
       });
 
       // Contamos las instancias de cada carta
-      const cardCounts: Record<number, { name: string; quantity: number; rarity: string; url_image: string }> = {};
+      const cardCounts: Record<
+        number,
+        { name: string; quantity: number; rarity: string; url_image: string }
+      > = {};
 
       userCards.forEach((u_card) => {
         if (!cardCounts[u_card.id_card]) {
-          cardCounts[u_card.id_card] = { 
-            name: u_card.card.title, 
+          cardCounts[u_card.id_card] = {
+            name: u_card.card.title,
             quantity: 0,
             rarity: u_card.card.rarity,
-            url_image: u_card.card.url_image 
+            url_image: u_card.card.url_image,
           };
         }
         cardCounts[u_card.id_card].quantity += 1;
@@ -251,7 +254,7 @@ export const UserService = {
         name: data.name,
         quantity: data.quantity,
         rarity: data.rarity,
-        url_image: data.url_image
+        url_image: data.url_image,
       }));
     });
   },
@@ -266,14 +269,14 @@ export const UserService = {
 
       const userBoards = await prisma.userBoard.findMany({
         where: { id_user },
-        include: { board: true } // Traemos los detalles de la tabla Board
+        include: { board: true }, // Traemos los detalles de la tabla Board
       });
 
-      return userBoards.map(ub => ({
+      return userBoards.map((ub) => ({
         id: `${ID_PREFIXES.BOARD}${ub.board.id_board}`,
         name: ub.board.name,
         description: ub.board.description,
-        url_image: ub.board.url_image
+        url_image: ub.board.url_image,
       }));
     });
   },
@@ -287,18 +290,18 @@ export const UserService = {
 
     // Verificar propiedad
     const ownership = await prisma.userBoard.findFirst({
-      where: { id_user, id_board }
+      where: { id_user, id_board },
     });
 
     if (!ownership) {
       throw new Error('BOARD_NOT_OWNED');
     }
 
-    // Actualizar el tablero activo 
+    // Actualizar el tablero activo
     const updatedUser = await prisma.user.update({
       where: { id_user },
       data: { active_board_id: id_board },
-      include: { active_board: true }
+      include: { active_board: true },
     });
 
     // Limpieza de caché
@@ -309,11 +312,10 @@ export const UserService = {
       userId: u_id,
       activeBoard: {
         id: `${ID_PREFIXES.BOARD}${updatedUser.active_board?.id_board}`,
-        name: updatedUser.active_board?.name
-      }
+        name: updatedUser.active_board?.name,
+      },
     };
   },
-
 
   // --- Mazos (Decks) ---
 
@@ -469,7 +471,7 @@ export const UserService = {
 
     const existingDecks = await prisma.deck.findMany({
       where: { id_deck: { in: ids_decks } },
-      select: { id_user: true }
+      select: { id_user: true },
     });
 
     const resultado = await prisma.$transaction([
@@ -496,7 +498,6 @@ export const UserService = {
 
     return resultado[1].count > 0;
   },
-
 };
 
 // Funcion Auxiliar

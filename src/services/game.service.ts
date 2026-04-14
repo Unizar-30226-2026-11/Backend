@@ -1,14 +1,15 @@
 // src/services/game.service.ts
 import { Queue } from 'bullmq';
+
 import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
-import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
 import {
   PREDEFINED_DECK_KEYS,
   PREDEFINED_DECKS,
 } from '../shared/constants/decks';
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import {
   COIN_REWARDS_BY_RANK,
   COIN_REWARDS_DEFAULT,
@@ -58,33 +59,41 @@ export class GameService {
     });
 
     let centralDeck: number[] = [];
-  
+
     const hostId = numericPlayerIds[0];
     const hostData = await prisma.user.findUnique({
       where: { id_user: hostId },
-      select: { active_board_id: true }
+      select: { active_board_id: true },
     });
 
     const boardIdToUse = hostData?.active_board_id || 1;
-    const boardData = await prisma.board.findUnique({ where: { id_board: boardIdToUse } });
+    const boardData = await prisma.board.findUnique({
+      where: { id_board: boardIdToUse },
+    });
 
-    const boardPayload = boardData 
-      ? { id: `${ID_PREFIXES.BOARD}${boardData.id_board}`, name: boardData.name, url_image: (boardData as any).url_image || '' }
-      : { id: `${ID_PREFIXES.BOARD}1`, name: "CLASSIC", url_image: "tablero_classic.png" };
+    const boardPayload = boardData
+      ? {
+          id: `${ID_PREFIXES.BOARD}${boardData.id_board}`,
+          name: boardData.name,
+          url_image: (boardData as any).url_image || '',
+        }
+      : {
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'CLASSIC',
+          url_image: 'tablero_classic.png',
+        };
 
     // Extraer cartas de los mazos (o usar el predeterminado al azar)
     if (options.useDynamicPool) {
-    
       // Extraer cartas de los mazos de los jugadores
       const userDecks = await prisma.deck.findMany({
         where: { id_user: { in: numericPlayerIds } },
-        include: { cards: { include: { user_card: true } } }
+        include: { cards: { include: { user_card: true } } },
       });
 
-      userDecks.forEach(deck => {
-        deck.cards.forEach(dc => {
-          if (dc.user_card) 
-            centralDeck.push(dc.user_card.id_card);
+      userDecks.forEach((deck) => {
+        deck.cards.forEach((dc) => {
+          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
         });
       });
     } else {
@@ -96,7 +105,7 @@ export class GameService {
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
     // lo que puede generar cartas que no hayamos visto antes de manera consistente.
-    
+
     const CARDS_PER_PLAYER = 16;
     const TARGET_DECK_SIZE = players.length * CARDS_PER_PLAYER;
 
@@ -104,12 +113,11 @@ export class GameService {
     if (centralDeck.length < TARGET_DECK_SIZE) {
       const missingAmount = TARGET_DECK_SIZE - centralDeck.length;
       const fallbackCards = await prisma.cards.findMany({
-         take: missingAmount, 
-         select: { id_card: true } 
-        });
-      centralDeck.push(...fallbackCards.map(c => c.id_card));
-    }
-    else if (centralDeck.length > TARGET_DECK_SIZE) {
+        take: missingAmount,
+        select: { id_card: true },
+      });
+      centralDeck.push(...fallbackCards.map((c) => c.id_card));
+    } else if (centralDeck.length > TARGET_DECK_SIZE) {
       centralDeck = this.shuffleArray(centralDeck).slice(0, TARGET_DECK_SIZE); // Mezclamos antes de cortar para que sea justo
     }
 
@@ -118,13 +126,16 @@ export class GameService {
 
     const allCardsInfo = await prisma.cards.findMany({
       where: { id_card: { in: centralDeck } },
-      select: { id_card: true, url_image: true }
+      select: { id_card: true, url_image: true },
     });
 
     const cardDictionary: Record<number, string> = {};
-    allCardsInfo.forEach(c => { cardDictionary[c.id_card] = c.url_image || ''; });
+    allCardsInfo.forEach((c) => {
+      cardDictionary[c.id_card] = c.url_image || '';
+    });
 
-    const safeMode = (mode === 'STELLA' || mode === 'STANDARD') ? mode : 'STANDARD';
+    const safeMode =
+      mode === 'STELLA' || mode === 'STANDARD' ? mode : 'STANDARD';
 
     // Crear el estado base
     const baseState: any = {
@@ -137,7 +148,7 @@ export class GameService {
       centralDeck,
       discardPile: [],
       phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
-      isStarActive: false,     
+      isStarActive: false,
       isMinigameActive: false,
       activeConflict: null,
       activeBoardId: boardIdToUse,
@@ -149,7 +160,11 @@ export class GameService {
       baseState.hands[p] = [];
     });
 
-    const initAction: GameAction = { type: 'INIT_GAME', playerId: 'SYSTEM', payload: { deck: centralDeck } };
+    const initAction: GameAction = {
+      type: 'INIT_GAME',
+      playerId: 'SYSTEM',
+      payload: { deck: centralDeck },
+    };
     const initialState = this.getEngine().transition(baseState, initAction);
 
     // Guardar el estado inicial en Redis
@@ -163,23 +178,23 @@ export class GameService {
       data: {
         state: this.maskPrivateState(initialState),
         board: boardPayload,
-        message: '¡La partida ha comenzado!'
-      }
+        message: '¡La partida ha comenzado!',
+      },
     });
 
     for (const playerId of initialState.players) {
       const handIds = initialState.hands[playerId] as number[];
-      
+
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
-      const hydratedHand = handIds.map(id => ({
-        id: `${ID_PREFIXES.CARD}${id}`, 
-        url_image: cardDictionary[id] || ''
+      const hydratedHand = handIds.map((id) => ({
+        id: `${ID_PREFIXES.CARD}${id}`,
+        url_image: cardDictionary[id] || '',
       }));
 
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: hydratedHand } 
+        data: { hand: hydratedHand },
       });
     }
 
@@ -193,7 +208,10 @@ export class GameService {
    * PROCESA ACCIONES DURANTE LA PARTIDA.
    * Devuelve la lista de emisiones que el handler debe enviar por socket.
    */
-  public async handleAction(lobbyCode: string, action: GameAction): Promise<SocketEmission[]> {
+  public async handleAction(
+    lobbyCode: string,
+    action: GameAction,
+  ): Promise<SocketEmission[]> {
     // 1. Recuperar estado crudo desde Redis
     const currentState = await this.redisRepo.getGame(lobbyCode);
     if (!currentState) {
@@ -208,26 +226,26 @@ export class GameService {
     if (action.type === 'RECONNECT_PLAYER') {
       const reconnectingPlayerId = action.playerId;
       const handIds = currentState.hands[reconnectingPlayerId] || [];
-      
+
       if (handIds.length > 0) {
         // Necesitamos buscar las URLs en la BD de las cartas de su mano
         const cardInfo = await prisma.cards.findMany({
           where: { id_card: { in: handIds } },
-          select: { id_card: true, url_image: true }
+          select: { id_card: true, url_image: true },
         });
 
-        const hydratedHand = handIds.map(id => {
-          const card = cardInfo.find(c => c.id_card === id);
+        const hydratedHand = handIds.map((id) => {
+          const card = cardInfo.find((c) => c.id_card === id);
           return {
             id: `${ID_PREFIXES.CARD}${id}`,
-            url_image: card?.url_image || ''
+            url_image: card?.url_image || '',
           };
         });
 
         reconnectEmissions.push({
           room: reconnectingPlayerId,
           event: 'server:game:private_hand',
-          data: { hand: hydratedHand }
+          data: { hand: hydratedHand },
         });
       }
     }
@@ -235,35 +253,49 @@ export class GameService {
     // ==========================================
     // SISTEMA DE DESCONEXIÓN DURANTE MINIJUEGO
     // ==========================================
-    if (action.type === 'DISCONNECT_PLAYER' && currentState.isMinigameActive && currentState.activeConflict) {
+    if (
+      action.type === 'DISCONNECT_PLAYER' &&
+      currentState.isMinigameActive &&
+      currentState.activeConflict
+    ) {
       const { player1, player2, isDuel } = currentState.activeConflict;
       const disconnectedId = action.playerId;
 
       // Si el que se ha caído es uno de los peleadores
       if (disconnectedId === player1 || disconnectedId === player2) {
-        
         const winnerId = disconnectedId === player1 ? player2 : player1;
-        
+
         // Usamos la función que ya tenemos para resolverlo, dándole la victoria al que se quedó
-        return this.submitConflictResult(lobbyCode, winnerId, disconnectedId, isDuel);
+        return this.submitConflictResult(
+          lobbyCode,
+          winnerId,
+          disconnectedId,
+          isDuel,
+        );
       }
     }
 
     // ==========================================
     // SISTEMA DE BLOQUEO Y DUELOS
     // ==========================================
-    if (currentState.isMinigameActive && action.type !== 'RECONNECT_PLAYER' && action.type !== 'DISCONNECT_PLAYER') {
-      throw new Error('Hay un conflicto en curso. Espera a que termine el minijuego.');
+    if (
+      currentState.isMinigameActive &&
+      action.type !== 'RECONNECT_PLAYER' &&
+      action.type !== 'DISCONNECT_PLAYER'
+    ) {
+      throw new Error(
+        'Hay un conflicto en curso. Espera a que termine el minijuego.',
+      );
     }
 
     // Si la acción es iniciar el duelo, lo disparamos sin pasar por el motor
     if (action.type === 'RESOLVE_DUEL') {
       const targetId = (action as any).payload.targetId;
       currentState.isMinigameActive = true;
-      currentState.activeConflict = { 
-          player1: action.playerId, 
-          player2: targetId, 
-          isDuel: true 
+      currentState.activeConflict = {
+        player1: action.playerId,
+        player2: targetId,
+        isDuel: true,
       };
       await this.redisRepo.saveGame(lobbyCode, currentState);
 
@@ -272,20 +304,26 @@ export class GameService {
       await gameTimeoutsQueue.add(
         'minigame-fallback',
         { lobbyCode: currentState.lobbyCode },
-        { delay: (20 * 1000), jobId: `conflict-${currentState.lobbyCode}-${Date.now()}`, removeOnComplete: true }
+        {
+          delay: 20 * 1000,
+          jobId: `conflict-${currentState.lobbyCode}-${Date.now()}`,
+          removeOnComplete: true,
+        },
       );
 
-      return [{
-        room: currentState.lobbyCode,
-        event: 'server:game:minigame_start',
-        data: {
-          player1: action.playerId,
-          player2: targetId,
-          type: Math.floor(Math.random() * 3), // Int 0-2
-          duration: 15000,
-          isDuel: true // Bandera clave para saber cómo puntuar al final
-        }
-      }];
+      return [
+        {
+          room: currentState.lobbyCode,
+          event: 'server:game:minigame_start',
+          data: {
+            player1: action.playerId,
+            player2: targetId,
+            type: Math.floor(Math.random() * 3), // Int 0-2
+            duration: 15000,
+            isDuel: true, // Bandera clave para saber cómo puntuar al final
+          },
+        },
+      ];
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
@@ -298,7 +336,10 @@ export class GameService {
     const newState = engine.transition(currentState, action);
 
     // 4. Comprobar la lógica del tablero — devuelve emisiones adicionales
-    const specialEmissions = await this.checkSpecialSquares(newState, previousScores);
+    const specialEmissions = await this.checkSpecialSquares(
+      newState,
+      previousScores,
+    );
 
     // 5. Guardar el nuevo estado machacando el anterior
     await this.redisRepo.saveGame(lobbyCode, newState);
@@ -309,44 +350,49 @@ export class GameService {
     // 6. Ocultar información privada ANTES de enviar a la red general
     const publicState = this.maskPrivateState(newState);
 
-     // 7. Emitir estado público a toda la sala
+    // 7. Emitir estado público a toda la sala
     emissions.push({
       room: newState.lobbyCode,
       event: 'server:game:state_updated',
-      data: { state: publicState, lastAction: action.type }
+      data: { state: publicState, lastAction: action.type },
     });
 
     // Filtramos para no enviar las manos privadas a todos en las reconexiones
-    if (action.type !== 'RECONNECT_PLAYER' && action.type !== 'DISCONNECT_PLAYER') {
-
+    if (
+      action.type !== 'RECONNECT_PLAYER' &&
+      action.type !== 'DISCONNECT_PLAYER'
+    ) {
       const allHandCards = new Set<number>();
-      Object.values(newState.hands).forEach((hand: number[]) => hand.forEach(id => allHandCards.add(id)));
+      Object.values(newState.hands).forEach((hand: number[]) =>
+        hand.forEach((id) => allHandCards.add(id)),
+      );
 
       const cardInfo = await prisma.cards.findMany({
         where: { id_card: { in: Array.from(allHandCards) } },
-        select: { id_card: true, url_image: true }
+        select: { id_card: true, url_image: true },
       });
 
       const cardDictionary: Record<number, string> = {};
-      cardInfo.forEach(c => { cardDictionary[c.id_card] = c.url_image || ''; });
+      cardInfo.forEach((c) => {
+        cardDictionary[c.id_card] = c.url_image || '';
+      });
 
       for (let i = 0; i < newState.players.length; i++) {
         const playerId = newState.players[i];
         const handIds = newState.hands[playerId] as number[];
 
         // Hidratamos la mano
-        const hydratedHand = handIds.map(id => ({
+        const hydratedHand = handIds.map((id) => ({
           id: `${ID_PREFIXES.CARD}${id}`,
-          url_image: cardDictionary[id] || ''
+          url_image: cardDictionary[id] || '',
         }));
 
         emissions.push({
           room: playerId,
           event: 'server:game:private_hand',
-          data: { hand: hydratedHand }
+          data: { hand: hydratedHand },
         });
       }
-
     }
 
     // 9. Añadir emisiones de casillas especiales
@@ -355,10 +401,10 @@ export class GameService {
     // 10. Gestión de Timeouts si cambió de fase
     if (oldPhase !== newState.phase) {
       const timeLimits: Record<string, number> = {
-        'STORYTELLING': 60000,
-        'SUBMISSION': 45000,
-        'VOTING': 45000,
-        'SCORING': 10000
+        STORYTELLING: 60000,
+        SUBMISSION: 45000,
+        VOTING: 45000,
+        SCORING: 10000,
       };
       const delay = timeLimits[newState.phase];
       if (delay) {
@@ -376,7 +422,7 @@ export class GameService {
     return emissions;
   }
 
-   // ==========================================
+  // ==========================================
   // FIN DE PARTIDA: RANKING Y MONEDAS
   // ==========================================
 
@@ -487,17 +533,23 @@ export class GameService {
   // FUNCIONES AUXILIARES PRIVADAS
   // ==========================================
 
-  private async schedulePhaseTimeout(lobbyCode: string, phase: string, delayMs: number) {
+  private async schedulePhaseTimeout(
+    lobbyCode: string,
+    phase: string,
+    delayMs: number,
+  ) {
     await gameTimeoutsQueue.add(
       'phase-timeout',
       { lobbyCode, expectedPhase: phase },
       {
         delay: delayMs,
         jobId: `timeout-${lobbyCode}-${phase}-${Date.now()}`,
-        removeOnComplete: true
-      }
+        removeOnComplete: true,
+      },
     );
-    console.log(`[BullMQ] Timeout programado para ${lobbyCode} en fase ${phase} (${delayMs / 1000}s)`);
+    console.log(
+      `[BullMQ] Timeout programado para ${lobbyCode} en fase ${phase} (${delayMs / 1000}s)`,
+    );
   }
 
   private maskPrivateState(state: GameState): Partial<GameState> {
@@ -506,7 +558,6 @@ export class GameService {
     delete (publicState as any).hands;
     return publicState;
   }
-
 
   //
   // ESTRELLA SÍNCRONA
@@ -531,17 +582,17 @@ export class GameService {
         starId: `star_${Date.now()}`,
         path: movement.path,
         duration: movement.duration,
-      }
+      },
     });
 
     // Si nadie la pulsa, se desactiva al terminar la duración
     await gameTimeoutsQueue.add(
       'star-expiration',
       { lobbyCode },
-      { 
-        delay: movement.duration, 
-        removeOnComplete: true 
-      }
+      {
+        delay: movement.duration,
+        removeOnComplete: true,
+      },
     );
 
     return emissions;
@@ -553,7 +604,10 @@ export class GameService {
    */
   public _deferredEmitCallback?: (emission: SocketEmission) => void;
 
-  public async claimStar(lobbyCode: string, playerId: string): Promise<SocketEmission[]> {
+  public async claimStar(
+    lobbyCode: string,
+    playerId: string,
+  ): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
 
     if (!state || !state.isStarActive || Date.now() > state.starExpiresAt) {
@@ -569,8 +623,8 @@ export class GameService {
       {
         room: lobbyCode,
         event: 'server:game:star_claimed',
-        data: { winnerId: playerId, newScores: state.scores }
-      }
+        data: { winnerId: playerId, newScores: state.scores },
+      },
     ];
   }
 
@@ -593,7 +647,7 @@ export class GameService {
     switch (startSide) {
       case 'LEFT':
         start = { x: -10, y: Math.random() * 100 }; // Empieza fuera a la izquierda
-        end = { x: 110, y: Math.random() * 100 };   // Muere fuera a la derecha
+        end = { x: 110, y: Math.random() * 100 }; // Muere fuera a la derecha
         break;
       case 'RIGHT':
         start = { x: 110, y: Math.random() * 100 };
@@ -615,22 +669,22 @@ export class GameService {
     return {
       path: { start, end },
       duration,
-      side: startSide // Enviamos el lado para que el frontend rote el gráfico
+      side: startSide, // Enviamos el lado para que el frontend rote el gráfico
     };
   }
-
 
   //
   //  CASILLAS DEL TABLERO
   //
 
-
-
   /**
    * Escanea los movimientos de los jugadores para activar casillas especiales.
    * Devuelve las emisiones generadas, en lugar de emitir directamente.
    */
-  private async checkSpecialSquares(state: GameState, previousScores: Record<string, number>): Promise<SocketEmission[]> {
+  private async checkSpecialSquares(
+    state: GameState,
+    previousScores: Record<string, number>,
+  ): Promise<SocketEmission[]> {
     const { SPECIAL_SQUARES, CHECKPOINT_65 } = BOARD_CONFIG;
     const emissions: SocketEmission[] = [];
 
@@ -643,7 +697,7 @@ export class GameService {
     const arrivalScores = { ...state.scores };
 
     for (const pId of state.players) {
-      const currentPos = arrivalScores[pId]
+      const currentPos = arrivalScores[pId];
       const oldPos = previousScores[pId] || 0;
 
       // Si no se movió, ignoramos
@@ -651,19 +705,49 @@ export class GameService {
 
       // CASILLAS IMPARES
       if (currentPos === SPECIAL_SQUARES.ODD_SQUARE_1)
-        emissions.push(...this.applyStepEffect(state, pId, 'ODD', SPECIAL_SQUARES.ODD_SQUARE_1));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'ODD',
+            SPECIAL_SQUARES.ODD_SQUARE_1,
+          ),
+        );
       if (currentPos === SPECIAL_SQUARES.ODD_SQUARE_2)
-        emissions.push(...this.applyStepEffect(state, pId, 'ODD', SPECIAL_SQUARES.ODD_SQUARE_2));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'ODD',
+            SPECIAL_SQUARES.ODD_SQUARE_2,
+          ),
+        );
 
       // CASILLAS PARES
       if (currentPos === SPECIAL_SQUARES.EVEN_SQUARE_1)
-        emissions.push(...this.applyStepEffect(state, pId, 'EVEN', SPECIAL_SQUARES.EVEN_SQUARE_1));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'EVEN',
+            SPECIAL_SQUARES.EVEN_SQUARE_1,
+          ),
+        );
       if (currentPos === SPECIAL_SQUARES.EVEN_SQUARE_2)
-        emissions.push(...this.applyStepEffect(state, pId, 'EVEN', SPECIAL_SQUARES.EVEN_SQUARE_2));
+        emissions.push(
+          ...this.applyStepEffect(
+            state,
+            pId,
+            'EVEN',
+            SPECIAL_SQUARES.EVEN_SQUARE_2,
+          ),
+        );
 
       // SHUFFLE
-      if (currentPos === SPECIAL_SQUARES.SHUFFLE_1 || currentPos === SPECIAL_SQUARES.SHUFFLE_2) {
-
+      if (
+        currentPos === SPECIAL_SQUARES.SHUFFLE_1 ||
+        currentPos === SPECIAL_SQUARES.SHUFFLE_2
+      ) {
         if (state.mode === 'STELLA') {
           emissions.push(...this.applyStellaScoreSwap(state, pId));
         } else {
@@ -677,11 +761,14 @@ export class GameService {
       }
 
       // DUELO
-      if (currentPos === SPECIAL_SQUARES.BET_DUEL_1 || currentPos === SPECIAL_SQUARES.BET_DUEL_2) {
+      if (
+        currentPos === SPECIAL_SQUARES.BET_DUEL_1 ||
+        currentPos === SPECIAL_SQUARES.BET_DUEL_2
+      ) {
         emissions.push({
           room: pId,
           event: 'server:game:duel_available',
-          data: { challengerId: pId }
+          data: { challengerId: pId },
         });
       }
 
@@ -696,7 +783,12 @@ export class GameService {
   /**
    * Efecto de Impares y Pares: Solo tiene en cuenta la primera vez de cada jugador.
    */
-  private applyStepEffect(state: GameState, pId: string, type: 'ODD' | 'EVEN', squareId: number): SocketEmission[] {
+  private applyStepEffect(
+    state: GameState,
+    pId: string,
+    type: 'ODD' | 'EVEN',
+    squareId: number,
+  ): SocketEmission[] {
     state.boardRegistry[squareId] = state.boardRegistry[squareId] || [];
 
     if (state.boardRegistry[squareId].includes(pId)) return [];
@@ -708,37 +800,43 @@ export class GameService {
     let isPositive: boolean;
 
     if (type === 'ODD') {
-      isPositive = (order % 2 === 1);
+      isPositive = order % 2 === 1;
     } else {
-      isPositive = (order % 2 === 0);
+      isPositive = order % 2 === 0;
     }
 
     const points = isPositive ? magnitude : -magnitude;
     state.scores[pId] = Math.max(0, state.scores[pId] + points);
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: { pId, effect: type, points, squareId }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { pId, effect: type, points, squareId },
+      },
+    ];
   }
 
   /**
    * Efecto de Equilibrio: Avanza un punto por puesto actual.
    */
   private applyEquilibriumEffect(state: GameState): SocketEmission[] {
-    const ranking = Object.keys(state.scores).sort((a, b) => state.scores[b] - state.scores[a]);
+    const ranking = Object.keys(state.scores).sort(
+      (a, b) => state.scores[b] - state.scores[a],
+    );
 
     ranking.forEach((pId, index) => {
       const position = index + 1;
       state.scores[pId] += position; // Gana tantos puntos como su puesto
     });
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: { effect: 'EQUILIBRIUM' }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: { effect: 'EQUILIBRIUM' },
+      },
+    ];
   }
 
   /**
@@ -769,7 +867,6 @@ export class GameService {
 
     // Robar cartas una a una asegurando que el mazo nunca se acabe
     for (let i = 0; i < handSize; i++) {
-
       // Si se acaba el monton del mazo rebarajamos las cartas ya usadas
       if (state.centralDeck.length === 0) {
         if (state.discardPile.length === 0) break;
@@ -781,7 +878,7 @@ export class GameService {
         emissions.push({
           room: state.lobbyCode,
           event: 'server:game:deck_reshuffled',
-          data: {}
+          data: {},
         });
       }
 
@@ -796,13 +893,13 @@ export class GameService {
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: newHand }
+      data: { hand: newHand },
     });
 
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:special_event',
-      data: { pId, effect: 'SHUFFLE' }
+      data: { pId, effect: 'SHUFFLE' },
     });
 
     return emissions;
@@ -811,14 +908,18 @@ export class GameService {
   /**
    * Efecto Shuffle en STELLA: Intercambia los puntos con otro jugador al azar.
    */
-  private applyStellaScoreSwap(state: GameState, pId: string): SocketEmission[] {
-    const otherPlayers = state.players.filter(p => p !== pId);
+  private applyStellaScoreSwap(
+    state: GameState,
+    pId: string,
+  ): SocketEmission[] {
+    const otherPlayers = state.players.filter((p) => p !== pId);
 
     // Si está jugando solo (desarrollo/tests), no hace nada
     if (otherPlayers.length === 0) return [];
 
     // Elegir un rival al azar
-    const randomRival = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+    const randomRival =
+      otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
 
     // Intercambiar puntuaciones
     const myScore = state.scores[pId] || 0;
@@ -827,49 +928,53 @@ export class GameService {
     state.scores[pId] = rivalScore;
     state.scores[randomRival] = myScore;
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:special_event',
-      data: {
-        pId,
-        effect: 'STELLA_SCORE_SWAP',
-        targetId: randomRival,
-        message: `¡Caos de Stella! Has intercambiado tu puntuación con ${randomRival}.`
-      }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:special_event',
+        data: {
+          pId,
+          effect: 'STELLA_SCORE_SWAP',
+          targetId: randomRival,
+          message: `¡Caos de Stella! Has intercambiado tu puntuación con ${randomRival}.`,
+        },
+      },
+    ];
   }
-  
+
   /**
    * Detecta si el jugador ha aterrizado en la misma puntuación que otro
    * y dispara el evento de minijuego 1vs1.
    */
-  private async checkConflictMinigame(state: GameState, movingPlayerId: string): Promise<SocketEmission[]> {
-
+  private async checkConflictMinigame(
+    state: GameState,
+    movingPlayerId: string,
+  ): Promise<SocketEmission[]> {
     if (state.isMinigameActive) return [];
-    
+
     const currentScore = state.scores[movingPlayerId];
-    
+
     // Ignorar la posición 0 (inicio) para no saturar al empezar
     if (currentScore === 0) return [];
 
     // Buscamos a otro jugador que ya estuviera en esa casilla
-    const rivalId = state.players.find(pId => 
-      pId !== movingPlayerId && state.scores[pId] === currentScore
+    const rivalId = state.players.find(
+      (pId) => pId !== movingPlayerId && state.scores[pId] === currentScore,
     );
 
     if (!rivalId) return [];
 
     // Configuración del minijuego
     const minigameType = Math.floor(Math.random() * 3); // Int 0-2 (Actualmente 3 tipos de juegos, eto esta hablado con Samu)
-    const duration = 15 * 1000;                         // Actualmente duran 15 segundos cada minijuego.
+    const duration = 15 * 1000; // Actualmente duran 15 segundos cada minijuego.
 
     // BLOQUEAMOS LA PARTIDA
     state.isMinigameActive = true;
-    
-    state.activeConflict = { 
-      player1: movingPlayerId, 
-      player2: rivalId, 
-      isDuel: false 
+
+    state.activeConflict = {
+      player1: movingPlayerId,
+      player2: rivalId,
+      isDuel: false,
     };
 
     // Programamos la cancelación automática por si el frontend falla.
@@ -877,20 +982,26 @@ export class GameService {
     await gameTimeoutsQueue.add(
       'minigame-fallback',
       { lobbyCode: state.lobbyCode },
-      { delay: (20 * 1000), jobId: `conflict-${state.lobbyCode}-${Date.now()}`, removeOnComplete: true }
+      {
+        delay: 20 * 1000,
+        jobId: `conflict-${state.lobbyCode}-${Date.now()}`,
+        removeOnComplete: true,
+      },
     );
 
-    return [{
-      room: state.lobbyCode,
-      event: 'server:game:minigame_start',
-      data: {
-        player1: movingPlayerId,
-        player2: rivalId,
-        type: minigameType,
-        duration: duration,
-        isDuel: false // Es un empate, no un duelo (Para reutilizar la casilla de duelo y los desempates)
-      }
-    }];
+    return [
+      {
+        room: state.lobbyCode,
+        event: 'server:game:minigame_start',
+        data: {
+          player1: movingPlayerId,
+          player2: rivalId,
+          type: minigameType,
+          duration: duration,
+          isDuel: false, // Es un empate, no un duelo (Para reutilizar la casilla de duelo y los desempates)
+        },
+      },
+    ];
   }
 
   /**
@@ -898,12 +1009,11 @@ export class GameService {
    * Desbloquea la partida y aplica los puntos correspondientes.
    */
   public async submitConflictResult(
-    lobbyCode: string, 
-    winnerId: string, 
-    loserId: string, 
-    isDuel: boolean
+    lobbyCode: string,
+    winnerId: string,
+    loserId: string,
+    isDuel: boolean,
   ): Promise<SocketEmission[]> {
-    
     const state = await this.redisRepo.getGame(lobbyCode);
     if (!state || !state.isMinigameActive) return [];
 
@@ -925,21 +1035,24 @@ export class GameService {
     // 3. Preparamos las notificaciones
     const emissions: SocketEmission[] = [];
 
-    const message = isDuel 
+    const message = isDuel
       ? `¡${winnerId} ha ganado el Duelo (+2 puntos) contra ${loserId} (-2 puntos)!`
       : `¡${winnerId} ha ganado el desempate y se lleva +1 punto!`;
 
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:special_event',
-      data: { effect: 'CONFLICT_RESOLVED', message }
+      data: { effect: 'CONFLICT_RESOLVED', message },
     });
 
     // Actualizamos el tablero general para todos
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:state_updated',
-      data: { state: this.maskPrivateState(state), lastAction: 'CONFLICT_RESOLVED' }
+      data: {
+        state: this.maskPrivateState(state),
+        lastAction: 'CONFLICT_RESOLVED',
+      },
     });
 
     return emissions;
@@ -949,9 +1062,11 @@ export class GameService {
    * Llamado por el Worker de BullMQ si el Frontend nunca responde al minijuego.
    * Cancela el conflicto sin repartir puntos para evitar que la partida muera.
    */
-  public async forceUnlockMinigame(lobbyCode: string): Promise<SocketEmission[]> {
+  public async forceUnlockMinigame(
+    lobbyCode: string,
+  ): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
-    
+
     // Si ya no está activo, el frontend respondió a tiempo
     if (!state || !state.isMinigameActive) return [];
 
@@ -964,14 +1079,19 @@ export class GameService {
       {
         room: state.lobbyCode,
         event: 'server:game:special_event',
-        data: { effect: 'CONFLICT_CANCELLED', message: 'El minijuego ha sido cancelado por falta de respuesta.' }
+        data: {
+          effect: 'CONFLICT_CANCELLED',
+          message: 'El minijuego ha sido cancelado por falta de respuesta.',
+        },
       },
       {
         room: state.lobbyCode,
         event: 'server:game:state_updated',
-        data: { state: this.maskPrivateState(state), lastAction: 'MINIGAME_TIMEOUT' }
-      }
+        data: {
+          state: this.maskPrivateState(state),
+          lastAction: 'MINIGAME_TIMEOUT',
+        },
+      },
     ];
   }
 }
-
