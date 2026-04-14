@@ -102,14 +102,6 @@ export class GameService {
       centralDeck = [...PREDEFINED_DECKS[randomKey]];
     }
 
-    const hostId = numericPlayerIds[0];
-    const hostData = await prisma.user.findUnique({
-      where: { id_user: hostId },
-      select: { active_board_id: true },
-    });
-    // Si por algún error no tiene tablero activo, usamos el 1 (Classic) como fallback
-    const boardIdToUse = hostData?.active_board_id || 1;
-
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
     // lo que puede generar cartas que no hayamos visto antes de manera consistente.
