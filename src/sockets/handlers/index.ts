@@ -21,7 +21,10 @@ export const setupSockets = (io: Server) => {
     const userId = socket.user?.id;
     const lobbyCode = socket.data?.lobbyCode;
 
-    if (!userId) return socket.disconnect(true);
+    if (!userId) {
+      socket.disconnect(true);
+      return;
+    }
 
     console.log(
       `Socket conectado: ${socket.id} (Usuario: ${socket.user?.username})`,

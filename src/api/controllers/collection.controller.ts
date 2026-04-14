@@ -5,7 +5,7 @@ import { CollectionService } from '../../services';
 import { AuthenticatedRequest } from '../../shared/types';
 
 export const getCollections = async (
-  req: AuthenticatedRequest,
+  _req: AuthenticatedRequest,
   res: Response,
 ): Promise<void> => {
   try {

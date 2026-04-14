@@ -4,13 +4,14 @@
 import { Job, Worker } from 'bullmq';
 import { Server } from 'socket.io';
 
-import { bullmqConnection, GameRepository } from '../infrastructure/redis';
+import { bullmqConnection } from '../infrastructure/redis';
+import { GameRedisRepository } from '../repositories/game.repository';
 import { GameService } from '../services/game.service';
 import { GameAction } from '../shared/types';
 
-export const initializeGameWorker = (io: Server) => {
+export const initializeGameWorker = (_io: Server) => {
   // Necesitamos instanciar el GameService para poder llamarlo
-  const gameService = new GameService(io);
+  const gameService = new GameService(GameRedisRepository);
 
   const gameWorker = new Worker(
     'game-timeouts', // Mismo nombre que la Queue en game.service.ts
@@ -23,7 +24,7 @@ export const initializeGameWorker = (io: Server) => {
         );
 
         // 1. Obtener estado actual
-        const state: any = await GameRepository.getGameState(lobbyCode);
+        const state: any = await GameRedisRepository.getGame(lobbyCode);
         if (!state) return;
 
         // 2. Comprobar que no hayan avanzado ya de fase manualmente

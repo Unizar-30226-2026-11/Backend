@@ -30,6 +30,65 @@ const calculateCleanPrice = (basePrice: number, multiplier: number): number => {
 // ==========================================
 
 class ShopServiceClass {
+  public async checkOwnership(u_id: string, itemId: string): Promise<boolean> {
+    const userId = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
+
+    if (Number.isNaN(userId)) {
+      throw new Error('USER_ID_INVALID');
+    }
+
+    if (itemId.startsWith(ID_PREFIXES.BOARD)) {
+      const boardId = parseInt(itemId.replace(ID_PREFIXES.BOARD, ''));
+      if (Number.isNaN(boardId)) return false;
+
+      const ownedBoard = await prisma.userBoard.findFirst({
+        where: { id_user: userId, id_board: boardId },
+        select: { id_user_board: true },
+      });
+
+      return Boolean(ownedBoard);
+    }
+
+    if (itemId.startsWith(ID_PREFIXES.CARD)) {
+      const cardId = parseInt(itemId.replace(ID_PREFIXES.CARD, ''));
+      if (Number.isNaN(cardId)) return false;
+
+      const ownedCard = await prisma.userCard.findFirst({
+        where: { id_user: userId, id_card: cardId },
+        select: { id_user_card: true },
+      });
+
+      return Boolean(ownedCard);
+    }
+
+    if (itemId.startsWith(ID_PREFIXES.COLLECTION)) {
+      const collId = parseInt(itemId.replace(ID_PREFIXES.COLLECTION, ''));
+      if (Number.isNaN(collId)) return false;
+
+      const collection = await prisma.collection.findUnique({
+        where: { id_collection: collId },
+        select: { cards: { select: { id_card: true } } },
+      });
+
+      if (!collection || collection.cards.length === 0) return false;
+
+      const ownedCount = await prisma.userCard.count({
+        where: {
+          id_user: userId,
+          id_card: { in: collection.cards.map((card) => card.id_card) },
+        },
+      });
+
+      return ownedCount >= collection.cards.length;
+    }
+
+    if (itemId === 'pack_daily') {
+      return false;
+    }
+
+    return false;
+  }
+
   /**
    * Obtiene la tienda diaria privada de un usuario.
    * Utiliza Redis para cachear la tienda durante 24 horas.

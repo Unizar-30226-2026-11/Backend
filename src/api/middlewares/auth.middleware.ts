@@ -33,6 +33,7 @@ export const authenticate = (
     const decodedPayload = jwt.verify(token, secretKey) as {
       id: string;
       username: string;
+      activeGameId?: string | null;
     };
 
     // Adjuntar el payload decodificado al objeto request

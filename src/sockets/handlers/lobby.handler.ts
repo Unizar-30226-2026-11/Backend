@@ -2,11 +2,11 @@
 import { Server } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
-import { GameService, SocketEmission } from '../../services/game.service';
+import { GameService } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
-import { LobbyRecoveredPayload, LobbyStartPayload } from '../events/types';
+import { LobbyStartPayload } from '../events/types';
 import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
 
 export const registerLobbyHandlers = (
