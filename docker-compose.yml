@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: A_Tale_of_Recognition_PostgreSQL
+    restart: always
+    environment:
+      # Docker leerá estos valores de el archivo .env local
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: redis_stack_server
+    restart: always
+    ports:
+      - "6379:6379"
+      # - "8001:8001" # Descomentar para usar RedisInsight UI
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
