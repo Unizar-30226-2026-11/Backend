@@ -28,6 +28,7 @@ export class StandardStrategy implements GameModeStrategy {
       // Resiliencia: Si alguien entra o sale, reevaluamos si la ronda debe avanzar
       case 'DISCONNECT_PLAYER':
       case 'RECONNECT_PLAYER':
+      case 'KICK_PLAYER':
         this.checkPhaseAdvancement(stdState);
         return stdState;
 

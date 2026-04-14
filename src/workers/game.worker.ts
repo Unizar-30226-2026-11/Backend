@@ -4,7 +4,9 @@ import { Server } from 'socket.io';
 
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
-import { GameService } from '../services/game.service';
+import { UserRedisRepository } from '../repositories/user.repository';
+import { GameService, gameTimeoutsQueue } from '../services/game.service';
+import { LobbyService } from '../services/lobby.service';
 import { GameAction } from '../shared/types/game.types';
 
 export const initializeGameWorker = (io: Server) => {
@@ -191,6 +193,71 @@ export const initializeGameWorker = (io: Server) => {
               );
             }
 
+            break;
+          }
+
+          case 'check-afk': {
+            console.log(
+              `[Worker] Evaluando posible AFK en la sala ${targetRoomId}...`,
+            );
+            const { userId, lobbyCode, socketId } = job.data;
+
+            // 1. Miramos cuándo fue su última actividad
+            const lastActivity =
+              await UserRedisRepository.getLastActivity(userId);
+
+            // Si no hay registro, asumimos que ya se desconectó voluntariamente
+            if (!lastActivity) return;
+
+            const now = Date.now();
+            const timeSinceLastAction = now - lastActivity;
+            const AFK_LIMIT = 5 * 60 * 1000; // 5 minutos en milisegundos
+
+            if (timeSinceLastAction >= AFK_LIMIT) {
+              console.log(
+                `[Worker] 🥾 Expulsando al jugador ${userId} por inactividad (>5 mins).`,
+              );
+
+              // Aquí implementas la lógica de kick (usando tus servicios actuales)
+              if (lobbyCode) {
+                // 1. Lo sacamos de Redis del Lobby y de la Partida
+                await LobbyService.leaveLobby(lobbyCode, userId);
+                const gameState = await GameRedisRepository.getGame(lobbyCode);
+                if (gameState) {
+                  await gameService.kickPlayer(lobbyCode, userId);
+                }
+                // 2. Avisamos al resto de la sala
+                io.to(lobbyCode).emit('server:lobby:player_left', {
+                  // o SOCKET_EVENTS.LOBBY_PLAYER_LEFT
+                  user: userId, // Idealmente buscas su username
+                  message: 'Un jugador ha sido expulsado por inactividad.',
+                });
+
+                // 3. Le mandamos un evento a él para que el frontend sepa que fue kickeado y lo redirija al Home
+                io.to(socketId).emit('server:force_disconnect', {
+                  message: 'Has sido desconectado por inactividad.',
+                });
+
+                // 4. Desconectamos su socket a la fuerza
+                const sockets = await io.in(socketId).fetchSockets();
+                if (sockets.length > 0) {
+                  sockets[0].disconnect(true);
+                }
+              }
+            } else {
+              // EL USUARIO SIGUE VIVO: Reprogramamos el job por la diferencia de tiempo
+              const timeLeft = AFK_LIMIT - timeSinceLastAction;
+              console.log(
+                `[Worker] ⏱️ ${userId} sigue activo. Re-comprobando AFK en ${timeLeft}ms.`,
+              );
+
+              // En BullMQ, para encolar desde el propio worker sin ensuciar, usamos la misma cola
+              await gameTimeoutsQueue.add(
+                'check-afk',
+                { userId, lobbyCode, socketId },
+                { delay: timeLeft, jobId: `afk-${userId}-${now}` }, // Nuevo ID para no chocar
+              );
+            }
             break;
           }
 

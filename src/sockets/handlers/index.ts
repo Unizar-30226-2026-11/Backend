@@ -2,6 +2,9 @@ import { Server, Socket } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
 import { LobbyRedisRepository } from '../../repositories/lobby.repository';
+import { UserRedisRepository } from '../../repositories/user.repository';
+// Importa tu cola de timeouts (la que ya usas para el game.worker)
+import { gameTimeoutsQueue } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { SERVER_EVENTS } from '../events';
 import {
@@ -11,7 +14,6 @@ import {
 import { registerChatHandlers } from './chat.handler';
 import { registerGameHandlers } from './game.handlers';
 import { registerLobbyHandlers } from './lobby.handler';
-
 const connectedUsers = new Map<string, Socket>();
 
 export const setupSockets = (io: Server) => {
@@ -22,6 +24,24 @@ export const setupSockets = (io: Server) => {
     const lobbyCode = socket.data?.lobbyCode;
 
     if (!userId) return socket.disconnect(true);
+
+    //Manejo de AFK
+    // 1. REGISTRAMOS SU ACTIVIDAD INICIAL
+    await UserRedisRepository.updateLastActivity(userId);
+
+    // 2. ENCOLAMOS EL PRIMER CHEQUEO DE AFK PARA DENTRO DE 5 MINUTOS (300,000 ms)
+    await gameTimeoutsQueue.add(
+      'check-afk',
+      { userId, lobbyCode, socketId: socket.id },
+      { delay: 300000, jobId: `afk-${userId}-${Date.now()}` }, // jobId con Date.now() evita que BullMQ ignore el job si otro anterior con mismo ID sigue en "completed"
+    );
+    console.log(`AFK check job added for user ${userId} in lobby ${lobbyCode}`);
+
+    // 3. ACTUALIZAMOS LA FECHA CON CUALQUIER COSA QUE HAGA EL USUARIO
+    socket.onAny(async (_eventName, ..._args) => {
+      // Opcional: Filtrar eventos de "ping" si tienes alguno que el cliente manda solo
+      await UserRedisRepository.updateLastActivity(userId);
+    });
 
     console.log(
       `Socket conectado: ${socket.id} (Usuario: ${socket.user?.username})`,

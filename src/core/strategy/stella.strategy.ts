@@ -29,6 +29,7 @@ export class StellaStrategy implements GameModeStrategy {
 
       case 'DISCONNECT_PLAYER':
       case 'RECONNECT_PLAYER':
+      case 'KICK_PLAYER':
         // Si un jugador se conecta o desconecta, evaluamos si la fase debe avanzar
         // (por ejemplo, si estábamos esperando a ese único jugador para continuar).
         this.checkPhaseAdvancement(stellaState);
