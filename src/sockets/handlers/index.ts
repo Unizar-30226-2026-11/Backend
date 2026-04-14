@@ -33,7 +33,7 @@ export const setupSockets = (io: Server) => {
     await gameTimeoutsQueue.add(
       'check-afk',
       { userId, lobbyCode, socketId: socket.id },
-      { delay: 300000, jobId: `afk-${userId}-${Date.now()}` }, // jobId con Date.now() evita que BullMQ ignore el job si otro anterior con mismo ID sigue en "completed"
+      { delay: 1800000, jobId: `afk-${userId}-${Date.now()}` }, // jobId con Date.now() evita que BullMQ ignore el job si otro anterior con mismo ID sigue en "completed"
     );
     console.log(`AFK check job added for user ${userId} in lobby ${lobbyCode}`);
 

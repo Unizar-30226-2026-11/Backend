@@ -211,7 +211,7 @@ export const initializeGameWorker = (io: Server) => {
 
             const now = Date.now();
             const timeSinceLastAction = now - lastActivity;
-            const AFK_LIMIT = 5 * 60 * 1000; // 5 minutos en milisegundos
+            const AFK_LIMIT = 30 * 60 * 1000; // 30 minutos en milisegundos
 
             if (timeSinceLastAction >= AFK_LIMIT) {
               console.log(
@@ -221,11 +221,11 @@ export const initializeGameWorker = (io: Server) => {
               // Aquí implementas la lógica de kick (usando tus servicios actuales)
               if (lobbyCode) {
                 // 1. Lo sacamos de Redis del Lobby y de la Partida
-                await LobbyService.leaveLobby(lobbyCode, userId);
                 const gameState = await GameRedisRepository.getGame(lobbyCode);
                 if (gameState) {
                   await gameService.kickPlayer(lobbyCode, userId);
                 }
+                await LobbyService.leaveLobby(lobbyCode, userId);
                 // 2. Avisamos al resto de la sala
                 io.to(lobbyCode).emit('server:lobby:player_left', {
                   // o SOCKET_EVENTS.LOBBY_PLAYER_LEFT
