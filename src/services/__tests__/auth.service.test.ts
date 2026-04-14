@@ -1,8 +1,8 @@
 import 'dotenv/config';
 
 import { prisma } from '../../infrastructure/prisma';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { AuthService } from '../auth.service';
-import { ID_PREFIXES } from '../../shared/constants/id-prefixes'; 
 
 describe('AuthService - Pruebas Funciones', () => {
   const email_test: string = 'correo_de_prueba@gmail.com';
@@ -13,9 +13,13 @@ describe('AuthService - Pruebas Funciones', () => {
 
   beforeAll(async () => {
     // Limpieza Preventiva
-    const existingUser = await prisma.user.findUnique({ where: { email: email_test } });
+    const existingUser = await prisma.user.findUnique({
+      where: { email: email_test },
+    });
     if (existingUser) {
-      await prisma.userBoard.deleteMany({ where: { id_user: existingUser.id_user } });
+      await prisma.userBoard.deleteMany({
+        where: { id_user: existingUser.id_user },
+      });
       await prisma.user.delete({ where: { id_user: existingUser.id_user } });
     }
 
@@ -27,8 +31,8 @@ describe('AuthService - Pruebas Funciones', () => {
         name: 'CLASSIC',
         description: 'Tablero inicial',
         price: 0,
-        url_image: 'https://midominio.com/boards/classic.png'
-      }
+        url_image: 'https://midominio.com/boards/classic.png',
+      },
     });
   });
 
@@ -52,7 +56,7 @@ describe('AuthService - Pruebas Funciones', () => {
       // Comprobar que se ha creado la relación de tablero
       const userId = parseInt(resultado.id.replace(ID_PREFIXES.USER, ''));
       const boardCheck = await prisma.userBoard.findFirst({
-        where: { id_user: userId }
+        where: { id_user: userId },
       });
       expect(boardCheck).toBeDefined();
     });
@@ -65,7 +69,7 @@ describe('AuthService - Pruebas Funciones', () => {
   describe('Buscar Usuario. -> findUserByEmailOrUsername() ', () => {
     test('Usuario Existente:', async () => {
       const resultado = await AuthService.findUserByEmailOrUsername(
-        email_test, 
+        email_test,
         username_test,
       );
 
@@ -119,9 +123,13 @@ describe('AuthService - Pruebas Funciones', () => {
   });
 
   afterAll(async () => {
-    const existingUser = await prisma.user.findUnique({ where: { email: email_test } });
+    const existingUser = await prisma.user.findUnique({
+      where: { email: email_test },
+    });
     if (existingUser) {
-      await prisma.userBoard.deleteMany({ where: { id_user: existingUser.id_user } });
+      await prisma.userBoard.deleteMany({
+        where: { id_user: existingUser.id_user },
+      });
       await prisma.user.delete({ where: { id_user: existingUser.id_user } });
     }
   });

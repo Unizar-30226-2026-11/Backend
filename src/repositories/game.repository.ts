@@ -23,7 +23,7 @@ export const GameRedisRepository = {
       discardPile: JSON.parse((data.discardPile as string) || '[]'),
       currentRound: JSON.parse((data.currentRound as string) || '{}'),
       boardRegistry: JSON.parse((data.boardRegistry as string) || '{}'),
-      activeConflict: JSON.parse((data.activeConflict as string) || 'null')
+      activeConflict: JSON.parse((data.activeConflict as string) || 'null'),
     } as unknown as GameState;
   },
 
@@ -40,7 +40,7 @@ export const GameRedisRepository = {
       discardPile: JSON.stringify(state.discardPile),
       currentRound: JSON.stringify(state.currentRound),
       boardRegistry: JSON.stringify(state.boardRegistry),
-      activeConflict: JSON.stringify(state.activeConflict ?? null)
+      activeConflict: JSON.stringify(state.activeConflict ?? null),
     });
   },
 
@@ -58,10 +58,11 @@ export const GameRedisRepository = {
   async getAllActiveLobbies(): Promise<string[]> {
     const activeGames = await gameRepository
       .search()
-      .where('phase').not.equalTo('FINISHED')
+      .where('phase')
+      .not.equalTo('FINISHED')
       .return.all();
 
     // Usamos .lobbyCode porque es como se llama en tu gameStateSchema
-    return activeGames.map(game => game.lobbyCode as string); 
-  }
+    return activeGames.map((game) => game.lobbyCode as string);
+  },
 };

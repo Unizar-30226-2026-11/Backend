@@ -1,4 +1,5 @@
 // middlewares/validators.middleware.ts
+import { User_States } from '@prisma/client';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -15,7 +16,7 @@ const PARAM_PREFIX_MAP: Record<string, string> = {
   userId: ID_PREFIXES.USER,
   friendId: ID_PREFIXES.USER,
   targetUserId: ID_PREFIXES.USER,
-  requestId: ID_PREFIXES.REQUEST,
+  requestId: ID_PREFIXES.REQ,
   collectionId: ID_PREFIXES.COLLECTION,
   deckId: ID_PREFIXES.DECK,
 };
@@ -239,11 +240,10 @@ export const validateStatusBody = (
   next: NextFunction,
 ): void => {
   const { status } = req.body;
-  const ALLOWED_STATUSES = ['ONLINE', 'AWAY', 'BUSY', 'INVISIBLE'];
 
-  if (!status || !ALLOWED_STATUSES.includes(status)) {
+  if (!status || !Object.values(User_States).includes(status)) {
     res.status(400).json({
-      message: `Estado no válido. Opciones: ${ALLOWED_STATUSES.join(', ')}`,
+      message: `Estado no válido. Opciones: ${Object.values(User_States).join(', ')}`,
     });
     return;
   }

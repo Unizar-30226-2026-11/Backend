@@ -5,7 +5,7 @@ import { SignOptions } from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
 import { UserRedisRepository } from '../repositories';
-import { ID_PREFIXES } from '../shared/constants/id-prefixes'; 
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -46,19 +46,20 @@ export const AuthService = {
     const hashedPassword = await bcrypt.hash(passwordRaw, saltRounds);
 
     const newUser = await prisma.$transaction(async (tx) => {
-
       const user = await tx.user.create({
         data: {
           email,
           username,
           password: hashedPassword,
-          coins: 500
+          coins: 500,
         },
       });
 
       // Buscar el ID del tablero 'CLASSIC' (Asumimos que el ID es 1 por el Seed)
       // Si prefieres buscarlo por nombre para ser más seguro:
-      const classicBoard = await tx.board.findUnique({ where: { name: 'CLASSIC' } });
+      const classicBoard = await tx.board.findUnique({
+        where: { name: 'CLASSIC' },
+      });
       const classicId = classicBoard?.id_board || 1;
 
       // Darle la propiedad del tablero
@@ -66,13 +67,13 @@ export const AuthService = {
         data: {
           id_user: user.id_user,
           id_board: classicId,
-        }
+        },
       });
 
       // Establecerlo como activo
       return await tx.user.update({
         where: { id_user: user.id_user },
-        data: { active_board_id: classicId }
+        data: { active_board_id: classicId },
       });
     });
     return {
