@@ -59,7 +59,7 @@ export class GameService {
     });
 
     console.log('IDs obtenidos');
-
+    let centralDeck: number[] = [];
     const hostId = numericPlayerIds[0];
     const hostData = await prisma.user.findUnique({
       where: { id_user: hostId },
