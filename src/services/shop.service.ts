@@ -36,17 +36,14 @@ class ShopServiceClass {
    */
   public async getAvailableItems(userId: number): Promise<any> {
 
-    // Preguntamos al Repositorio si ya existe la tienda generada hoy
-    const cachedShop = await ShopRedisRepository.getDailyShop(userId);
-    if (cachedShop) return cachedShop;
-
-    // Cálculo de reinicio del servidor:
-
     const now = new Date();
+    // Inicio del día actual en UTC (00:00:00) para filtrar transacciones de hoy
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     // Creamos una fecha que apunte exactamente a las 00:00:00 del día siguiente (en horario universal UTC)
     const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
     // Calculamos los segundos exactos que faltan para llegar a esa medianoche
     const secondsUntilMidnight = Math.floor((nextMidnight.getTime() - now.getTime()) / 1000);
+
 
     // Obtener inventario actual del usuario
     const userInventory = await prisma.user.findUnique({
@@ -59,6 +56,48 @@ class ShopServiceClass {
 
     const ownedCardIds = new Set(userInventory?.my_cards.map(c => c.id_card) || []);
     const ownedBoardIds = new Set(userInventory?.my_boards.map(b => b.id_board) || []);
+
+    // Consultar historial de compras de HOY (Para Sobres y Colecciones)
+    const todayPurchases = await prisma.purchaseHistory.findMany({
+      where: {
+        id_user: userId,
+        purchased_at: { gte: startOfDay }
+      },
+      select: { purchase_type: true }
+    });
+
+    const boughtPackToday = todayPurchases.some(p => p.purchase_type === 'CARD_PACK');
+    const boughtCollectionToday = todayPurchases.some(p => p.purchase_type === 'COLLECTION');
+
+    // Preguntamos al Repositorio si ya existe la tienda generada hoy
+    const cachedShop = await ShopRedisRepository.getDailyShop(userId);
+    if (cachedShop) {
+      return {
+        ...cachedShop,
+        singleCards: cachedShop.singleCards.map((c: any) => ({
+          ...c,
+          // Se bloquea si la carta ya está en su inventario
+          isPurchased: ownedCardIds.has(parseInt(c.id_card.replace(ID_PREFIXES.CARD, '')))
+        })),
+        boardOffer: cachedShop.boardOffer ? {
+          ...cachedShop.boardOffer,
+          // Se bloquea si el tablero ya está en su inventario
+          isPurchased: ownedBoardIds.has(parseInt(cachedShop.boardOffer.id_board.replace(ID_PREFIXES.BOARD, '')))
+        } : null,
+        collectionOffer: cachedShop.collectionOffer ? {
+          ...cachedShop.collectionOffer,
+          // Se bloquea si ya hay una transacción de tipo 'COLLECTION' hoy (Permitiria comprar la coleccion si se acabase ese dia mediante packs o cartas)
+          isPurchased: boughtCollectionToday 
+        } : null,
+        cardPackOffer: cachedShop.cardPackOffer ? {
+          ...cachedShop.cardPackOffer,
+          // Se bloquea si ya hay una transacción de tipo 'CARD_PACK' hoy
+          isPurchased: boughtPackToday
+        } : null
+      };
+    }
+
+    
 
     // Cartas individuales
     const allCards = await prisma.cards.findMany();
@@ -85,7 +124,8 @@ class ShopServiceClass {
         title: c.title,
         rarity: c.rarity,
         price: RARITY_PRICES[c.rarity],
-        url_image: c.url_image
+        url_image: c.url_image,
+        isPurchased: false
       })),
       cardPackOffer: {
         id_pack: 'pack_daily',
@@ -93,23 +133,26 @@ class ShopServiceClass {
         cards: pack.map(c => ({
           id_card: `${ID_PREFIXES.CARD}${c.id_card}`,
           title: c.title,
-          url_image: c.url_image
+          url_image: c.url_image,
         })),
         card_ids: pack.map(c => c.id_card),
         description: "5 cartas con 25% de descuento",
-        price: calculateCleanPrice(pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.75)
+        price: calculateCleanPrice(pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.75),
+        isPurchased: boughtPackToday
       },
       collectionOffer: randomColl ? {
         id_collection: `${ID_PREFIXES.COLLECTION}${randomColl.id_collection}`,
         name: randomColl.name,
-        price: calculateCleanPrice(randomColl.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.80)
+        price: calculateCleanPrice(randomColl.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.80),
+        isPurchased: boughtCollectionToday
       } : null,
       boardOffer: selectedBoard ? { 
         id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`, 
         name: selectedBoard.name, 
         price: selectedBoard.price,
         description: selectedBoard.description,
-        url_image: selectedBoard.url_image
+        url_image: selectedBoard.url_image,
+        isPurchased: false
       } : null,
       expiresAt: nextMidnight.toISOString()
     };
@@ -193,6 +236,24 @@ class ShopServiceClass {
 
       } else {
         throw { status: 400, message: 'Formato de artículo desconocido.' };
+      }
+
+      // Validar límite de 1 vez al día para Sobres y Colecciones
+      if (purchaseType === 'CARD_PACK' || purchaseType === 'COLLECTION') {
+        const now = new Date();
+        const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        
+        const alreadyBoughtToday = await tx.purchaseHistory.findFirst({
+          where: {
+            id_user: userId,
+            purchase_type: purchaseType,
+            purchased_at: { gte: startOfDay }
+          }
+        });
+
+        if (alreadyBoughtToday) {
+          throw { status: 400, message: `Ya has comprado tu ${purchaseType === 'CARD_PACK' ? 'sobre' : 'colección'} diario.` };
+        }
       }
 
       // --- PROCESO DE PAGO ---
