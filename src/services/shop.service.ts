@@ -153,14 +153,13 @@ class ShopServiceClass {
 
     const pack = allCards.sort(() => 0.5 - Math.random()).slice(0, 5);
 
-    const shop = {
+    const baseShop = {
       singleCards: singles.map((c) => ({
         id_card: `${ID_PREFIXES.CARD}${c.id_card}`,
         title: c.title,
         rarity: c.rarity,
         price: RARITY_PRICES[c.rarity],
         url_image: c.url_image,
-        isPurchased: false,
       })),
       cardPackOffer: {
         id_pack: 'pack_daily',
@@ -172,40 +171,46 @@ class ShopServiceClass {
         })),
         card_ids: pack.map((c) => c.id_card),
         description: '5 cartas con 25% de descuento',
-        price: calculateCleanPrice(
-          pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0),
-          0.75,
-        ),
-        isPurchased: boughtPackToday,
+        price: calculateCleanPrice(pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.75),
       },
-      collectionOffer: randomColl
-        ? {
-            id_collection: `${ID_PREFIXES.COLLECTION}${randomColl.id_collection}`,
-            name: randomColl.name,
-            price: calculateCleanPrice(
-              randomColl.cards.reduce(
-                (sum, c) => sum + RARITY_PRICES[c.rarity],
-                0,
-              ),
-              0.8,
-            ),
-            isPurchased: boughtCollectionToday,
-          }
-        : null,
-      boardOffer: selectedBoard
-        ? {
-            id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`,
-            name: selectedBoard.name,
-            price: selectedBoard.price,
-            description: selectedBoard.description,
-            url_image: selectedBoard.url_image,
-            isPurchased: false,
-          }
-        : null,
+      collectionOffer: randomColl ? {
+        id_collection: `${ID_PREFIXES.COLLECTION}${randomColl.id_collection}`,
+        name: randomColl.name,
+        price: calculateCleanPrice(randomColl.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.8),
+      } : null,
+      boardOffer: selectedBoard ? {
+        id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`,
+        name: selectedBoard.name,
+        price: selectedBoard.price,
+        description: selectedBoard.description,
+        url_image: selectedBoard.url_image,
+      } : null,
       expiresAt: nextMidnight.toISOString(),
     };
 
-    await ShopRedisRepository.saveDailyShop(userId, shop, secondsUntilMidnight);
+    await ShopRedisRepository.saveDailyShop(userId, baseShop, secondsUntilMidnight);
+    
+    const shop = {
+      ...baseShop,
+      singleCards: baseShop.singleCards.map((c) => ({
+        ...c,
+        isPurchased: false, // Se generan para que no las tenga
+      })),
+      cardPackOffer: {
+        ...baseShop.cardPackOffer,
+        isPurchased: boughtPackToday,
+      },
+      collectionOffer: baseShop.collectionOffer ? {
+        ...baseShop.collectionOffer,
+        isPurchased: boughtCollectionToday,
+      } : null,
+      boardOffer: baseShop.boardOffer ? {
+        ...baseShop.boardOffer,
+        isPurchased: false, // Se genera para no tenerlo (o no lo hace)
+      } : null,
+    };
+
+
     return shop;
   }
 
