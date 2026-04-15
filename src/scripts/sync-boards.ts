@@ -67,6 +67,35 @@ function toBoardName(rawNameWithoutExt: string): string {
     .toUpperCase();
 }
 
+function extractPriceSuffix(rawNameWithoutExt: string): {
+  baseName: string;
+  priceOverride: number | null;
+} {
+  const match = rawNameWithoutExt.match(/^(.*?)-([0-9]+)$/);
+
+  if (!match) {
+    return {
+      baseName: rawNameWithoutExt,
+      priceOverride: null,
+    };
+  }
+
+  const baseName = match[1].trim();
+  const parsedPrice = Number.parseInt(match[2], 10);
+
+  if (!baseName || Number.isNaN(parsedPrice)) {
+    return {
+      baseName: rawNameWithoutExt,
+      priceOverride: null,
+    };
+  }
+
+  return {
+    baseName,
+    priceOverride: parsedPrice,
+  };
+}
+
 function getBoardMetadata(boardName: string, rawNameWithoutExt: string) {
   return (
     BOARD_METADATA[boardName] ?? {
@@ -262,15 +291,16 @@ function parseBoardFile(absolutePath: string): BoardFileInfo | null {
   }
 
   const rawNameWithoutExt = path.parse(filename).name;
-  const boardName = toBoardName(rawNameWithoutExt);
-  const metadata = getBoardMetadata(boardName, rawNameWithoutExt);
+  const { baseName, priceOverride } = extractPriceSuffix(rawNameWithoutExt);
+  const boardName = toBoardName(baseName);
+  const metadata = getBoardMetadata(boardName, baseName);
 
   return {
     absolutePath,
     filename,
     boardName,
     description: metadata.description,
-    price: metadata.price,
+    price: priceOverride ?? metadata.price,
   };
 }
 
