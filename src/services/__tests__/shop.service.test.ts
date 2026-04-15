@@ -1,9 +1,8 @@
 import 'dotenv/config';
-
 import { prisma } from '../../infrastructure/prisma';
-import { redisClient } from '../../infrastructure/redis';
-import { ShopRedisRepository } from '../../repositories/shop.repository';
 import { ShopService } from '../../services/shop.service';
+import { ShopRedisRepository } from '../../repositories/shop.repository';
+import { redisClient } from '../../infrastructure/redis';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 describe('ShopService - Sistema de ', () => {
@@ -139,6 +138,28 @@ describe('ShopService - Sistema de ', () => {
       prismaSpy.mockRestore();
     });
 
+    test('Debe inyectar isPurchased: true dinámicamente si el usuario compró un artículo de la tienda en caché', async () => {
+      const shopOriginal =
+        await ShopService.getAvailableItems(id_usuario_pobre);
+      const cardToBuyIdRaw = shopOriginal.singleCards[0].id_card;
+      const cardToBuyId = parseInt(
+        cardToBuyIdRaw.replace(ID_PREFIXES.CARD, ''),
+      );
+
+      // Simulamos que el usuario pobre consiguió la carta
+      await prisma.userCard.create({
+        data: { id_user: id_usuario_pobre, id_card: cardToBuyId },
+      });
+
+      // Solicitamos la tienda otra vez (traerá de Redis, pero inyectará el booleano al vuelo)
+      const updatedShop = await ShopService.getAvailableItems(id_usuario_pobre);
+      const modifiedCard = updatedShop.singleCards.find(
+        (c: any) => c.id_card === cardToBuyIdRaw,
+      );
+
+      expect(modifiedCard.isPurchased).toBe(true);
+    });
+
     test('No debe ofrecer un tablero que el usuario ya posee', async () => {
       const shopOriginal = await ShopService.getAvailableItems(id_usuario_rico);
 
@@ -246,6 +267,30 @@ describe('ShopService - Sistema de ', () => {
     });
 
     describe('Validaciones y Errores', () => {
+      test('Error 400: No debe permitir comprar más de un sobre al día', async () => {
+        // Primero le damos dinero extra por si acaso y simulamos la compra del pack de hoy
+        await ShopRedisRepository.deleteDailyShop(id_usuario_rico); // Para asegurar que no falle por caché vacío
+        await ShopService.getAvailableItems(id_usuario_rico); // Generar tienda con pack
+
+        // Compra 1 (Éxito)
+        await ShopService.processPurchase(
+          `${ID_PREFIXES.USER}${id_usuario_rico}`,
+          `pack_daily`,
+        );
+
+        // Compra 2 (Debe fallar)
+        try {
+          await ShopService.processPurchase(
+            `${ID_PREFIXES.USER}${id_usuario_rico}`,
+            `pack_daily`,
+          );
+          fail('Debería haber lanzado un error por límite diario');
+        } catch (error: any) {
+          expect(error.status).toBe(400);
+          expect(error.message).toContain('Ya has comprado tu sobre');
+        }
+      });
+
       test('Error 403: Fondos insuficientes', async () => {
         try {
           await ShopService.processPurchase(
