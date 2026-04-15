@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
     "build": "tsc && tsc-alias",
+    "sync": "ts-node-dev --transpile-only src/scripts/sync.ts",
+    "sync:prod": "node dist/scripts/sync.js",
     "sync:cards": "ts-node-dev --transpile-only src/scripts/sync-cards.ts",
+    "sync:boards": "ts-node-dev --transpile-only src/scripts/sync-boards.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\"",
