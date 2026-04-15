@@ -171,25 +171,42 @@ class ShopServiceClass {
         })),
         card_ids: pack.map((c) => c.id_card),
         description: '5 cartas con 25% de descuento',
-        price: calculateCleanPrice(pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.75),
+        price: calculateCleanPrice(
+          pack.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0),
+          0.75,
+        ),
       },
-      collectionOffer: randomColl ? {
-        id_collection: `${ID_PREFIXES.COLLECTION}${randomColl.id_collection}`,
-        name: randomColl.name,
-        price: calculateCleanPrice(randomColl.cards.reduce((sum, c) => sum + RARITY_PRICES[c.rarity], 0), 0.8),
-      } : null,
-      boardOffer: selectedBoard ? {
-        id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`,
-        name: selectedBoard.name,
-        price: selectedBoard.price,
-        description: selectedBoard.description,
-        url_image: selectedBoard.url_image,
-      } : null,
+      collectionOffer: randomColl
+        ? {
+            id_collection: `${ID_PREFIXES.COLLECTION}${randomColl.id_collection}`,
+            name: randomColl.name,
+            price: calculateCleanPrice(
+              randomColl.cards.reduce(
+                (sum, c) => sum + RARITY_PRICES[c.rarity],
+                0,
+              ),
+              0.8,
+            ),
+          }
+        : null,
+      boardOffer: selectedBoard
+        ? {
+            id_board: `${ID_PREFIXES.BOARD}${selectedBoard.id_board}`,
+            name: selectedBoard.name,
+            price: selectedBoard.price,
+            description: selectedBoard.description,
+            url_image: selectedBoard.url_image,
+          }
+        : null,
       expiresAt: nextMidnight.toISOString(),
     };
 
-    await ShopRedisRepository.saveDailyShop(userId, baseShop, secondsUntilMidnight);
-    
+    await ShopRedisRepository.saveDailyShop(
+      userId,
+      baseShop,
+      secondsUntilMidnight,
+    );
+
     const shop = {
       ...baseShop,
       singleCards: baseShop.singleCards.map((c) => ({
@@ -200,16 +217,19 @@ class ShopServiceClass {
         ...baseShop.cardPackOffer,
         isPurchased: boughtPackToday,
       },
-      collectionOffer: baseShop.collectionOffer ? {
-        ...baseShop.collectionOffer,
-        isPurchased: boughtCollectionToday,
-      } : null,
-      boardOffer: baseShop.boardOffer ? {
-        ...baseShop.boardOffer,
-        isPurchased: false, // Se genera para no tenerlo (o no lo hace)
-      } : null,
+      collectionOffer: baseShop.collectionOffer
+        ? {
+            ...baseShop.collectionOffer,
+            isPurchased: boughtCollectionToday,
+          }
+        : null,
+      boardOffer: baseShop.boardOffer
+        ? {
+            ...baseShop.boardOffer,
+            isPurchased: false, // Se genera para no tenerlo (o no lo hace)
+          }
+        : null,
     };
-
 
     return shop;
   }
@@ -420,6 +440,74 @@ class ShopServiceClass {
               url_image: c.card.url_image,
             })),
     }));
+  }
+
+  /**
+   * Verifica si el usuario ya posee un artículo o si ya ha consumido su límite diario.
+   * Utilizado por el middleware de propiedad (checkItemNotOwned).
+   */
+  public async checkOwnership(u_Id: string, itemId: string): Promise<boolean> {
+    const userId = parseInt(u_Id.replace(ID_PREFIXES.USER, ''));
+    if (isNaN(userId))
+      throw { status: 400, message: 'ID de usuario inválido.' };
+
+    // Tableros (Cosméticos únicos)
+    if (itemId.startsWith(ID_PREFIXES.BOARD)) {
+      const boardId = parseInt(itemId.replace(ID_PREFIXES.BOARD, ''));
+      const alreadyOwned = await prisma.userBoard.findFirst({
+        where: { id_user: userId, id_board: boardId },
+      });
+      return !!alreadyOwned;
+    }
+
+    // Verificar Cartas Sueltas (Únicas)
+    if (itemId.startsWith(ID_PREFIXES.CARD)) {
+      const cardId = parseInt(itemId.replace(ID_PREFIXES.CARD, ''));
+      const alreadyOwned = await prisma.userCard.findFirst({
+        where: { id_user: userId, id_card: cardId },
+      });
+      return !!alreadyOwned;
+    }
+
+    if (itemId.startsWith(ID_PREFIXES.COLLECTION)) {
+      const collId = parseInt(itemId.replace(ID_PREFIXES.COLLECTION, ''));
+
+      const collection = await prisma.collection.findUnique({
+        where: { id_collection: collId },
+        include: { cards: true },
+      });
+
+      if (!collection || collection.cards.length === 0) return false;
+
+      const ownedInCollCount = await prisma.userCard.count({
+        where: {
+          id_user: userId,
+          id_card: { in: collection.cards.map((c) => c.id_card) },
+        },
+      });
+
+      return ownedInCollCount === collection.cards.length;
+    }
+
+    // Sobre Diario (Límite 1 por día)
+    const now = new Date();
+    const startOfDay = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    if (itemId === 'pack_daily') {
+      const boughtToday = await prisma.purchaseHistory.findFirst({
+        where: {
+          id_user: userId,
+          purchase_type: 'CARD_PACK',
+          purchased_at: { gte: startOfDay },
+        },
+      });
+      return !!boughtToday;
+    }
+
+    // Si el formato del item no coincide con nada conocido devolvemos false
+    return false;
   }
 }
 
