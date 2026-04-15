@@ -2,9 +2,9 @@
 import { Response } from 'express';
 
 import { ShopService } from '../../services/shop.service';
+import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { AuthenticatedRequest } from '../../shared/types';
 import { LockManager } from '../../shared/utils/lockManager';
-import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 export const getShopItems = async (
   req: AuthenticatedRequest,

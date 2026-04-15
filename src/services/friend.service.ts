@@ -3,8 +3,8 @@
 import { Friendship_States } from '@prisma/client';
 
 import { prisma } from '../infrastructure/prisma';
-import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
+import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
 
 export const FriendService = {
   // Obtener lista de amigos de un usuario
@@ -173,10 +173,16 @@ export const FriendService = {
     if (result.count > 0) {
       for (const request of validRequests) {
         // Borramos la caché de amigos de ambos
-        await invalidateCache(`cache:friends:confirmed:${ID_PREFIXES.USER}${request.id_user_1}`);
-        await invalidateCache(`cache:friends:confirmed:${ID_PREFIXES.USER}${request.id_user_2}`);
+        await invalidateCache(
+          `cache:friends:confirmed:${ID_PREFIXES.USER}${request.id_user_1}`,
+        );
+        await invalidateCache(
+          `cache:friends:confirmed:${ID_PREFIXES.USER}${request.id_user_2}`,
+        );
         // Borramos la caché de pendientes del que la recibió
-        await invalidateCache(`cache:friends:pending:${ID_PREFIXES.USER}${request.id_user_2}`);
+        await invalidateCache(
+          `cache:friends:pending:${ID_PREFIXES.USER}${request.id_user_2}`,
+        );
       }
     }
 
@@ -187,7 +193,9 @@ export const FriendService = {
     const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
     const f_ids_array = Array.isArray(f_id) ? f_id : [f_id];
 
-    const friend_ids = f_ids_array.map((id) => parseInt(id.replace(ID_PREFIXES.USER, '')));
+    const friend_ids = f_ids_array.map((id) =>
+      parseInt(id.replace(ID_PREFIXES.USER, '')),
+    );
 
     if (friend_ids.length === 0) return false;
 
@@ -204,7 +212,9 @@ export const FriendService = {
     if (result.count > 0) {
       await invalidateCache(`cache:friends:confirmed:${u_id}`);
       for (const id of friend_ids) {
-        await invalidateCache(`cache:friends:confirmed:${ID_PREFIXES.USER}${id}`);
+        await invalidateCache(
+          `cache:friends:confirmed:${ID_PREFIXES.USER}${id}`,
+        );
       }
     }
 
@@ -238,7 +248,9 @@ export const FriendService = {
     // 6. Invalidar la caché de pendientes del receptor
     if (result.count > 0) {
       for (const cond of validConditions) {
-        await invalidateCache(`cache:friends:pending:${ID_PREFIXES.USER}${cond.id_user_2}`);
+        await invalidateCache(
+          `cache:friends:pending:${ID_PREFIXES.USER}${cond.id_user_2}`,
+        );
       }
     }
 

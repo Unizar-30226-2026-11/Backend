@@ -3,14 +3,14 @@ import 'dotenv/config';
 import { User_States } from '@prisma/client';
 
 import { prisma } from '../../infrastructure/prisma';
-import { UserService } from '../user.service';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
+import { UserService } from '../user.service';
 
 describe('UserService - Pruebas Funciones', () => {
   let id_deck_created: string;
-  
+
   // Variables dinámicas para reemplazar los IDs fijos (u_1, d_1, c_1...)
-  let main_u: string; 
+  let main_u: string;
   let id_usuario_a_borrar: string;
   let cartas_reales: string[] = []; // Guardará ['c_15', 'c_16'...]
   let cartas_reales_ids: number[] = []; // Guardará [15, 16...]
@@ -18,34 +18,55 @@ describe('UserService - Pruebas Funciones', () => {
   const mazos_a_borrar: string[] = [];
 
   beforeAll(async () => {
-
     const ghostUsers = await prisma.user.findMany({
-      where: { username: { in: ['Jugador_Main', 'UsuarioSacrificable_Full', 'AmigoTest', 'CambiadoC0Nexito', 'Jugador1', 'Ocupado'] } },
+      where: {
+        username: {
+          in: [
+            'Jugador_Main',
+            'UsuarioSacrificable_Full',
+            'AmigoTest',
+            'CambiadoC0Nexito',
+            'Jugador1',
+            'Ocupado',
+          ],
+        },
+      },
     });
 
     for (const ghost of ghostUsers) {
-      await prisma.purchaseHistoryCard.deleteMany({ where: { purchase: { id_user: ghost.id_user } } });
-      await prisma.purchaseHistory.deleteMany({ where: { id_user: ghost.id_user } });
-      await prisma.userGameStats.deleteMany({ where: { id_user: ghost.id_user } });
-      await prisma.deckCard.deleteMany({ where: { deck: { id_user: ghost.id_user } } });
+      await prisma.purchaseHistoryCard.deleteMany({
+        where: { purchase: { id_user: ghost.id_user } },
+      });
+      await prisma.purchaseHistory.deleteMany({
+        where: { id_user: ghost.id_user },
+      });
+      await prisma.userGameStats.deleteMany({
+        where: { id_user: ghost.id_user },
+      });
+      await prisma.deckCard.deleteMany({
+        where: { deck: { id_user: ghost.id_user } },
+      });
       await prisma.userCard.deleteMany({ where: { id_user: ghost.id_user } });
       await prisma.userBoard.deleteMany({ where: { id_user: ghost.id_user } });
       await prisma.deck.deleteMany({ where: { id_user: ghost.id_user } });
       await prisma.friendships.deleteMany({
-        where: { OR: [{ id_user_1: ghost.id_user }, { id_user_2: ghost.id_user }] },
+        where: {
+          OR: [{ id_user_1: ghost.id_user }, { id_user_2: ghost.id_user }],
+        },
       });
       await prisma.user.delete({ where: { id_user: ghost.id_user } });
     }
 
     // Limpiamos tableros residuales del test
-    await prisma.board.deleteMany({ where: { name: 'Tablero Test User' }});
+    await prisma.board.deleteMany({ where: { name: 'Tablero Test User' } });
 
     // Extraer cartas reales de la base de datos (necesitamos al menos 12 para los tests)
     const dbCards = await prisma.cards.findMany({ take: 12 });
-    if (dbCards.length < 12) throw new Error("No hay 12 cartas en la BD. Ejecuta el seed.");
-    
-    cartas_reales_ids = dbCards.map(c => c.id_card);
-    cartas_reales = cartas_reales_ids.map(id => `${ID_PREFIXES.CARD}${id}`);
+    if (dbCards.length < 12)
+      throw new Error('No hay 12 cartas en la BD. Ejecuta el seed.');
+
+    cartas_reales_ids = dbCards.map((c) => c.id_card);
+    cartas_reales = cartas_reales_ids.map((id) => `${ID_PREFIXES.CARD}${id}`);
 
     //Creamos un tablero para el usuario
     const testBoard = await prisma.board.create({
@@ -53,11 +74,11 @@ describe('UserService - Pruebas Funciones', () => {
         name: 'Tablero Test User',
         description: 'Tablero para pruebas de usuario',
         price: 100,
-        url_image: 'https://test.com/board.png'
-      }
+        url_image: 'https://test.com/board.png',
+      },
     });
 
-    // Crear el Usuario Principal 
+    // Crear el Usuario Principal
     const user_main = await prisma.user.create({
       data: {
         username: 'Jugador_Main', // Contiene "Jugador" para que funcione el searchUsers()
@@ -65,7 +86,7 @@ describe('UserService - Pruebas Funciones', () => {
         password: 'hashed_password',
         state: 'CONNECTED',
         coins: 1000,
-        active_board_id: testBoard.id_board
+        active_board_id: testBoard.id_board,
       },
     });
     main_u = `${ID_PREFIXES.USER}${user_main.id_user}`;
@@ -73,8 +94,8 @@ describe('UserService - Pruebas Funciones', () => {
     await prisma.userBoard.create({
       data: {
         id_user: user_main.id_user,
-        id_board: testBoard.id_board
-      }
+        id_board: testBoard.id_board,
+      },
     });
 
     // Crear el Usuario Sacrificable
@@ -90,21 +111,31 @@ describe('UserService - Pruebas Funciones', () => {
 
     // Crear un amigo falso para las FK
     const amigo_test = await prisma.user.create({
-      data: { username: 'AmigoTest', email: 'am@test.com', password: '123' }
+      data: { username: 'AmigoTest', email: 'am@test.com', password: '123' },
     });
 
     // Asignar las cartas reales a los usuarios
     await prisma.userCard.createMany({
-      data: cartas_reales_ids.map(cardId => ({ id_user: user_main.id_user, id_card: cardId }))
+      data: cartas_reales_ids.map((cardId) => ({
+        id_user: user_main.id_user,
+        id_card: cardId,
+      })),
     });
     await prisma.userCard.createMany({
-      data: cartas_reales_ids.map(cardId => ({ id_user: usuario_test.id_user, id_card: cardId }))
+      data: cartas_reales_ids.map((cardId) => ({
+        id_user: usuario_test.id_user,
+        id_card: cardId,
+      })),
     });
 
-    // Crear los mazos de prueba  
+    // Crear los mazos de prueba
     for (let i = 0; i < 5; i++) {
       const cartas_mazo_prueba = cartas_reales.slice(0, 8);
-      const resultado = await UserService.createDeck(main_u, `De Prueba ${i}`, cartas_mazo_prueba);
+      const resultado = await UserService.createDeck(
+        main_u,
+        `De Prueba ${i}`,
+        cartas_mazo_prueba,
+      );
       mazos_creados.push(resultado.id);
       mazos_a_borrar.push(resultado.id);
     }
@@ -157,25 +188,33 @@ describe('UserService - Pruebas Funciones', () => {
               ),
               personal_state:
                 resultado?.personal_state === null ? null : expect.any(String),
-              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
+              id: expect.stringMatching(
+                new RegExp(`^${ID_PREFIXES.USER}\\d+$`),
+              ),
               boards: expect.arrayContaining([
                 expect.objectContaining({
-                  id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.BOARD}\\d+$`)),
+                  id: expect.stringMatching(
+                    new RegExp(`^${ID_PREFIXES.BOARD}\\d+$`),
+                  ),
                   name: expect.any(String),
-                  url_image: expect.any(String) 
-                })
-              ])
+                  url_image: expect.any(String),
+                }),
+              ]),
             }),
           );
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserProfile(`${ID_PREFIXES.USER}9999999`);
+          const resultado = await UserService.getUserProfile(
+            `${ID_PREFIXES.USER}9999999`,
+          );
           expect(resultado).toBeNull();
         });
 
         test('Campos Incorrectos:', async () => {
-          await expect(UserService.getUserProfile(`${ID_PREFIXES.USER}abc`)).rejects.toThrow();
+          await expect(
+            UserService.getUserProfile(`${ID_PREFIXES.USER}abc`),
+          ).rejects.toThrow();
         });
 
         test('Campos Vacios:', async () => {
@@ -196,13 +235,17 @@ describe('UserService - Pruebas Funciones', () => {
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserEconomy(`${ID_PREFIXES.USER}9999999`);
+          const resultado = await UserService.getUserEconomy(
+            `${ID_PREFIXES.USER}9999999`,
+          );
 
           expect(resultado).toBeNull();
         });
 
         test('Campos Incorrectos:', async () => {
-          await expect(UserService.getUserEconomy(`${ID_PREFIXES.USER}abc`)).rejects.toThrow();
+          await expect(
+            UserService.getUserEconomy(`${ID_PREFIXES.USER}abc`),
+          ).rejects.toThrow();
         });
 
         test('Campos Vacios:', async () => {
@@ -218,17 +261,21 @@ describe('UserService - Pruebas Funciones', () => {
           expect(resultado).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                cardId: expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
+                cardId: expect.stringMatching(
+                  new RegExp(`^${ID_PREFIXES.CARD}\\d+$`),
+                ),
                 name: expect.any(String),
                 quantity: expect.any(Number),
-                url_image: expect.any(String)
+                url_image: expect.any(String),
               }),
             ]),
           );
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserCards(`${ID_PREFIXES.USER}999999`);
+          const resultado = await UserService.getUserCards(
+            `${ID_PREFIXES.USER}999999`,
+          );
 
           expect(resultado).toHaveLength(0);
         });
@@ -246,10 +293,14 @@ describe('UserService - Pruebas Funciones', () => {
           expect(resultado).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
-                id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
+                id: expect.stringMatching(
+                  new RegExp(`^${ID_PREFIXES.DECK}\\d+$`),
+                ),
                 name: expect.any(String),
                 cardIds: expect.arrayContaining([
-                  expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
+                  expect.stringMatching(
+                    new RegExp(`^${ID_PREFIXES.CARD}\\d+$`),
+                  ),
                 ]),
               }),
             ]),
@@ -257,7 +308,9 @@ describe('UserService - Pruebas Funciones', () => {
         });
 
         test('Usuario Inexistente:', async () => {
-          const resultado = await UserService.getUserDecks(`${ID_PREFIXES.USER}999999999`);
+          const resultado = await UserService.getUserDecks(
+            `${ID_PREFIXES.USER}999999999`,
+          );
 
           expect(resultado).toHaveLength(0);
         });
@@ -276,7 +329,9 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
+              id: expect.stringMatching(
+                new RegExp(`^${ID_PREFIXES.USER}\\d+$`),
+              ),
               username: expect.any(String),
             }),
           ]),
@@ -302,19 +357,25 @@ describe('UserService - Pruebas Funciones', () => {
           expect.objectContaining({
             id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
             name: expect.any(String),
-            cardIds: expect.arrayContaining([expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))]),
+            cardIds: expect.arrayContaining([
+              expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
+            ]),
           }),
         );
       });
 
       test('Mazo Inexistente:', async () => {
-        const resultado = await UserService.getDeckById(`${ID_PREFIXES.DECK}9999999`);
+        const resultado = await UserService.getDeckById(
+          `${ID_PREFIXES.DECK}9999999`,
+        );
 
         expect(resultado).toBeNull();
       });
 
       test('ID Incorrecto:', async () => {
-        await expect(UserService.getDeckById(`${ID_PREFIXES.DECK}s1`)).rejects.toThrow();
+        await expect(
+          UserService.getDeckById(`${ID_PREFIXES.DECK}s1`),
+        ).rejects.toThrow();
       });
     });
 
@@ -332,7 +393,9 @@ describe('UserService - Pruebas Funciones', () => {
           expect.objectContaining({
             id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
             name: expect.any(String),
-            cardIds: expect.arrayContaining([expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))]),
+            cardIds: expect.arrayContaining([
+              expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
+            ]),
           }),
         );
         id_deck_created = resultado.id;
@@ -342,14 +405,18 @@ describe('UserService - Pruebas Funciones', () => {
         const cartas_mazo_prueba = cartas_reales.slice(0, 8);
 
         await expect(
-          UserService.createDeck(`${ID_PREFIXES.USER}999999`, '', cartas_mazo_prueba),
+          UserService.createDeck(
+            `${ID_PREFIXES.USER}999999`,
+            '',
+            cartas_mazo_prueba,
+          ),
         ).rejects.toThrow();
       });
     });
 
     describe('Actualización de Mazos. -> updateDeck() ', () => {
       test('Un solo mazo cambiado con éxito:', async () => {
-        const cartas_mazo_prueba = cartas_reales.slice(0, 8).reverse(); 
+        const cartas_mazo_prueba = cartas_reales.slice(0, 8).reverse();
 
         const resultado = await UserService.updateDeck(
           id_deck_created,
@@ -362,7 +429,9 @@ describe('UserService - Pruebas Funciones', () => {
           expect.objectContaining({
             id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
             name: expect.any(String),
-            cardIds: expect.arrayContaining([expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))]),
+            cardIds: expect.arrayContaining([
+              expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
+            ]),
           }),
         );
       });
@@ -370,7 +439,7 @@ describe('UserService - Pruebas Funciones', () => {
       test('Varios mazos cambiados con éxito:', async () => {
         const cartas_mazo_prueba = cartas_reales.slice(0, 12);
         const mazos_a_cambiar = mazos_creados.slice(0, 4); // Coge los primeros 4 que creamos al inicio
-    
+
         const resultado = await UserService.updateDeck(
           mazos_a_cambiar,
           'De Prueba Reorganizado',
@@ -381,10 +450,12 @@ describe('UserService - Pruebas Funciones', () => {
         expect(resultado).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.DECK}\\d+$`)),
+              id: expect.stringMatching(
+                new RegExp(`^${ID_PREFIXES.DECK}\\d+$`),
+              ),
               name: expect.any(String),
               cardIds: expect.arrayContaining([
-                expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`))
+                expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
               ]),
             }),
           ]),
@@ -395,7 +466,11 @@ describe('UserService - Pruebas Funciones', () => {
         const cartas_mazo_prueba = cartas_reales.slice(0, 8);
 
         await expect(
-          UserService.updateDeck(`${ID_PREFIXES.USER}9999999`, '', cartas_mazo_prueba),
+          UserService.updateDeck(
+            `${ID_PREFIXES.USER}9999999`,
+            '',
+            cartas_mazo_prueba,
+          ),
         ).rejects.toThrow();
       });
     });
@@ -451,18 +526,23 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Nombre de usuario ya en uso (USERNAME_TAKEN): ', async () => {
-        const estorbo = await prisma.user.create({ data: { username: 'Ocupado', email: 'ocu@m.com', password: '123' }});
-        
+        const estorbo = await prisma.user.create({
+          data: { username: 'Ocupado', email: 'ocu@m.com', password: '123' },
+        });
+
         await expect(
           UserService.updateUserProfile(main_u, 'Ocupado'),
         ).rejects.toThrow('USERNAME_TAKEN');
 
-        await prisma.user.delete({ where: { id_user: estorbo.id_user }});
+        await prisma.user.delete({ where: { id_user: estorbo.id_user } });
       });
 
       test('Usuario Inexistente: ', async () => {
         await expect(
-          UserService.updateUserProfile(`${ID_PREFIXES.USER}999999999`, 'noExisto'),
+          UserService.updateUserProfile(
+            `${ID_PREFIXES.USER}999999999`,
+            'noExisto',
+          ),
         ).rejects.toThrow();
       });
     });
@@ -494,7 +574,10 @@ describe('UserService - Pruebas Funciones', () => {
 
       test('Usuario Inexistente: ', async () => {
         await expect(
-          UserService.updatePresence(`${ID_PREFIXES.USER}9999999`, 'DISCONNECTED'),
+          UserService.updatePresence(
+            `${ID_PREFIXES.USER}9999999`,
+            'DISCONNECTED',
+          ),
         ).rejects.toThrow();
       });
     });
@@ -508,7 +591,9 @@ describe('UserService - Pruebas Funciones', () => {
       });
 
       test('Usuario inexistente: ', async () => {
-        await expect(UserService.deleteUser(`${ID_PREFIXES.USER}99999999`)).rejects.toThrow();
+        await expect(
+          UserService.deleteUser(`${ID_PREFIXES.USER}99999999`),
+        ).rejects.toThrow();
       });
 
       test('Entrada Incorrecta: ', async () => {
@@ -517,7 +602,7 @@ describe('UserService - Pruebas Funciones', () => {
     });
   });
   afterAll(async () => {
-   try {
+    try {
       const mazos_a_cambiar = mazos_creados.slice(0, 4);
       await UserService.updateDeck(
         mazos_a_cambiar,

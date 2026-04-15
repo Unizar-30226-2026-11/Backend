@@ -1,15 +1,14 @@
 import 'dotenv/config';
 
 import { prisma } from '../../infrastructure/prisma';
-import { CollectionService } from '../collection.service';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
+import { CollectionService } from '../collection.service';
 
 describe('CollectionService - Pruebas Funciones', () => {
   let id_colection_test: number;
   let real_collection_with_cards_id: string; // Variable dinámica para el test real
-  
-  beforeAll(async () => {
 
+  beforeAll(async () => {
     // Por si falla el test y no se borra la coleccion de una ejecución anterior.
     await prisma.collection.deleteMany({
       where: { name: 'Coleccion_Test' },
@@ -28,14 +27,16 @@ describe('CollectionService - Pruebas Funciones', () => {
     // Buscamos una coleccion con cartas
     const realCollection = await prisma.collection.findFirst({
       where: {
-        cards: { some: {} } // al menos una carta
-      }
+        cards: { some: {} }, // al menos una carta
+      },
     });
 
     if (!realCollection) {
-      throw new Error('No hay colecciones con cartas en la BD. Ejecuta el seed.');
+      throw new Error(
+        'No hay colecciones con cartas en la BD. Ejecuta el seed.',
+      );
     }
-    
+
     // Guardamos su ID dinámico (ej: 'col_14')
     real_collection_with_cards_id = `${ID_PREFIXES.COLLECTION}${realCollection.id_collection}`;
   });
@@ -50,10 +51,14 @@ describe('CollectionService - Pruebas Funciones', () => {
 
     resultado?.collections.forEach((card) => {
       expect(card).toEqual({
-        id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.COLLECTION}\\d+$`)),
+        id: expect.stringMatching(
+          new RegExp(`^${ID_PREFIXES.COLLECTION}\\d+$`),
+        ),
         name: expect.stringMatching(/.+/),
         description: card.description === null ? null : expect.any(String),
-        release_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/), // Formato ISOString
+        release_date: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+        ), // Formato ISOString
         total_cards: expect.any(Number),
       });
     });
@@ -75,7 +80,10 @@ describe('CollectionService - Pruebas Funciones', () => {
     test('Múltiples colecciones (debe devolver objeto con array por lógica de length)', async () => {
       // Usamos el mismo ID dos veces solo para forzar el length > 1
       const id_col = `${ID_PREFIXES.COLLECTION}${id_colection_test}`;
-      const resultado = await CollectionService.getCollectionById([id_col, id_col]);
+      const resultado = await CollectionService.getCollectionById([
+        id_col,
+        id_col,
+      ]);
 
       expect(resultado.collections).toBeDefined();
       expect(resultado.collections).toBeInstanceOf(Array);
@@ -93,8 +101,9 @@ describe('CollectionService - Pruebas Funciones', () => {
 
   describe('Obtener cartas de una coleccion por ID.  -> getCardsByCollection() ', () => {
     test('Cartas de una Colección existente.', async () => {
-
-      const resultado = await CollectionService.getCardsByCollection(real_collection_with_cards_id);
+      const resultado = await CollectionService.getCardsByCollection(
+        real_collection_with_cards_id,
+      );
 
       expect(resultado).toBeDefined();
       if (resultado == null) throw Error('El resultado no deberia ser nulo.');
@@ -102,16 +111,20 @@ describe('CollectionService - Pruebas Funciones', () => {
       const catalog = Array.isArray(resultado) ? resultado[0] : resultado;
       expect(catalog).toEqual(
         expect.objectContaining({
-          collection: expect.objectContaining({ id: real_collection_with_cards_id }),
-          cards: expect.any(Array)
-        })
+          collection: expect.objectContaining({
+            id: real_collection_with_cards_id,
+          }),
+          cards: expect.any(Array),
+        }),
       );
 
       if (catalog.cards.length > 0) {
         expect(catalog.cards[0]).toMatchObject({
-          id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)), 
+          id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.CARD}\\d+$`)),
           name: expect.any(String),
-          rarity: expect.stringMatching(/^(COMMON|UNCOMMON|SPECIAL|EPIC|LEGENDARY)$/)
+          rarity: expect.stringMatching(
+            /^(COMMON|UNCOMMON|SPECIAL|EPIC|LEGENDARY)$/,
+          ),
         });
 
         expect(catalog.cards[0]).toHaveProperty('url_image');

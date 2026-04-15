@@ -94,7 +94,7 @@ export const getBalance = async (
     const userId = req.user!.id;
     const balance = await UserService.getUserEconomy(userId);
 
-    res.status(200).json({ balance });
+    res.status(200).json({ balance: balance!.balance });
   } catch (error) {
     res.status(500).json({ message: 'Error al obtener el balance monetario.' });
   }

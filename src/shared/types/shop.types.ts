@@ -1,5 +1,5 @@
 // src/shared/types/shop.types.ts
-import { Rarity, Board_Type } from '@prisma/client';
+import { Board_Type, Rarity } from '@prisma/client';
 
 export interface DailyShopCard {
   id_card: number;
@@ -31,5 +31,5 @@ export interface DailyShopState {
   cardPackOffer: DailyShopPack | null;
   collectionOffer: DailyShopCollection | null;
   boardOffer: DailyShopBoard | null;
-  expiresAt: string; 
+  expiresAt: string;
 }

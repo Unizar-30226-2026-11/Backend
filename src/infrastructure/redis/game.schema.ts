@@ -29,7 +29,7 @@ export const gameStateSchema = new Schema(
 
     isMinigameActive: { type: 'boolean' },
     activeConflict: { type: 'string' }, // JSON: { player1, player2, isDuel }
-    activeBoardId: { type: 'number' }
+    activeBoardId: { type: 'number' },
   },
   { dataStructure: 'JSON' },
 );
