@@ -37,7 +37,7 @@ export const UserRedisRepository = {
     const key = `user_activity:${userId}`;
     const client = redisClient; // Usamos el cliente nativo de redis
 
-    await client.set(key, Date.now().toString(), { EX: 600 });
+    await client.set(key, Date.now().toString(), { EX: 3600 });
   },
 
   async getLastActivity(userId: string): Promise<number | null> {
