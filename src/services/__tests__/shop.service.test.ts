@@ -1,9 +1,10 @@
 import 'dotenv/config';
+
 import { prisma } from '../../infrastructure/prisma';
+import { redisClient } from '../../infrastructure/redis';
+import { ShopRedisRepository } from '../../repositories/shop.repository';
 import { ShopService } from '../../services/shop.service';
 import { UserService } from '../../services/user.service';
-import { ShopRedisRepository } from '../../repositories/shop.repository';
-import { redisClient } from '../../infrastructure/redis';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 
 describe('ShopService - Sistema de ', () => {
