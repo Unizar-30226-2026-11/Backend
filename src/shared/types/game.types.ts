@@ -192,6 +192,11 @@ export interface ActionReconnect {
   type: 'RECONNECT_PLAYER';
   playerId: string;
 }
+/** Acción registrada cuando un jugador es expulsado por inactividad */
+export interface ActionKick {
+  type: 'KICK_PLAYER';
+  playerId: string;
+}
 /** Acción que fuerza el avance a la siguiente ronda (limpieza y preparación) */
 export interface ActionNextRound {
   type: 'NEXT_ROUND';
@@ -261,6 +266,7 @@ export type GameAction =
   | ActionInitGame
   | ActionDisconnect
   | ActionReconnect
+  | ActionKick
   | ActionNextRound
   | ActionChangeMode
   | ActionClaimStar

@@ -50,6 +50,8 @@ export const SERVER_EVENTS = {
   DUEL_AVAILABLE: 'server:game:duel_available', //Has caído en la casilla de apuestas. Muestra un menú (Modal) para elegir a qué jugador de la partida quieres atacar.
   SPECIAL_EVENT: 'server:game:special_event', //Un jugador ha activado una casilla. Mostrar animación en su ficha y pintar un aviso en pantalla.
   MINIGAME_START: 'server:game:minigame_start', //Dos jugadores entran en conflicto. Mostrar un minijuego en las pantallas de p1 y p2 (y un cartel de "Duelo en curso" al resto).
+  STAR_SPAWNED: 'server:game:star_spawned', //Una estrella ha aparecido en el tablero.
+  STAR_CLAIMED: 'server:game:star_claimed', //Un jugador ha recogido una estrella.
 
   GAME_ERROR: 'server:game:error', //Has intentado hacer algo ilegal (ej. jugar carta durante un minijuego activo). Mostrar Toast/Alerta de error.
 

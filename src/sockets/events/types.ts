@@ -1,5 +1,8 @@
 // src/sockets/events/types.ts
 
+import { AnyNullClass } from '@prisma/client/runtime/client';
+
+import { GameAction } from '../../shared/types';
 // --- TIPOS DE SUBIDA (Payloads del Cliente) ---
 
 export interface JoinLobbyPayload {
@@ -18,8 +21,7 @@ export interface ChatSendPayload {
 // El payload maestro para la máquina de estados
 export interface GameActionPayload {
   lobbyCode: string;
-  actionType: 'SUBMIT_STORY' | 'PLAY_CARD' | 'VOTE_CARD' | 'USE_POWERUP';
-  data: any; // Aquí vendría el ID de la carta, la pista, etc.
+  actionType: GameAction;
 }
 
 // --- TIPOS DE BAJADA (Payloads del Servidor) ---

@@ -280,6 +280,63 @@ export const UserService = {
       }));
     });
   },
+  // --- Tableros ---
+
+  /**
+   * Obtiene la lista de tableros comprados por el usuario.
+   */
+  getUserPurchasedBoards: async (u_id: string) => {
+    return getCachedData(`cache:user:boards:${u_id}`, async () => {
+      const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
+
+      const userBoards = await prisma.userBoard.findMany({
+        where: { id_user },
+        include: { board: true }, // Traemos los detalles de la tabla Board
+      });
+
+      return userBoards.map((ub) => ({
+        id: `${ID_PREFIXES.BOARD}${ub.board.id_board}`,
+        name: ub.board.name,
+        description: ub.board.description,
+      }));
+    });
+  },
+
+  /**
+   * Establece el tablero activo para que se muestre en las partidas del usuario.
+   */
+  setUserActiveBoard: async (u_id: string, boardId: string) => {
+    const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
+    const id_board = parseInt(boardId.replace(ID_PREFIXES.BOARD, ''));
+
+    // Verificar propiedad
+    const ownership = await prisma.userBoard.findFirst({
+      where: { id_user, id_board },
+    });
+
+    if (!ownership) {
+      throw new Error('BOARD_NOT_OWNED');
+    }
+
+    // Actualizar el tablero activo
+    const updatedUser = await prisma.user.update({
+      where: { id_user },
+      data: { active_board_id: id_board },
+      include: { active_board: true },
+    });
+
+    // Limpieza de caché
+    await invalidateCache(`cache:user:profile:${u_id}`);
+    await invalidateCache(`cache:user:boards:${u_id}`);
+
+    return {
+      userId: u_id,
+      activeBoard: {
+        id: `${ID_PREFIXES.BOARD}${updatedUser.active_board?.id_board}`,
+        name: updatedUser.active_board?.name,
+      },
+    };
+  },
 
   /**
    * Establece el tablero activo para que se muestre en las partidas del usuario.

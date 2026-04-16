@@ -58,8 +58,8 @@ export class GameService {
       return isNaN(num) ? 0 : num;
     });
 
+    console.log('IDs obtenidos');
     let centralDeck: number[] = [];
-
     const hostId = numericPlayerIds[0];
     const hostData = await prisma.user.findUnique({
       where: { id_user: hostId },
@@ -413,6 +413,60 @@ export class GameService {
     }
 
     // 11. Fin de Partida: Ranking y Monedas
+
+    if (newState.phase === 'FINISHED') {
+      const finalEmissions = await this.finalizeGame(lobbyCode);
+      emissions.push(...finalEmissions);
+    }
+
+    return emissions;
+  }
+
+  /**
+   * Kicks a player from the active game due to inactivity.
+   */
+  public async kickPlayer(
+    lobbyCode: string,
+    userId: string,
+  ): Promise<SocketEmission[]> {
+    const currentState = await this.redisRepo.getGame(lobbyCode);
+    if (!currentState) {
+      return [];
+    }
+
+    const engine: IGameEngine = this.getEngine();
+    const action: GameAction = {
+      type: 'KICK_PLAYER',
+      playerId: userId,
+    };
+
+    const newState = engine.transition(currentState, action);
+
+    // If the game has less than 2 players, we could end it here,
+    // but the engine transition (phase advancement check) might also handle it.
+
+    await this.redisRepo.saveGame(lobbyCode, newState);
+
+    const emissions: SocketEmission[] = [];
+    const publicState = this.maskPrivateState(newState);
+
+    // Enviar el estado actualizado
+    emissions.push({
+      room: lobbyCode,
+      event: 'server:game:state_updated',
+      data: { state: publicState, lastAction: 'KICK_PLAYER' },
+    });
+
+    // Notify remaining players about their hand
+    // (though kick shouldn't affect their hand, it's good practice to sync)
+    for (let i = 0; i < newState.players.length; i++) {
+      const playerId = newState.players[i];
+      emissions.push({
+        room: playerId,
+        event: 'server:game:private_hand',
+        data: { hand: newState.hands[playerId] },
+      });
+    }
 
     if (newState.phase === 'FINISHED') {
       const finalEmissions = await this.finalizeGame(lobbyCode);
