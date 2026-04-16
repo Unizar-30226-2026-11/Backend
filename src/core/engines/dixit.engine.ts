@@ -120,8 +120,6 @@ export class DixitEngine {
 
     // Delegamos la creación de la `currentRound` a la estrategia inicial
     const readyState = state as GameState;
-    console.log('Estado listo para iniciar ronda:', readyState);
-    console.log('Estrategia:', this.strategies[state.mode]);
     return this.strategies[state.mode].handleNextRound(readyState);
   }
 
