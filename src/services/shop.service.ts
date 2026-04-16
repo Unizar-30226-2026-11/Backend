@@ -3,6 +3,7 @@ import { prisma } from '../infrastructure/prisma';
 import { Purchase_Type } from '@prisma/client';
 import { ShopRedisRepository } from '../repositories/shop.repository';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
+import { invalidateCache } from '../shared/utils/cache.utils';
 
 // ==========================================
 // DICCIONARIOS DE PRECIOS
@@ -240,7 +241,7 @@ class ShopServiceClass {
   public async processPurchase(u_Id: string, itemId: string) {
     const userId = parseInt(u_Id.replace(ID_PREFIXES.USER, ''));
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       let totalCost = 0;
       let cardsToAdd: number[] = [];
       let boardToAddId: number | null = null;
@@ -402,6 +403,15 @@ class ShopServiceClass {
         updatedEconomy: { userId, coins: updatedUser?.coins },
       };
     });
+
+    await Promise.all([
+      invalidateCache(`cache:user:economy:${u_Id}`),
+      invalidateCache(`cache:user:cards:${u_Id}`),
+      invalidateCache(`cache:user:boards:${u_Id}`),
+      invalidateCache(`cache:user:profile:${u_Id}`),
+    ]);
+
+    return result;
   }
 
   /**

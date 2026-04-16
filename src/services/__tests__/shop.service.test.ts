@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { prisma } from '../../infrastructure/prisma';
 import { ShopService } from '../../services/shop.service';
+import { UserService } from '../../services/user.service';
 import { ShopRedisRepository } from '../../repositories/shop.repository';
 import { redisClient } from '../../infrastructure/redis';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
@@ -263,6 +264,55 @@ describe('ShopService - Sistema de ', () => {
           where: { id_user: id_usuario_rico, id_board: test_board_id },
         });
         expect(ownership).toBeDefined();
+      });
+
+      test('Debe invalidar la caché de balance tras una compra', async () => {
+        const uniqueSuffix = Date.now();
+        const cacheTestUser = await prisma.user.create({
+          data: {
+            username: `ShopBalanceCache_${uniqueSuffix}`,
+            email: `shop-balance-${uniqueSuffix}@test.com`,
+            password: 'password123',
+            coins: 1000,
+          },
+        });
+
+        try {
+          const cacheTestUserId = `${ID_PREFIXES.USER}${cacheTestUser.id_user}`;
+          const balanceBeforePurchase =
+            await UserService.getUserEconomy(cacheTestUserId);
+
+          expect(balanceBeforePurchase?.balance).toBe(1000);
+
+          const purchaseResult = await ShopService.processPurchase(
+            cacheTestUserId,
+            `${ID_PREFIXES.CARD}${test_card_id}`,
+          );
+
+          const balanceAfterPurchase =
+            await UserService.getUserEconomy(cacheTestUserId);
+
+          expect(balanceAfterPurchase?.balance).toBe(
+            purchaseResult.updatedEconomy.coins,
+          );
+          expect(balanceAfterPurchase?.balance).toBeLessThan(1000);
+        } finally {
+          await prisma.purchaseHistoryCard.deleteMany({
+            where: { purchase: { id_user: cacheTestUser.id_user } },
+          });
+          await prisma.purchaseHistory.deleteMany({
+            where: { id_user: cacheTestUser.id_user },
+          });
+          await prisma.userCard.deleteMany({
+            where: { id_user: cacheTestUser.id_user },
+          });
+          await prisma.userBoard.deleteMany({
+            where: { id_user: cacheTestUser.id_user },
+          });
+          await prisma.user.delete({
+            where: { id_user: cacheTestUser.id_user },
+          });
+        }
       });
     });
 
