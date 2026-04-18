@@ -40,6 +40,7 @@ export const GameRedisRepository = {
       centralDeck: JSON.stringify(state.centralDeck),
       discardPile: JSON.stringify(state.discardPile),
       currentRound: JSON.stringify(state.currentRound),
+      cardUrls: entity.cardUrls ? JSON.parse(entity.cardUrls as string) : {},
       boardRegistry: JSON.stringify(state.boardRegistry),
       activeConflict: JSON.stringify(state.activeConflict ?? null),
     });
