@@ -153,6 +153,47 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           select: { id_card: true },
         });
       });
+
+      test('Debe normalizar un lobby legacy con engine "Stella" y arrancar en modo STELLA', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'Stella', players: [p1, p2, p3] };
+
+        const mockDecks = [
+          {
+            cards: Array(60).fill({
+              user_card: {
+                id_card: 100,
+                card: { id_card: 100, url_image: 'img.png' },
+              },
+            }),
+          },
+        ];
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 100, url_image: 'img.png' },
+        ]);
+
+        await gameService.initializeGame('ROOM-STELLA', lobbyData);
+
+        expect(mockRedisRepo.saveGame).toHaveBeenCalledWith(
+          'ROOM-STELLA',
+          expect.objectContaining({
+            mode: 'STELLA',
+            phase: 'STELLA_WORD_REVEAL',
+          }),
+        );
+        expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
+          'phase-timeout',
+          expect.objectContaining({
+            lobbyCode: 'ROOM-STELLA',
+            expectedPhase: 'STELLA_WORD_REVEAL',
+          }),
+          expect.objectContaining({ delay: 60000 }),
+        );
+      });
     });
 
     describe('handleAction', () => {

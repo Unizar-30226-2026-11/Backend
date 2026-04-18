@@ -16,6 +16,7 @@ import {
 } from '../shared/constants/rewards';
 import { GameAction, GameState } from '../shared/types';
 import { invalidateCache } from '../shared/utils/cache.utils';
+import { normalizeGameMode } from '../shared/utils/game-mode.utils';
 
 // ==========================================
 // CONFIGURACIÓN DE BULLMQ (Timeouts de turnos)
@@ -134,8 +135,7 @@ export class GameService {
       cardDictionary[c.id_card] = c.url_image || '';
     });
 
-    const safeMode =
-      mode === 'STELLA' || mode === 'STANDARD' ? mode : 'STANDARD';
+    const safeMode = normalizeGameMode(mode) ?? 'STANDARD';
 
     // Crear el estado base
     const baseState: any = {

@@ -2,6 +2,7 @@
 // Simulación de la base de datos asíncrona para Lobbies
 
 import { LobbyRedisRepository } from '../repositories/lobby.repository'; // Importamos el client de Redis para posibles operaciones relacionadas con lobbies (cacheo, locks, etc.)
+import { normalizeGameMode } from '../shared/utils';
 
 const generateLobbyCode = (): string => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -26,9 +27,15 @@ export const LobbyService = {
     isPrivate: boolean;
   }) => {
     const lobbyCode = generateLobbyCode();
+    const normalizedEngine = normalizeGameMode(data.engine);
+
+    if (!normalizedEngine) {
+      throw new Error('INVALID_GAME_MODE');
+    }
 
     const newLobbyData = {
       ...data,
+      engine: normalizedEngine,
       lobbyCode,
       status: 'waiting',
       players: [data.hostId],

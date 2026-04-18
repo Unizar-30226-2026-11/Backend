@@ -44,8 +44,8 @@ router.use(authenticate);
  *                 example: 4
  *               engine:
  *                 type: string
- *                 enum: [Classic, Stella]
- *                 example: Classic
+ *                 enum: [STANDARD, STELLA]
+ *                 example: STELLA
  *               isPrivate:
  *                 type: boolean
  *                 example: false
@@ -77,7 +77,7 @@ router.use(authenticate);
  *                       example: 4
  *                     engine:
  *                       type: string
- *                       example: Classic
+ *                       example: STELLA
  *                     isPrivate:
  *                       type: boolean
  *                       example: false
@@ -153,7 +153,7 @@ router.post('/', validateCreateLobbyBody, createLobby);
  *                         example: 4
  *                       engine:
  *                         type: string
- *                         example: Classic
+ *                         example: STELLA
  *                       status:
  *                         type: string
  *                         example: waiting
@@ -214,7 +214,7 @@ router.get('/', getPublicLobbies);
  *                       example: 4
  *                     engine:
  *                       type: string
- *                       example: Classic
+ *                       example: STELLA
  *                     isPrivate:
  *                       type: boolean
  *                       example: false

@@ -10,6 +10,7 @@ import {
   LOBBY_MIN_PLAYERS,
 } from '../../shared/constants';
 import { AuthenticatedRequest } from '../../shared/types';
+import { normalizeGameMode } from '../../shared/utils';
 
 // Mapa interno para saber qué prefijo corresponde a cada parámetro
 const PARAM_PREFIX_MAP: Record<string, string> = {
@@ -184,10 +185,11 @@ export const validateCreateLobbyBody = (
     return;
   }
 
-  if (engine !== 'Classic' && engine !== 'Stella') {
-    res
-      .status(400)
-      .json({ message: 'El motor debe ser "Classic" o "Stella".' });
+  if (!normalizeGameMode(engine)) {
+    res.status(400).json({
+      message:
+        'El motor debe ser uno de estos valores: "Classic", "Stella", "STANDARD" o "STELLA".',
+    });
     return;
   }
 
