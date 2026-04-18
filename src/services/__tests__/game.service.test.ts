@@ -368,7 +368,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       expect(mockState.centralDeck.length).toBe(0);
     });
 
-    test('Debe emitir reshuffled si el mazo central se queda a cero en STANDARD', () => {
+    test('Debe emitir reshuffled si el mazo central se queda a cero en STANDARD', async () => {
       const mockState = {
         lobbyCode: 'LOBBY-1',
         mode: 'STANDARD',
@@ -379,7 +379,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: false,
       } as unknown as GameState;
 
-      const emissions = gameService['applyShuffleEffect'](mockState, 'p1');
+      const emissions = await gameService['applyShuffleEffect'](mockState, 'p1');
 
       expect(mockState.discardPile).toHaveLength(0);
       expect(mockState.hands['p1']).toHaveLength(3);
@@ -388,6 +388,34 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         (e) => e.event === 'server:game:deck_reshuffled',
       );
       expect(reshuffleEmission).toBeDefined();
+    });
+
+    test('Debe hidratar la mano privada con url_image tras aplicar SHUFFLE', async () => {
+      const mockState = {
+        lobbyCode: 'LOBBY-2',
+        mode: 'STANDARD',
+        players: ['p1'],
+        hands: { p1: [10, 11] },
+        centralDeck: [1, 2],
+        discardPile: [],
+        isMinigameActive: false,
+      } as unknown as GameState;
+
+      (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+        { id_card: 1, url_image: 'img1.png' },
+        { id_card: 2, url_image: 'img2.png' },
+      ]);
+
+      const emissions = await gameService['applyShuffleEffect'](mockState, 'p1');
+      const handEmission = emissions.find(
+        (e) => e.event === 'server:game:private_hand',
+      );
+
+      expect(handEmission).toBeDefined();
+      expect((handEmission!.data as any).hand).toEqual([
+        { id: `${ID_PREFIXES.CARD}2`, url_image: 'img2.png' },
+        { id: `${ID_PREFIXES.CARD}1`, url_image: 'img1.png' },
+      ]);
     });
 
     test('Debe intercambiar puntos con otro jugador al azar en modo STELLA', async () => {

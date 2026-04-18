@@ -186,15 +186,10 @@ export class GameService {
       const handIds = initialState.hands[playerId] as number[];
 
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
-      const hydratedHand = handIds.map((id) => ({
-        id: `${ID_PREFIXES.CARD}${id}`,
-        url_image: cardDictionary[id] || '',
-      }));
-
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: hydratedHand },
+        data: { hand: this.serializeHand(handIds, cardDictionary) },
       });
     }
 
@@ -381,16 +376,10 @@ export class GameService {
         const playerId = newState.players[i];
         const handIds = newState.hands[playerId] as number[];
 
-        // Hidratamos la mano
-        const hydratedHand = handIds.map((id) => ({
-          id: `${ID_PREFIXES.CARD}${id}`,
-          url_image: cardDictionary[id] || '',
-        }));
-
         emissions.push({
           room: playerId,
           event: 'server:game:private_hand',
-          data: { hand: hydratedHand },
+          data: { hand: this.serializeHand(handIds, cardDictionary) },
         });
       }
     }
@@ -459,12 +448,18 @@ export class GameService {
 
     // Notify remaining players about their hand
     // (though kick shouldn't affect their hand, it's good practice to sync)
+    const handDictionary = await this.getCardUrlDictionary(
+      Object.values(newState.hands).flat() as number[],
+    );
+
     for (let i = 0; i < newState.players.length; i++) {
       const playerId = newState.players[i];
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: newState.hands[playerId] },
+        data: {
+          hand: this.serializeHand(newState.hands[playerId], handDictionary),
+        },
       });
     }
 
@@ -805,7 +800,7 @@ export class GameService {
         if (state.mode === 'STELLA') {
           emissions.push(...this.applyStellaScoreSwap(state, pId));
         } else {
-          emissions.push(...this.applyShuffleEffect(state, pId));
+          emissions.push(...(await this.applyShuffleEffect(state, pId)));
         }
       }
 
@@ -908,7 +903,10 @@ export class GameService {
   /**
    * Efecto Shuffle: Tira tus cartas y coge nuevas.
    */
-  private applyShuffleEffect(state: GameState, pId: string): SocketEmission[] {
+  private async applyShuffleEffect(
+    state: GameState,
+    pId: string,
+  ): Promise<SocketEmission[]> {
     const currentHand = state.hands[pId] || [];
     const handSize = currentHand.length;
 
@@ -943,11 +941,12 @@ export class GameService {
     }
 
     state.hands[pId] = newHand;
+    const handDictionary = await this.getCardUrlDictionary(newHand);
 
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: newHand },
+      data: { hand: this.serializeHand(newHand, handDictionary) },
     });
 
     emissions.push({
@@ -998,6 +997,37 @@ export class GameService {
 
   /**
    * Detecta si el jugador ha aterrizado en la misma puntuación que otro
+   * y dispara el evento de minijuego 1vs1.
+   */
+  private async getCardUrlDictionary(
+    cardIds: number[],
+  ): Promise<Record<number, string>> {
+    const uniqueCardIds = Array.from(new Set(cardIds));
+    if (uniqueCardIds.length === 0) return {};
+
+    const cards = await prisma.cards.findMany({
+      where: { id_card: { in: uniqueCardIds } },
+      select: { id_card: true, url_image: true },
+    });
+
+    return cards.reduce<Record<number, string>>((dictionary, card) => {
+      dictionary[card.id_card] = card.url_image || '';
+      return dictionary;
+    }, {});
+  }
+
+  private serializeHand(
+    handIds: number[],
+    cardDictionary: Record<number, string>,
+  ) {
+    return handIds.map((id) => ({
+      id: `${ID_PREFIXES.CARD}${id}`,
+      url_image: cardDictionary[id] || '',
+    }));
+  }
+
+  /**
+   * Detecta si el jugador ha aterrizado en la misma puntuaciÃ³n que otro
    * y dispara el evento de minijuego 1vs1.
    */
   private async checkConflictMinigame(
