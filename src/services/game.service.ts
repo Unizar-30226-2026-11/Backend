@@ -59,7 +59,6 @@ export class GameService {
       return isNaN(num) ? 0 : num;
     });
 
-    console.log('IDs obtenidos');
     let centralDeck: number[] = [];
     const hostId = numericPlayerIds[0];
     const hostData = await prisma.user.findUnique({
@@ -153,6 +152,7 @@ export class GameService {
       activeConflict: null,
       activeBoardId: boardIdToUse,
       boardRegistry: {},
+      cardUrls: cardDictionary,
     };
 
     players.forEach((p: string) => {
@@ -223,19 +223,8 @@ export class GameService {
       const handIds = currentState.hands[reconnectingPlayerId] || [];
 
       if (handIds.length > 0) {
-        // Necesitamos buscar las URLs en la BD de las cartas de su mano
-        const cardInfo = await prisma.cards.findMany({
-          where: { id_card: { in: handIds } },
-          select: { id_card: true, url_image: true },
-        });
-
-        const hydratedHand = handIds.map((id) => {
-          const card = cardInfo.find((c) => c.id_card === id);
-          return {
-            id: `${ID_PREFIXES.CARD}${id}`,
-            url_image: card?.url_image || '',
-          };
-        });
+        
+        const hydratedHand = this.serializeHand(handIds, currentState.cardUrls || {});
 
         reconnectEmissions.push({
           room: reconnectingPlayerId,
@@ -261,12 +250,13 @@ export class GameService {
         const winnerId = disconnectedId === player1 ? player2 : player1;
 
         // Usamos la función que ya tenemos para resolverlo, dándole la victoria al que se quedó
-        return this.submitConflictResult(
+        const conflictEmissions = await this.submitConflictResult(
           lobbyCode,
           winnerId,
           disconnectedId,
           isDuel,
         );
+        reconnectEmissions.push(...conflictEmissions);
       }
     }
 
@@ -357,29 +347,15 @@ export class GameService {
       action.type !== 'RECONNECT_PLAYER' &&
       action.type !== 'DISCONNECT_PLAYER'
     ) {
-      const allHandCards = new Set<number>();
-      Object.values(newState.hands).forEach((hand: number[]) =>
-        hand.forEach((id) => allHandCards.add(id)),
-      );
-
-      const cardInfo = await prisma.cards.findMany({
-        where: { id_card: { in: Array.from(allHandCards) } },
-        select: { id_card: true, url_image: true },
-      });
-
-      const cardDictionary: Record<number, string> = {};
-      cardInfo.forEach((c) => {
-        cardDictionary[c.id_card] = c.url_image || '';
-      });
-
+  
       for (let i = 0; i < newState.players.length; i++) {
         const playerId = newState.players[i];
-        const handIds = newState.hands[playerId] as number[];
+        const handIds = newState.hands[playerId] as number[] || [];
 
         emissions.push({
           room: playerId,
           event: 'server:game:private_hand',
-          data: { hand: this.serializeHand(handIds, cardDictionary) },
+          data: { hand: this.serializeHand(handIds, newState.cardUrls || {}) },
         });
       }
     }
@@ -448,9 +424,6 @@ export class GameService {
 
     // Notify remaining players about their hand
     // (though kick shouldn't affect their hand, it's good practice to sync)
-    const handDictionary = await this.getCardUrlDictionary(
-      Object.values(newState.hands).flat() as number[],
-    );
 
     for (let i = 0; i < newState.players.length; i++) {
       const playerId = newState.players[i];
@@ -458,7 +431,7 @@ export class GameService {
         room: playerId,
         event: 'server:game:private_hand',
         data: {
-          hand: this.serializeHand(newState.hands[playerId], handDictionary),
+          hand: this.serializeHand(newState.hands[playerId], newState.cardUrls || {}),
         },
       });
     }
@@ -605,6 +578,7 @@ export class GameService {
     const publicState = structuredClone(state);
     delete (publicState as any).centralDeck;
     delete (publicState as any).hands;
+    delete (publicState as any).cardUrls;
     return publicState;
   }
 
@@ -941,12 +915,11 @@ export class GameService {
     }
 
     state.hands[pId] = newHand;
-    const handDictionary = await this.getCardUrlDictionary(newHand);
 
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: this.serializeHand(newHand, handDictionary) },
+      data: { hand: this.serializeHand(newHand, state.cardUrls || {}) },
     });
 
     emissions.push({
@@ -993,27 +966,6 @@ export class GameService {
         },
       },
     ];
-  }
-
-  /**
-   * Detecta si el jugador ha aterrizado en la misma puntuación que otro
-   * y dispara el evento de minijuego 1vs1.
-   */
-  private async getCardUrlDictionary(
-    cardIds: number[],
-  ): Promise<Record<number, string>> {
-    const uniqueCardIds = Array.from(new Set(cardIds));
-    if (uniqueCardIds.length === 0) return {};
-
-    const cards = await prisma.cards.findMany({
-      where: { id_card: { in: uniqueCardIds } },
-      select: { id_card: true, url_image: true },
-    });
-
-    return cards.reduce<Record<number, string>>((dictionary, card) => {
-      dictionary[card.id_card] = card.url_image || '';
-      return dictionary;
-    }, {});
   }
 
   private serializeHand(
