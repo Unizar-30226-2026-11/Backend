@@ -57,7 +57,9 @@ function inferRarity(rawNameWithoutExt: string): Rarity {
   return Rarity.COMMON;
 }
 
-async function listStorageFilesRecursively(currentPath: string): Promise<string[]> {
+async function listStorageFilesRecursively(
+  currentPath: string,
+): Promise<string[]> {
   const response = await fetch(
     `${process.env.SUPABASE_URL}/storage/v1/object/list/${BUCKET_NAME}`,
     {
@@ -157,7 +159,9 @@ async function main() {
     select: { id_card: true },
   });
 
-  console.log(`Cartas placeholder detectadas en DB: ${placeholderCards.length}`);
+  console.log(
+    `Cartas placeholder detectadas en DB: ${placeholderCards.length}`,
+  );
   console.log(
     `Cartas disponibles para backfill en esta ejecucion: ${availableStorageCards.length}`,
   );
@@ -179,7 +183,9 @@ async function main() {
   let createdCollections = 0;
   let createdCards = 0;
 
-  const ensureCollectionId = async (collectionName: string): Promise<number> => {
+  const ensureCollectionId = async (
+    collectionName: string,
+  ): Promise<number> => {
     const cachedCollectionId = collectionCache.get(collectionName);
     if (cachedCollectionId) return cachedCollectionId;
 

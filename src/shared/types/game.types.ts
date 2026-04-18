@@ -148,7 +148,7 @@ interface BaseGameState {
   /**
    * Diccionario en memoria con las URLs de las cartas de la partida.
    * Evita saturar PostgreSQL con consultas constantes en cada acción.
-   * { ID_Carta: 'url_de_la_imagen.png' } 
+   * { ID_Carta: 'url_de_la_imagen.png' }
    */
   cardUrls: Record<number, string>;
 }

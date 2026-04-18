@@ -223,8 +223,10 @@ export class GameService {
       const handIds = currentState.hands[reconnectingPlayerId] || [];
 
       if (handIds.length > 0) {
-        
-        const hydratedHand = this.serializeHand(handIds, currentState.cardUrls || {});
+        const hydratedHand = this.serializeHand(
+          handIds,
+          currentState.cardUrls || {},
+        );
 
         reconnectEmissions.push({
           room: reconnectingPlayerId,
@@ -347,10 +349,9 @@ export class GameService {
       action.type !== 'RECONNECT_PLAYER' &&
       action.type !== 'DISCONNECT_PLAYER'
     ) {
-  
       for (let i = 0; i < newState.players.length; i++) {
         const playerId = newState.players[i];
-        const handIds = newState.hands[playerId] as number[] || [];
+        const handIds = (newState.hands[playerId] as number[]) || [];
 
         emissions.push({
           room: playerId,
@@ -431,7 +432,10 @@ export class GameService {
         room: playerId,
         event: 'server:game:private_hand',
         data: {
-          hand: this.serializeHand(newState.hands[playerId], newState.cardUrls || {}),
+          hand: this.serializeHand(
+            newState.hands[playerId],
+            newState.cardUrls || {},
+          ),
         },
       });
     }

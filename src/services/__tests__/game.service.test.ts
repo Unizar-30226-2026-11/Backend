@@ -125,7 +125,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         );
         expect(startEmission).toBeDefined();
         expect(startEmission!.data).not.toHaveProperty('state.centralDeck'); // Privacidad
-        expect(startEmission!.data).not.toHaveProperty('state.cardUrls');    // Sobrecarga
+        expect(startEmission!.data).not.toHaveProperty('state.cardUrls'); // Sobrecarga
         expect(
           emissions.filter((e) => e.event === 'server:game:private_hand'),
         ).toHaveLength(3);
@@ -249,7 +249,12 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           scores: {},
           hands: { p1: [10, 20], p2: [30, 40] },
           phase: 'STORYTELLING',
-          cardUrls: { 10: 'url10.png', 20: 'url20.png', 30: 'url30.png', 40: 'url40.png' },
+          cardUrls: {
+            10: 'url10.png',
+            20: 'url20.png',
+            30: 'url30.png',
+            40: 'url40.png',
+          },
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
 
@@ -412,7 +417,10 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: false,
       } as unknown as GameState;
 
-      const emissions = await gameService['applyShuffleEffect'](mockState, 'p1');
+      const emissions = await gameService['applyShuffleEffect'](
+        mockState,
+        'p1',
+      );
 
       expect(mockState.discardPile).toHaveLength(0);
       expect(mockState.hands['p1']).toHaveLength(3);
@@ -432,10 +440,13 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         centralDeck: [1, 2],
         discardPile: [],
         isMinigameActive: false,
-        cardUrls: { 1: 'img1.png', 2: 'img2.png' }
+        cardUrls: { 1: 'img1.png', 2: 'img2.png' },
       } as unknown as GameState;
 
-      const emissions = await gameService['applyShuffleEffect'](mockState, 'p1');
+      const emissions = await gameService['applyShuffleEffect'](
+        mockState,
+        'p1',
+      );
       const handEmission = emissions.find(
         (e) => e.event === 'server:game:private_hand',
       );
@@ -739,7 +750,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: true,
         activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
         scores: { p1: 10, p2: 10 },
-        players: ['p1', 'p2'], 
+        players: ['p1', 'p2'],
         cardUrls: {},
       } as unknown as GameState;
       mockRedisRepo.getGame.mockResolvedValue(mockState);
@@ -765,7 +776,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: true,
         activeConflict: { player1: 'p1', player2: 'p2', isDuel: false },
         scores: { p1: 10, p2: 10 },
-        players: ['p1', 'p2'], 
+        players: ['p1', 'p2'],
         cardUrls: {},
       } as unknown as GameState;
       mockRedisRepo.getGame.mockResolvedValue(mockState);

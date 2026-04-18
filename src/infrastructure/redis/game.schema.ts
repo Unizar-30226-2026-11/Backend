@@ -19,7 +19,7 @@ export const gameStateSchema = new Schema(
     discardPile: { type: 'string' }, // JSON: number[]
     currentRound: { type: 'string' }, // JSON: StandardRound | StellaRound
     cardUrls: { type: 'string' }, // JSON: Record<number, string>
-    
+
     // Powerup: Estrella Fugaz
     isStarActive: { type: 'boolean' },
     starExpiresAt: { type: 'number' },

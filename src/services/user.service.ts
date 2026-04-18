@@ -281,7 +281,6 @@ export const UserService = {
     });
   },
 
-
   /**
    * Establece el tablero activo para que se muestre en las partidas del usuario.
    */
@@ -317,8 +316,6 @@ export const UserService = {
       },
     };
   },
-
-
 
   // --- Mazos (Decks) ---
 
