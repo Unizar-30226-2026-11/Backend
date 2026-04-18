@@ -22,6 +22,7 @@ export const GameRedisRepository = {
       centralDeck: JSON.parse((data.centralDeck as string) || '[]'),
       discardPile: JSON.parse((data.discardPile as string) || '[]'),
       currentRound: JSON.parse((data.currentRound as string) || '{}'),
+      cardUrls: JSON.parse((data.cardUrls as string) || '{}'),
       boardRegistry: JSON.parse((data.boardRegistry as string) || '{}'),
       activeConflict: JSON.parse((data.activeConflict as string) || 'null'),
     } as unknown as GameState;
@@ -39,6 +40,7 @@ export const GameRedisRepository = {
       centralDeck: JSON.stringify(state.centralDeck),
       discardPile: JSON.stringify(state.discardPile),
       currentRound: JSON.stringify(state.currentRound),
+      cardUrls: JSON.stringify(state.cardUrls || {}),
       boardRegistry: JSON.stringify(state.boardRegistry),
       activeConflict: JSON.stringify(state.activeConflict ?? null),
     });
