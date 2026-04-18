@@ -9,6 +9,7 @@
     "sync": "ts-node-dev --transpile-only src/scripts/sync.ts",
     "sync:prod": "node dist/scripts/sync.js",
     "sync:cards": "ts-node-dev --transpile-only src/scripts/sync-cards.ts",
+    "sync:cards:seed": "ts-node-dev --transpile-only src/scripts/backfill-seeded-card-images.ts",
     "sync:boards": "ts-node-dev --transpile-only src/scripts/sync-boards.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
