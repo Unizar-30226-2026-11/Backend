@@ -1,7 +1,5 @@
 // src/sockets/events/types.ts
 
-import { AnyNullClass } from '@prisma/client/runtime/client';
-
 import { GameAction } from '../../shared/types';
 // --- TIPOS DE SUBIDA (Payloads del Cliente) ---
 
