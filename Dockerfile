@@ -1,8 +1,11 @@
+# =======================
+# STAGE 1: Build & Compile
+# =======================
 FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Instalar dependencias
+# Instalar dependencias (incluyendo devDependencies para build)
 COPY package*.json ./
 RUN npm ci
 
@@ -19,10 +22,33 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Limpiamos dependencias de desarrollo
+# Limpiamos dependencias de desarrollo para production
 RUN npm prune --omit=dev
 
 
+# =======================
+# STAGE 2: Tools (migrate & sync)
+# =======================
+FROM node:20-alpine AS tools
+
+WORKDIR /app
+
+# Copiamos todas las dependencias (incluyendo dev)
+COPY package*.json ./
+RUN npm ci
+
+# Copiamos prisma para que prisma CLI esté disponible
+COPY prisma.config.ts ./
+COPY prisma ./prisma/
+
+# Node para ejecutar comandos
+USER node
+CMD ["node"]
+
+
+# =======================
+# STAGE 3: Runtime (backend production)
+# =======================
 FROM node:20-alpine AS runtime
 
 ENV NODE_ENV=production
