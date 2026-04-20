@@ -29,11 +29,22 @@ jobs:
           username: ${{ github.actor }} # Tu usuario o el de la acción
           password: ${{ secrets.GITHUB_TOKEN }} # El secreto automático
 
-      - name: Construir y subir imagen
+      - name: Construir y subir imagen backend (runtime)
         uses: docker/build-push-action@v5
         with:
           context: . # Donde esté el Dockerfile (en la raíz)
+          target: runtime
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Construir y subir imagen backend-tools (migrate & sync)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: tools
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-tools:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-tools:${{ github.sha }}
