@@ -47,5 +47,9 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Preparar Prisma
+        run: |
+          npx prisma generate
+
       - name: Ejecutar los tests de workers
         run: npx jest src/workers --runInBand --detectOpenHandles
