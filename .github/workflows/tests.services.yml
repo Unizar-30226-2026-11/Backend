@@ -74,4 +74,4 @@ jobs:
           npx prisma db seed
 
       - name: 🧪 Ejecutar los tests de servicios
-        run: npx jest src/services --runInBand --detectOpenHandles
+        run: npx jest src/services --runInBand --forceExit
