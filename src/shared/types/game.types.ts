@@ -144,6 +144,13 @@ interface BaseGameState {
 
   // Guardamos quiénes están peleando para saber si uno huye
   activeConflict?: { player1: string; player2: string; isDuel: boolean } | null;
+
+  /**
+   * Diccionario en memoria con las URLs de las cartas de la partida.
+   * Evita saturar PostgreSQL con consultas constantes en cada acción.
+   * { ID_Carta: 'url_de_la_imagen.png' }
+   */
+  cardUrls: Record<number, string>;
 }
 
 /**
@@ -190,6 +197,11 @@ export interface ActionDisconnect {
 /** Acción registrada cuando un jugador recupera la conexión */
 export interface ActionReconnect {
   type: 'RECONNECT_PLAYER';
+  playerId: string;
+}
+/** Acción registrada cuando un jugador es expulsado por inactividad */
+export interface ActionKick {
+  type: 'KICK_PLAYER';
   playerId: string;
 }
 /** Acción que fuerza el avance a la siguiente ronda (limpieza y preparación) */
@@ -261,6 +273,7 @@ export type GameAction =
   | ActionInitGame
   | ActionDisconnect
   | ActionReconnect
+  | ActionKick
   | ActionNextRound
   | ActionChangeMode
   | ActionClaimStar

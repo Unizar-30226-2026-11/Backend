@@ -125,6 +125,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         );
         expect(startEmission).toBeDefined();
         expect(startEmission!.data).not.toHaveProperty('state.centralDeck'); // Privacidad
+        expect(startEmission!.data).not.toHaveProperty('state.cardUrls'); // Sobrecarga
         expect(
           emissions.filter((e) => e.event === 'server:game:private_hand'),
         ).toHaveLength(3);
@@ -153,6 +154,47 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           select: { id_card: true },
         });
       });
+
+      test('Debe normalizar un lobby legacy con engine "Stella" y arrancar en modo STELLA', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'Stella', players: [p1, p2, p3] };
+
+        const mockDecks = [
+          {
+            cards: Array(60).fill({
+              user_card: {
+                id_card: 100,
+                card: { id_card: 100, url_image: 'img.png' },
+              },
+            }),
+          },
+        ];
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 100, url_image: 'img.png' },
+        ]);
+
+        await gameService.initializeGame('ROOM-STELLA', lobbyData);
+
+        expect(mockRedisRepo.saveGame).toHaveBeenCalledWith(
+          'ROOM-STELLA',
+          expect.objectContaining({
+            mode: 'STELLA',
+            phase: 'STELLA_WORD_REVEAL',
+          }),
+        );
+        expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
+          'phase-timeout',
+          expect.objectContaining({
+            lobbyCode: 'ROOM-STELLA',
+            expectedPhase: 'STELLA_WORD_REVEAL',
+          }),
+          expect.objectContaining({ delay: 60000 }),
+        );
+      });
     });
 
     describe('handleAction', () => {
@@ -173,13 +215,9 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           hands: { p1: [5, 6] },
           centralDeck: [1, 2, 3],
           phase: 'STORYTELLING',
+          cardUrls: { 5: 'img5.png', 6: 'img6.png' },
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
-
-        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
-          { id_card: 5, url_image: 'img5.png' },
-          { id_card: 6, url_image: 'img6.png' },
-        ]);
 
         const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
         const emissions = await gameService.handleAction('ROOM-ACTION', action);
@@ -211,14 +249,14 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           scores: {},
           hands: { p1: [10, 20], p2: [30, 40] },
           phase: 'STORYTELLING',
+          cardUrls: {
+            10: 'url10.png',
+            20: 'url20.png',
+            30: 'url30.png',
+            40: 'url40.png',
+          },
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
-
-        // Mock de la base de datos para buscar las cartas de p1
-        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
-          { id_card: 10, url_image: 'url10.png' },
-          { id_card: 20, url_image: 'url20.png' },
-        ]);
 
         const action = { type: 'RECONNECT_PLAYER', playerId: 'p1' } as any;
         const emissions = await gameService.handleAction(
@@ -368,7 +406,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       expect(mockState.centralDeck.length).toBe(0);
     });
 
-    test('Debe emitir reshuffled si el mazo central se queda a cero en STANDARD', () => {
+    test('Debe emitir reshuffled si el mazo central se queda a cero en STANDARD', async () => {
       const mockState = {
         lobbyCode: 'LOBBY-1',
         mode: 'STANDARD',
@@ -379,7 +417,10 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: false,
       } as unknown as GameState;
 
-      const emissions = gameService['applyShuffleEffect'](mockState, 'p1');
+      const emissions = await gameService['applyShuffleEffect'](
+        mockState,
+        'p1',
+      );
 
       expect(mockState.discardPile).toHaveLength(0);
       expect(mockState.hands['p1']).toHaveLength(3);
@@ -388,6 +429,33 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         (e) => e.event === 'server:game:deck_reshuffled',
       );
       expect(reshuffleEmission).toBeDefined();
+    });
+
+    test('Debe hidratar la mano privada con url_image tras aplicar SHUFFLE', async () => {
+      const mockState = {
+        lobbyCode: 'LOBBY-2',
+        mode: 'STANDARD',
+        players: ['p1'],
+        hands: { p1: [10, 11] },
+        centralDeck: [1, 2],
+        discardPile: [],
+        isMinigameActive: false,
+        cardUrls: { 1: 'img1.png', 2: 'img2.png' },
+      } as unknown as GameState;
+
+      const emissions = await gameService['applyShuffleEffect'](
+        mockState,
+        'p1',
+      );
+      const handEmission = emissions.find(
+        (e) => e.event === 'server:game:private_hand',
+      );
+
+      expect(handEmission).toBeDefined();
+      expect((handEmission!.data as any).hand).toEqual([
+        { id: `${ID_PREFIXES.CARD}2`, url_image: 'img2.png' },
+        { id: `${ID_PREFIXES.CARD}1`, url_image: 'img1.png' },
+      ]);
     });
 
     test('Debe intercambiar puntos con otro jugador al azar en modo STELLA', async () => {
@@ -682,6 +750,8 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: true,
         activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
         scores: { p1: 10, p2: 10 },
+        players: ['p1', 'p2'],
+        cardUrls: {},
       } as unknown as GameState;
       mockRedisRepo.getGame.mockResolvedValue(mockState);
 
@@ -706,6 +776,8 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         isMinigameActive: true,
         activeConflict: { player1: 'p1', player2: 'p2', isDuel: false },
         scores: { p1: 10, p2: 10 },
+        players: ['p1', 'p2'],
+        cardUrls: {},
       } as unknown as GameState;
       mockRedisRepo.getGame.mockResolvedValue(mockState);
 

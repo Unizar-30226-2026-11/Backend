@@ -60,6 +60,7 @@ src/
 El proyecto cuenta con una suite de pruebas de integración utilizando **Jest**. Las pruebas siguen un enfoque "sandbox", creando y destruyendo datos temporales contra la base de datos real para garantizar la fiabilidad de los servicios.
 
 Para ejecutar las pruebas:
+
 1. Asegúrate de tener el contenedor de la base de datos local corriendo (`docker compose up -d`).
 2. Ejecuta el comando de pruebas:
    ```bash
@@ -131,6 +132,18 @@ Una vez que el servidor esté corriendo, puedes explorar todos los endpoints dis
 
 ---
 
+## 🔁 CI/CD
+
+La documentación del flujo de integración continua y despliegue está separada por tarea para que sea fácil de consultar y mantener:
+
+- [Resumen de CI/CD](docs/ci-cd/README.md)
+- [Tests](docs/ci-cd/tests.md)
+- [Validación de `npm run dev`](docs/ci-cd/dev-smoke.md)
+- [Comprobación de compilación](docs/ci-cd/build.md)
+- [Publicación de imagen Docker](docs/ci-cd/docker.md)
+
+---
+
 ## 🛠 Scripts Disponibles
 
 | Script           | Descripción                                                    |
@@ -140,6 +153,7 @@ Una vez que el servidor esté corriendo, puedes explorar todos los endpoints dis
 | `npm run lint`   | Analiza el código en busca de errores de estilo.               |
 | `npm run format` | Formatea el código automáticamente usando Prettier.            |
 | `npm run test`   | Ejecuta la suite de pruebas de integración con Jest.           |
+
 ---
 
 > **Nota para desarrolladores:** Recuerda que para cumplir con el **RNF-4**, cualquier dato sensible debe ser gestionado a través del servicio de cifrado antes de ser almacenado.

@@ -16,6 +16,7 @@ import {
 } from '../shared/constants/rewards';
 import { GameAction, GameState } from '../shared/types';
 import { invalidateCache } from '../shared/utils/cache.utils';
+import { normalizeGameMode } from '../shared/utils/game-mode.utils';
 
 // ==========================================
 // CONFIGURACIÓN DE BULLMQ (Timeouts de turnos)
@@ -59,7 +60,6 @@ export class GameService {
     });
 
     let centralDeck: number[] = [];
-
     const hostId = numericPlayerIds[0];
     const hostData = await prisma.user.findUnique({
       where: { id_user: hostId },
@@ -134,8 +134,7 @@ export class GameService {
       cardDictionary[c.id_card] = c.url_image || '';
     });
 
-    const safeMode =
-      mode === 'STELLA' || mode === 'STANDARD' ? mode : 'STANDARD';
+    const safeMode = normalizeGameMode(mode) ?? 'STANDARD';
 
     // Crear el estado base
     const baseState: any = {
@@ -153,6 +152,7 @@ export class GameService {
       activeConflict: null,
       activeBoardId: boardIdToUse,
       boardRegistry: {},
+      cardUrls: cardDictionary,
     };
 
     players.forEach((p: string) => {
@@ -186,15 +186,10 @@ export class GameService {
       const handIds = initialState.hands[playerId] as number[];
 
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
-      const hydratedHand = handIds.map((id) => ({
-        id: `${ID_PREFIXES.CARD}${id}`,
-        url_image: cardDictionary[id] || '',
-      }));
-
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: hydratedHand },
+        data: { hand: this.serializeHand(handIds, cardDictionary) },
       });
     }
 
@@ -228,19 +223,10 @@ export class GameService {
       const handIds = currentState.hands[reconnectingPlayerId] || [];
 
       if (handIds.length > 0) {
-        // Necesitamos buscar las URLs en la BD de las cartas de su mano
-        const cardInfo = await prisma.cards.findMany({
-          where: { id_card: { in: handIds } },
-          select: { id_card: true, url_image: true },
-        });
-
-        const hydratedHand = handIds.map((id) => {
-          const card = cardInfo.find((c) => c.id_card === id);
-          return {
-            id: `${ID_PREFIXES.CARD}${id}`,
-            url_image: card?.url_image || '',
-          };
-        });
+        const hydratedHand = this.serializeHand(
+          handIds,
+          currentState.cardUrls || {},
+        );
 
         reconnectEmissions.push({
           room: reconnectingPlayerId,
@@ -266,12 +252,13 @@ export class GameService {
         const winnerId = disconnectedId === player1 ? player2 : player1;
 
         // Usamos la función que ya tenemos para resolverlo, dándole la victoria al que se quedó
-        return this.submitConflictResult(
+        const conflictEmissions = await this.submitConflictResult(
           lobbyCode,
           winnerId,
           disconnectedId,
           isDuel,
         );
+        reconnectEmissions.push(...conflictEmissions);
       }
     }
 
@@ -362,35 +349,14 @@ export class GameService {
       action.type !== 'RECONNECT_PLAYER' &&
       action.type !== 'DISCONNECT_PLAYER'
     ) {
-      const allHandCards = new Set<number>();
-      Object.values(newState.hands).forEach((hand: number[]) =>
-        hand.forEach((id) => allHandCards.add(id)),
-      );
-
-      const cardInfo = await prisma.cards.findMany({
-        where: { id_card: { in: Array.from(allHandCards) } },
-        select: { id_card: true, url_image: true },
-      });
-
-      const cardDictionary: Record<number, string> = {};
-      cardInfo.forEach((c) => {
-        cardDictionary[c.id_card] = c.url_image || '';
-      });
-
       for (let i = 0; i < newState.players.length; i++) {
         const playerId = newState.players[i];
-        const handIds = newState.hands[playerId] as number[];
-
-        // Hidratamos la mano
-        const hydratedHand = handIds.map((id) => ({
-          id: `${ID_PREFIXES.CARD}${id}`,
-          url_image: cardDictionary[id] || '',
-        }));
+        const handIds = (newState.hands[playerId] as number[]) || [];
 
         emissions.push({
           room: playerId,
           event: 'server:game:private_hand',
-          data: { hand: hydratedHand },
+          data: { hand: this.serializeHand(handIds, newState.cardUrls || {}) },
         });
       }
     }
@@ -413,6 +379,66 @@ export class GameService {
     }
 
     // 11. Fin de Partida: Ranking y Monedas
+
+    if (newState.phase === 'FINISHED') {
+      const finalEmissions = await this.finalizeGame(lobbyCode);
+      emissions.push(...finalEmissions);
+    }
+
+    return emissions;
+  }
+
+  /**
+   * Kicks a player from the active game due to inactivity.
+   */
+  public async kickPlayer(
+    lobbyCode: string,
+    userId: string,
+  ): Promise<SocketEmission[]> {
+    const currentState = await this.redisRepo.getGame(lobbyCode);
+    if (!currentState) {
+      return [];
+    }
+
+    const engine: IGameEngine = this.getEngine();
+    const action: GameAction = {
+      type: 'KICK_PLAYER',
+      playerId: userId,
+    };
+
+    const newState = engine.transition(currentState, action);
+
+    // If the game has less than 2 players, we could end it here,
+    // but the engine transition (phase advancement check) might also handle it.
+
+    await this.redisRepo.saveGame(lobbyCode, newState);
+
+    const emissions: SocketEmission[] = [];
+    const publicState = this.maskPrivateState(newState);
+
+    // Enviar el estado actualizado
+    emissions.push({
+      room: lobbyCode,
+      event: 'server:game:state_updated',
+      data: { state: publicState, lastAction: 'KICK_PLAYER' },
+    });
+
+    // Notify remaining players about their hand
+    // (though kick shouldn't affect their hand, it's good practice to sync)
+
+    for (let i = 0; i < newState.players.length; i++) {
+      const playerId = newState.players[i];
+      emissions.push({
+        room: playerId,
+        event: 'server:game:private_hand',
+        data: {
+          hand: this.serializeHand(
+            newState.hands[playerId],
+            newState.cardUrls || {},
+          ),
+        },
+      });
+    }
 
     if (newState.phase === 'FINISHED') {
       const finalEmissions = await this.finalizeGame(lobbyCode);
@@ -556,6 +582,7 @@ export class GameService {
     const publicState = structuredClone(state);
     delete (publicState as any).centralDeck;
     delete (publicState as any).hands;
+    delete (publicState as any).cardUrls;
     return publicState;
   }
 
@@ -751,7 +778,7 @@ export class GameService {
         if (state.mode === 'STELLA') {
           emissions.push(...this.applyStellaScoreSwap(state, pId));
         } else {
-          emissions.push(...this.applyShuffleEffect(state, pId));
+          emissions.push(...(await this.applyShuffleEffect(state, pId)));
         }
       }
 
@@ -854,7 +881,10 @@ export class GameService {
   /**
    * Efecto Shuffle: Tira tus cartas y coge nuevas.
    */
-  private applyShuffleEffect(state: GameState, pId: string): SocketEmission[] {
+  private async applyShuffleEffect(
+    state: GameState,
+    pId: string,
+  ): Promise<SocketEmission[]> {
     const currentHand = state.hands[pId] || [];
     const handSize = currentHand.length;
 
@@ -893,7 +923,7 @@ export class GameService {
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: newHand },
+      data: { hand: this.serializeHand(newHand, state.cardUrls || {}) },
     });
 
     emissions.push({
@@ -942,8 +972,18 @@ export class GameService {
     ];
   }
 
+  private serializeHand(
+    handIds: number[],
+    cardDictionary: Record<number, string>,
+  ) {
+    return handIds.map((id) => ({
+      id: `${ID_PREFIXES.CARD}${id}`,
+      url_image: cardDictionary[id] || '',
+    }));
+  }
+
   /**
-   * Detecta si el jugador ha aterrizado en la misma puntuación que otro
+   * Detecta si el jugador ha aterrizado en la misma puntuaciÃ³n que otro
    * y dispara el evento de minijuego 1vs1.
    */
   private async checkConflictMinigame(

@@ -20,7 +20,6 @@ services:
     restart: always
     ports:
       - "6379:6379"
-      # - "8001:8001" # Descomentar para usar RedisInsight UI
     volumes:
       - redis_data:/data
 

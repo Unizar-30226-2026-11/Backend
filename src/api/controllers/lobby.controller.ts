@@ -25,7 +25,12 @@ export const createLobby = async (
       message: 'Sala creada exitosamente. Listo para conexión WebSocket.',
       lobby: createdLobby,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === 'INVALID_GAME_MODE') {
+      res.status(400).json({ message: 'Modo de juego invÃ¡lido.' });
+      return;
+    }
+
     console.error('Error in createLobby:', error);
     res.status(500).json({ message: 'Error interno al crear la sala.' });
   }

@@ -74,7 +74,7 @@ model Board {
   name        String   @unique
   description String
   price       Int
-  url_image   String
+  url_image   String?
   
   owners      UserBoard[]
   active_in_users User[] @relation("ActiveBoard")

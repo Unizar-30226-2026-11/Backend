@@ -3,6 +3,7 @@ import {
   ActionChangeMode,
   ActionDisconnect,
   ActionInitGame,
+  ActionKick,
   ActionReconnect,
   GameAction,
   GameMode,
@@ -53,6 +54,11 @@ export class DixitEngine {
     if (action.type === 'RECONNECT_PLAYER') {
       this.handleReconnect(state, action);
       // Igual que en la desconexión, la estrategia debe reevaluar la fase.
+      return this.strategies[state.mode].transition(state, action);
+    }
+
+    if (action.type === 'KICK_PLAYER') {
+      this.handleKick(state, action);
       return this.strategies[state.mode].transition(state, action);
     }
 
@@ -114,6 +120,8 @@ export class DixitEngine {
 
     // Delegamos la creación de la `currentRound` a la estrategia inicial
     const readyState = state as GameState;
+    console.log('Estado listo para iniciar ronda:', readyState);
+    console.log('Estrategia:', this.strategies[state.mode]);
     return this.strategies[state.mode].handleNextRound(readyState);
   }
 
@@ -170,5 +178,30 @@ export class DixitEngine {
     state.disconnectedPlayers = state.disconnectedPlayers.filter(
       (id) => id !== action.playerId,
     );
+  }
+
+  /**
+   * Elimina completamente a un jugador por inactividad.
+   */
+  private static handleKick(state: GameState, action: ActionKick): void {
+    const { playerId } = action;
+
+    // Lo quitamos de la lista de jugadores activos
+    state.players = state.players.filter((id) => id !== playerId);
+
+    // Lo quitamos de la lista de desconectados si estaba
+    state.disconnectedPlayers = state.disconnectedPlayers.filter(
+      (id) => id !== playerId,
+    );
+
+    // Opcional: Podríamos tirar sus cartas al descarte, pero para evitar
+    // mutar excesivamente y romper jugadas, solo borramos su mano
+    if (state.hands[playerId]) {
+      state.discardPile.push(...state.hands[playerId]);
+      delete state.hands[playerId];
+    }
+
+    // Eliminamos sus puntos
+    delete state.scores[playerId];
   }
 }
