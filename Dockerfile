@@ -40,6 +40,7 @@ RUN npm ci
 # Copiamos prisma para que prisma CLI esté disponible
 COPY prisma.config.ts ./
 COPY prisma ./prisma/
+RUN npx prisma generate
 
 # Compiar scripts para sincronización
 COPY --from=build /app/dist/scripts ./dist/scripts
