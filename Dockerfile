@@ -44,6 +44,7 @@ RUN npx prisma generate
 
 # Compiar scripts para sincronización
 COPY --from=build /app/dist/scripts ./dist/scripts
+COPY --from=build /app/dist/infrastructure ./dist/infrastructure
 
 # Node para ejecutar comandos
 USER node
