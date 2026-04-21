@@ -41,6 +41,9 @@ RUN npm ci
 COPY prisma.config.ts ./
 COPY prisma ./prisma/
 
+# Compiar scripts para sincronización
+COPY --from=build /app/dist/scripts ./dist/scripts
+
 # Node para ejecutar comandos
 USER node
 CMD ["node"]

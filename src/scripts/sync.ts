@@ -10,6 +10,14 @@ type SyncExecutionPlan = {
   args: string[];
 };
 
+type NonInteractiveSyncOptions = {
+  baseDir: string;
+  forwardedArgs: string[];
+};
+
+const DEFAULT_SYNC_BASE_DIR = '/app/sync-data';
+const BASE_DIR_FLAG = '--base-dir';
+
 function normalizeAnswer(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -28,6 +36,16 @@ function isYes(value: string): boolean {
 function scriptLabel(scriptPath: string): string {
   const baseName = path.basename(scriptPath, path.extname(scriptPath));
   return baseName.replace(/^sync-/, '');
+}
+
+function scriptFolderName(scriptPath: string): string {
+  const label = scriptLabel(scriptPath);
+
+  if (!label) {
+    return label;
+  }
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function normalizeCliPathArg(arg: string): string {
@@ -65,6 +83,58 @@ async function runCommand(command: string, args: string[]): Promise<void> {
       reject(new Error(`Comando fallido: ${command} ${args.join(' ')}`));
     });
   });
+}
+
+function parseNonInteractiveOptions(
+  forwardedArgs: string[],
+): NonInteractiveSyncOptions {
+  const remainingArgs: string[] = [];
+  let baseDir = process.env.SYNC_BASE_DIR ?? DEFAULT_SYNC_BASE_DIR;
+  let baseDirFromPositionalArg = false;
+
+  for (let index = 0; index < forwardedArgs.length; index += 1) {
+    const arg = forwardedArgs[index];
+
+    if (arg === BASE_DIR_FLAG) {
+      const nextValue = forwardedArgs[index + 1];
+
+      if (!nextValue || nextValue.startsWith('-')) {
+        throw new Error(
+          'La opción --base-dir requiere una ruta válida inmediatamente después.',
+        );
+      }
+
+      baseDir = normalizeCliPathArg(nextValue);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith(`${BASE_DIR_FLAG}=`)) {
+      const value = arg.slice(`${BASE_DIR_FLAG}=`.length).trim();
+
+      if (!value) {
+        throw new Error(
+          'La opción --base-dir requiere una ruta válida inmediatamente después.',
+        );
+      }
+
+      baseDir = normalizeCliPathArg(value);
+      continue;
+    }
+
+    if (!arg.startsWith('-') && !baseDirFromPositionalArg) {
+      baseDir = normalizeCliPathArg(arg);
+      baseDirFromPositionalArg = true;
+      continue;
+    }
+
+    remainingArgs.push(arg);
+  }
+
+  return {
+    baseDir,
+    forwardedArgs: remainingArgs,
+  };
 }
 
 async function listSyncScripts(): Promise<string[]> {
@@ -142,11 +212,14 @@ function buildNonInteractivePlan(
   targetScripts: string[],
   forwardedArgs: string[],
 ): SyncExecutionPlan[] {
-  const normalizedArgs = forwardedArgs.map((arg) => normalizeCliPathArg(arg));
+  const normalizedOptions = parseNonInteractiveOptions(forwardedArgs);
 
   return targetScripts.map((scriptPath) => ({
     scriptPath,
-    args: normalizedArgs,
+    args: [
+      path.resolve(normalizedOptions.baseDir, scriptFolderName(scriptPath)),
+      ...normalizedOptions.forwardedArgs.map((arg) => normalizeCliPathArg(arg)),
+    ],
   }));
 }
 
