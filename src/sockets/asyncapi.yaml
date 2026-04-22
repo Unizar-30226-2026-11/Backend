@@ -1,35 +1,12 @@
 asyncapi: 2.6.0
 info:
   title: PSOFT Game WebSockets API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    Especificación de la API de WebSockets (Socket.IO) para el Lobby, Chat y Juego.
-    
-    ## 1. Visión general de la arquitectura
-    El backend utiliza Socket.IO ejecutándose sobre el servidor HTTP en el puerto 3000. La arquitectura está orientada en **canales de acción centralizado**, en donde el evento principal `client:game:action` procesa toda la lógica delegándola en el motor base de juego (`DixitEngine`).
-    
-    ## 2. Autenticación y Seguridad
-    - Un middleware global valida siempre un token **JWT** incluido en el handshake (`socket.handshake.auth.token`).
-    - Al aceptar la comunicación, se asignan y blindan los atributos de `userId` y `lobbyCode` desde el interior inmutable del JWT.
-    
-    ## 3. Sistema de Salas (Rooms)
-    - **Lobby Room (`lobbyCode`)**: Canal de difusión genérico por el que se propaga eventos públicos (por ejemplo, chats o los avances de jugadas) para todos los usuarios.
-    - **Personal Room (`userId`)**: Sala única individual empleada para mandar información que pudiese comprometer el juego limpio, como tu propia mano oculta de cartas (`server:game:private_hand`) o notificaciones personalizadas (`server:error`).
+    Especificacion actualizada de la API de WebSockets (Socket.IO) para lobby,
+    juego, chat y recuperacion de sesion.
 
-    ## 4. Handlers de Sockets
-    - **Lobby Handler**: `client:lobby:join`, `client:lobby:start`, y la salida mediante la desconexión del socket. Coordina peticiones hacia `LobbyService`.
-    - **Game Handler**: Escucha `client:game:action` unificando toda orden de juego. Transmite con validación de Zod el objeto interpretado al GameService.
-    - **Chat Handler**: Transmite `client:chat:send` tras un procesamiento por Zod.
-
-    ## 5. Servicios Relacionados
-    - **LobbyService (Redis)**: Accede en forma de CRUD rápido a los metadatos y estado de concurrencia actual de los grupos en fase _waiting_.
-    - **GameService**: Orquestador principal que une `DixitEngine` (lógica agnóstica de negocio), infraestructura local Redis, y cronómetros de turnos automáticos mediante colas _BullMQ_. Extrae información privada sensible (`hands` y `centralDeck`) antes de compartir el estado general.
-    - **Worker BullMQ**: Administrador de ausencias / AFKs que monitorea la fase y activa jugadas default pseudo-aleatorias y eventos perezosos (`NEXT_ROUND`).
-
-    ## 6. Casos de Uso Destacados / Flujos Completos
-    1. **Adhesión a Sala**: Conexión a Socket con handshake JWT -> Pedido `client:lobby:join` -> Servidor verifica disponibilidad e ingresa código al Redis. Luego se difunde `server:lobby:state_updated` con los miembros para la UI local.
-    2. **Disparo de Partida**: El _Creator_ emite `client:lobby:start` -> Validaciones de aforo mínimo -> Initial setup con inserción de estados en Redis y cartas prisma. Se expide tanto `game:started` como `server:game:started`/`server:game:private_hand`.
-    3. **Ciclo Típico de Acción Central**: Al dictar el Narrador la nueva palabra -> `client:game:action` (subtipo _SUBMIT_STORY_) -> Processamiento -> Salvaguarda Redis -> Extracción de secretismos y retransmisión de estados adaptados a toda la pantalla grupal (`server:game:state_updated`) e individual de cartas de refresco.
+    Fuente de verdad: implementacion en handlers y GameService.
 
 servers:
   production:
@@ -39,85 +16,175 @@ servers:
 
 channels:
   # ==========================================
-  # EVENTOS DE SUBIDA (Cliente -> Servidor)
+  # CLIENTE -> SERVIDOR
   # ==========================================
   client:lobby:join:
-    description: El cliente solicita unirse a un lobby confirmando su llegada a la pantalla de lobby compartida.
+    description: El usuario se une al lobby indicado por su JWT (lobbyCode del token).
     publish:
       message:
         $ref: '#/components/messages/ClientLobbyJoin'
-        
+
   client:lobby:leave:
-    description: El cliente abandona el lobby intencionalmente (alternativamente a dispararse evento de socket desconectado).
+    description: El usuario abandona voluntariamente el lobby actual.
     publish:
       message:
         $ref: '#/components/messages/EmptyMessage'
-        
+
   client:lobby:start:
-    description: El host del lobby solicita iniciar el juego al conseguir el cupo mínimo legal de integrantes.
+    description: El host solicita iniciar la partida.
     publish:
       message:
-        $ref: '#/components/messages/EmptyMessage'
-        
+        $ref: '#/components/messages/ClientLobbyStart'
+
   client:game:action:
-    description: El cliente envía una acción principal de juego al servidor, posteriormente delegada al motor DixitEngine que calculará los deltas del GameState.
+    description: Canal principal de acciones de juego (tipadas por actionType).
     publish:
       message:
         $ref: '#/components/messages/ClientGameAction'
-        
+
+  client:game:trigger_star:
+    description: Solicita activar el evento de estrella fugaz.
+    publish:
+      message:
+        $ref: '#/components/messages/LobbyCodeMessage'
+
+  client:game:claim_star:
+    description: Reclama la estrella activa para sumar puntos.
+    publish:
+      message:
+        $ref: '#/components/messages/LobbyCodeMessage'
+
+  client:game:end:
+    description: Finaliza la partida y dispara calculo de ranking/recompensas.
+    publish:
+      message:
+        $ref: '#/components/messages/LobbyCodeMessage'
+
   client:chat:send:
-    description: El cliente redacta un comentario libre y el servidor lo difunde a todos los habitantes con su sello temporal e identificador en la sala.
+    description: Envia un mensaje de chat al lobby.
     publish:
       message:
         $ref: '#/components/messages/ClientChatSend'
 
+  joinLobbyRoom:
+    description: Evento legacy para unirse manualmente a una room de Socket.IO.
+    publish:
+      message:
+        $ref: '#/components/messages/JoinLobbyRoom'
+
   # ==========================================
-  # EVENTOS DE BAJADA (Servidor -> Cliente)
+  # SERVIDOR -> CLIENTE
   # ==========================================
   server:error:
-    description: Enviado únicamente a un jugador específico de manera privada cuando sucede un problema formal o denegación por error de lógica / validación.
+    description: Error de validacion, autenticacion o negocio.
     subscribe:
       message:
         $ref: '#/components/messages/ServerError'
-        
+
+  server:force_disconnect:
+    description: Desconexion forzada (control de multipestana).
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerForceDisconnect'
+
   server:lobby:state_updated:
-    description: Contiene todos los datos en vivo sobre los inquilinos actuales de la partida organizados en array, además de propiedades meta (ej. hostId, capacidad, motor).
+    description: Estado completo del lobby en Redis.
     subscribe:
       message:
         $ref: '#/components/messages/ServerLobbyStateUpdated'
 
+  server:lobby:recovered:
+    description: Recuperacion de sesion en sala de espera.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerLobbyRecovered'
+
+  server:lobby:player_reconnected:
+    description: Notifica al resto que un jugador se ha reconectado al lobby.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerLobbyPlayerReconnected'
+
+  server:session:recovered:
+    description: Recuperacion de sesion con partida en curso.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerSessionRecovered'
+
   server:game:started:
-    description: Emitido inmediatamente después del cambio y configuración de recursos base. Desglosa el estado inicial oficial del tablero sin información clasificada de participantes.
+    description: Snapshot publico inicial de partida + metadatos del tablero.
     subscribe:
       message:
         $ref: '#/components/messages/ServerGameStarted'
-        
+
   server:game:state_updated:
-    description: Actualiza a todos en la room del estado publico modificado post-resolución de una acción o turno (despojando las cartas y mazos ajenos).
+    description: Estado publico actualizado tras una accion del juego.
     subscribe:
       message:
         $ref: '#/components/messages/ServerGameStateUpdated'
 
   server:game:private_hand:
-    description: Enviado mediante comunicación unidireccional por una sala personal oculta. Refleja tu baraja real de identidades jugables. 
+    description: Mano privada del jugador (room personal userId).
     subscribe:
       message:
         $ref: '#/components/messages/ServerGamePrivateHand'
 
   server:game:ended:
-    description: La partida ha concluido y el servidor despacha notificación al cerrar puntuaciones y estados lógicos finales.
+    description: Resultado final de partida con ranking.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerGameEnded'
+
+  server:economy:wallet_updated:
+    description: Actualizacion de saldo para un usuario concreto.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerWalletUpdated'
+
+  server:game:deck_reshuffled:
+    description: Se ha reconstruido y barajado el mazo central desde descartes.
     subscribe:
       message:
         $ref: '#/components/messages/EmptyMessage'
-        
+
+  server:game:duel_available:
+    description: El jugador puede seleccionar objetivo para duelo.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerDuelAvailable'
+
+  server:game:minigame_start:
+    description: Comienza minijuego de conflicto entre dos jugadores.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerMinigameStart'
+
+  server:game:special_event:
+    description: Evento especial del tablero (efectos, resoluciones y avisos).
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerSpecialEvent'
+
+  server:game:star_spawned:
+    description: Aparece una estrella fugaz en tablero.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerStarSpawned'
+
+  server:game:star_claimed:
+    description: Un jugador ha reclamado la estrella.
+    subscribe:
+      message:
+        $ref: '#/components/messages/ServerStarClaimed'
+
   server:chat:message_received:
-    description: Retransmisión de texto válido verificado originario e indexado en orden cronológico actual. Todos los de la room procesan este frame.
+    description: Mensaje de chat retransmitido al lobby.
     subscribe:
       message:
         $ref: '#/components/messages/ServerChatMessageReceived'
-        
+
   game:started:
-    description: Disparado como señal visual asíncrona de frontend para migrar limpiamente entre las interfaces /Lobby hacia /Table sin perder sincronía.
+    description: Evento de UI para cambio de pantalla Lobby -> Game.
     subscribe:
       message:
         $ref: '#/components/messages/GameStarted'
@@ -126,173 +193,426 @@ components:
   messages:
     EmptyMessage:
       name: EmptyMessage
-      title: Payload Vacio
+      title: Payload vacio
       payload:
         type: object
-        description: No se espera ningún payload explícito o extra.
+        additionalProperties: false
 
-    ClientLobbyJoin:
-      name: ClientLobbyJoin 
-      title: Join Lobby Payload
+    LobbyCodeMessage:
+      name: LobbyCodeMessage
+      title: Lobby code payload
       payload:
         type: object
         properties:
           lobbyCode:
             type: string
-            description: Código alfanumérico de 4 caracteres exactos (extraído implícitamente del token pero forzado en payload de seguridad).
-        required: 
+            minLength: 4
+            maxLength: 4
+        required:
           - lobbyCode
+
+    JoinLobbyRoom:
+      name: JoinLobbyRoom
+      title: Join room payload
+      payload:
+        type: string
+        minLength: 4
+        maxLength: 4
+
+    ClientLobbyJoin:
+      name: ClientLobbyJoin
+      title: Join lobby payload
+      description: |
+        El backend no requiere payload para este evento.
+        El lobbyCode se toma del JWT autenticado.
+      payload:
+        type: object
+        additionalProperties: true
+
+    ClientLobbyStart:
+      name: ClientLobbyStart
+      title: Start lobby payload
+      payload:
+        type: object
+        properties:
+          useDynamicPool:
+            type: boolean
+            default: true
 
     ClientGameAction:
       name: ClientGameAction
-      title: Game Action Payload
+      title: Game action payload
       payload:
         type: object
         properties:
           lobbyCode:
             type: string
-            description: Identificador base de sala para validación.
+            minLength: 4
+            maxLength: 4
           actionType:
             type: string
-            enum: [SUBMIT_STORY, PLAY_CARD, SUBMIT_CARD, VOTE_CARD, CAST_VOTE, NEXT_ROUND]
-            description: Enumeración explícita sobre qué clase particular de orden intentará mutar el curso del juego. (Ej Nexo Dixit).
+            enum:
+              - SEND_STORY
+              - SUBMIT_CARD
+              - CAST_VOTE
+              - NEXT_ROUND
+              - STELLA_SUBMIT_MARKS
+              - STELLA_REVEAL_MARK
+              - RESOLVE_DUEL
           payload:
             type: object
-            description: Parámetros del objeto requeridos. Ejemplo, si actionType=SUBMIT_STORY -> { cardId: 1, clue: "Un texto abstracto" }.
-        required: 
+            additionalProperties: true
+            description: Datos especificos de la accion.
+        required:
           - lobbyCode
           - actionType
 
     ClientChatSend:
       name: ClientChatSend
-      title: Chat Send Payload
+      title: Chat send payload
       payload:
         type: object
         properties:
           lobbyCode:
             type: string
-            maxLength: 4
             minLength: 4
+            maxLength: 4
           text:
             type: string
-            maxLength: 255
             minLength: 1
-            description: Texto real a comunicar.
-        required: 
+            maxLength: 255
+        required:
           - lobbyCode
           - text
 
     ServerError:
       name: ServerError
-      title: Error Payload
+      title: Error payload
       payload:
         type: object
         properties:
           message:
             type: string
-            description: Texto legible como formato base indicando a qué se atiene el problema de desincronización o rechazo.
           code:
             type: string
-            description: Código auxiliar del manejador de fallos interno (Optional).
-        required: 
+        required:
+          - message
+
+    ServerForceDisconnect:
+      name: ServerForceDisconnect
+      title: Force disconnect payload
+      payload:
+        type: object
+        properties:
+          message:
+            type: string
+        required:
           - message
 
     ServerLobbyStateUpdated:
       name: ServerLobbyStateUpdated
-      title: Lobby State Updated
+      title: Lobby state payload
       payload:
         type: object
-        description: Interfaz actual en caché de Redis con los presentes.
         properties:
-          id: 
-            type: string
-          code:
+          lobbyCode:
             type: string
           hostId:
+            type: string
+          name:
+            type: string
+          maxPlayers:
+            type: integer
+          engine:
+            type: string
+          isPrivate:
+            type: boolean
+          status:
             type: string
           players:
             type: array
             items:
-              type: object
-              properties:
-                id: 
-                  type: string
-                username: 
-                  type: string
+              type: string
+        required:
+          - lobbyCode
+          - hostId
+          - players
+
+    ServerLobbyRecovered:
+      name: ServerLobbyRecovered
+      title: Lobby recovered payload
+      payload:
+        type: object
+        properties:
+          lobbyCode:
+            type: string
+          lobby:
+            type: object
+            additionalProperties: true
+        required:
+          - lobbyCode
+          - lobby
+
+    ServerLobbyPlayerReconnected:
+      name: ServerLobbyPlayerReconnected
+      title: Lobby player reconnected payload
+      payload:
+        type: object
+        properties:
+          user:
+            type: string
+          message:
+            type: string
+        required:
+          - user
+          - message
+
+    ServerSessionRecovered:
+      name: ServerSessionRecovered
+      title: Session recovered payload
+      payload:
+        type: object
+        properties:
+          lobbyCode:
+            type: string
+          state:
+            type: object
+            additionalProperties: true
+        required:
+          - lobbyCode
+          - state
 
     ServerGameStarted:
       name: ServerGameStarted
-      title: Game Started Inicialization Public Frame
+      title: Game started payload
       payload:
         type: object
         properties:
           state:
             type: object
-            description: Árbol completo del JSON GameState subido ya filtrado para proteger mazos de otras manos en tablero base.
+            additionalProperties: true
+          board:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              url_image:
+                type: string
+            required:
+              - id
+              - name
+              - url_image
           message:
             type: string
-            description: Frase inicial amigable ("¡La partida ha comenzado!").
         required:
           - state
+          - board
           - message
 
     ServerGameStateUpdated:
       name: ServerGameStateUpdated
-      title: Game State Updated Payload
+      title: Game state updated payload
       payload:
         type: object
         properties:
           state:
             type: object
-            description: Resumen general en la presistencia Redis por turnos (ya filtradas las manos de contrincantes escondidas).
+            additionalProperties: true
           lastAction:
             type: string
-            description: Detalla la acción previamente culminada. Relevante para procesar y disparar rutinas de animaciones.
-        required: 
+        required:
           - state
 
     ServerGamePrivateHand:
       name: ServerGamePrivateHand
-      title: Game Private Hand Hidden Broadcast
+      title: Private hand payload
       payload:
         type: object
         properties:
           hand:
             type: array
             items:
-              type: number
-            description: Lista de IDs de la baraja única personal accesible en la ronda.
+              type: object
+              properties:
+                id:
+                  type: string
+                url_image:
+                  type: string
+              required:
+                - id
+                - url_image
         required:
           - hand
 
+    ServerGameEnded:
+      name: ServerGameEnded
+      title: Game ended payload
+      payload:
+        type: object
+        properties:
+          ranking:
+            type: array
+            items:
+              type: object
+              properties:
+                playerId:
+                  type: string
+                points:
+                  type: number
+                position:
+                  type: integer
+                reward:
+                  type: integer
+              required:
+                - playerId
+                - points
+                - position
+                - reward
+          error:
+            type: string
+        required:
+          - ranking
+
+    ServerWalletUpdated:
+      name: ServerWalletUpdated
+      title: Wallet updated payload
+      payload:
+        type: object
+        properties:
+          balance:
+            type: integer
+        required:
+          - balance
+
+    ServerDuelAvailable:
+      name: ServerDuelAvailable
+      title: Duel available payload
+      payload:
+        type: object
+        properties:
+          challengerId:
+            type: string
+        required:
+          - challengerId
+
+    ServerMinigameStart:
+      name: ServerMinigameStart
+      title: Minigame start payload
+      payload:
+        type: object
+        properties:
+          player1:
+            type: string
+          player2:
+            type: string
+          type:
+            type: integer
+          duration:
+            type: integer
+          isDuel:
+            type: boolean
+        required:
+          - player1
+          - player2
+          - type
+          - duration
+          - isDuel
+
+    ServerSpecialEvent:
+      name: ServerSpecialEvent
+      title: Special event payload
+      description: |
+        Payload variable segun evento especial.
+        Ejemplos: ODD/EVEN, SHUFFLE, EQUILIBRIUM, STELLA_SCORE_SWAP,
+        CONFLICT_RESOLVED, CONFLICT_CANCELLED.
+      payload:
+        type: object
+        additionalProperties: true
+
+    ServerStarSpawned:
+      name: ServerStarSpawned
+      title: Star spawned payload
+      payload:
+        type: object
+        properties:
+          starId:
+            type: string
+          path:
+            type: object
+            properties:
+              start:
+                type: object
+                properties:
+                  x:
+                    type: number
+                  y:
+                    type: number
+                required:
+                  - x
+                  - y
+              end:
+                type: object
+                properties:
+                  x:
+                    type: number
+                  y:
+                    type: number
+                required:
+                  - x
+                  - y
+            required:
+              - start
+              - end
+          duration:
+            type: integer
+        required:
+          - starId
+          - path
+          - duration
+
+    ServerStarClaimed:
+      name: ServerStarClaimed
+      title: Star claimed payload
+      payload:
+        type: object
+        properties:
+          winnerId:
+            type: string
+          newScores:
+            type: object
+            additionalProperties:
+              type: number
+        required:
+          - winnerId
+          - newScores
+
     ServerChatMessageReceived:
       name: ServerChatMessageReceived
-      title: Chat Message Received Payload
+      title: Chat message payload
       payload:
         type: object
         properties:
           username:
             type: string
-            description: Etiqueta visible in-game del remitente.
           text:
             type: string
-            description: Mensaje explícito limpio.
           timestamp:
             type: string
             format: date-time
-            description: Tiempo indexado nativo (ISO-8601).
-        required: 
+        required:
           - username
           - text
           - timestamp
 
     GameStarted:
       name: GameStarted
-      title: Game Started View Redirection Let
+      title: UI game started payload
       payload:
         type: object
         properties:
           lobbyCode:
             type: string
-        required: 
+        required:
           - lobbyCode
