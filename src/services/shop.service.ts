@@ -1,6 +1,7 @@
 // src/services/shop.service.ts
-import { prisma } from '../infrastructure/prisma';
 import { Purchase_Type } from '@prisma/client';
+
+import { prisma } from '../infrastructure/prisma';
 import { ShopRedisRepository } from '../repositories/shop.repository';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { invalidateCache } from '../shared/utils/cache.utils';
