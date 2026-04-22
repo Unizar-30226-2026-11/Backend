@@ -15,6 +15,7 @@ Backend del proyecto multijugador: API REST, tiempo real con WebSockets, persist
 [![BullMQ](https://img.shields.io/badge/BullMQ-EA2845?style=for-the-badge&logoColor=white)](https://docs.bullmq.io/)
 [![JWT](https://img.shields.io/badge/JWT-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white)](https://jwt.io/)
 [![Swagger](https://img.shields.io/badge/Swagger-85EA2D?style=for-the-badge&logo=swagger&logoColor=black)](https://swagger.io/)
+[![AsyncAPI](https://img.shields.io/badge/AsyncAPI-2A2F45?style=for-the-badge&logo=asyncapi&logoColor=white)](https://www.asyncapi.com/)
 [![Jest](https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white)](https://jestjs.io/)
 [![Docker](https://img.shields.io/badge/Docker%20Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
@@ -297,7 +298,6 @@ Servidor disponible en http://localhost:3000
 
 - Wiki del repositorio (recomendada): https://github.com/Unizar-30226-2026-11/Backend/wiki
 - Swagger UI: http://localhost:3000/api-docs
-- Eventos de sockets: src/sockets/SOCKET_API.md
 - AsyncAPI: src/sockets/asyncapi.yaml
 
 ## Scripts Disponibles
