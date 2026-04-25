@@ -143,7 +143,7 @@ interface BaseGameState {
   isMinigameActive: boolean;
 
   // Guardamos quiénes están peleando para saber si uno huye
-  activeConflict?: { player1: string; player2: string; isDuel: boolean } | null;
+  activeConflict?: { player1: string; player2: string; isDuel: boolean; scores?: Record<string, number>; } | null;
 
   /**
    * Diccionario en memoria con las URLs de las cartas de la partida.
