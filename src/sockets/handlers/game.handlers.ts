@@ -12,6 +12,13 @@ const GameActionSchema = z.object({
   payload: z.any().optional(),
 });
 
+const MinigameResultSchema = z.object({
+  lobbyCode: z.string().length(4, 'Código de sala inválido'),
+  winnerId: z.string().min(1, 'Falta el ID del ganador'),
+  loserId: z.string().min(1, 'Falta el ID del perdedor'),
+  isDuel: z.boolean(),
+});
+
 /**
  * Ejecuta todas las emisiones devueltas por el service.
  * Esta función es el único punto del handler que habla con Socket.io.
@@ -105,6 +112,40 @@ export const registerGameHandlers = (
       dispatchEmissions(io, emissions);
     } catch (error: unknown) {
       socket.emit('server:error', { message: (error as Error).message });
+    }
+  });
+
+  // MINIJUEGOS: Recibir resultado del Frontend
+  socket.on('client:game:minigame_result', async (rawPayload: unknown) => {
+    try {
+      
+      // Validamos los datos 
+      const result = MinigameResultSchema.safeParse(rawPayload);
+      if (!result.success) {
+        socket.emit('server:error', { message: 'Payload de minijuego inválido' });
+        return;
+      }
+
+      const { lobbyCode, winnerId, loserId, isDuel } = result.data;
+      const userId = socket.user?.id;
+
+      if (!userId) {
+        socket.emit('server:error', { message: 'No autenticado' });
+        return;
+      }
+
+      // Ejecutamos (El servicio se protege a sí mismo si ya se había resuelto)
+      const emissions = await gameService.submitConflictResult(
+        lobbyCode,
+        winnerId,
+        loserId,
+        isDuel
+      );
+      
+      // Emitimos los resultados y el tablero actualizado a toda la sala
+      dispatchEmissions(io, emissions);
+    } catch (error: any) {
+      socket.emit('server:error', { message: error.message });
     }
   });
 };
