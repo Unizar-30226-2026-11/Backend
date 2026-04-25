@@ -122,7 +122,7 @@ router.put('/profile', validateUsernameBody, updateProfile);
  * /api/users/status:
  *   patch:
  *     summary: Actualizar estado de presencia y privacidad
- *     description: Permite al usuario cambiar su visibilidad ante otros jugadores. El estado "INVISIBLE" permite jugar apareciendo como desconectado para la lista de amigos.
+ *     description: Permite al usuario cambiar su presencia publica. Por ahora solo se admiten CONNECTED y DISCONNECTED.
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -137,14 +137,9 @@ router.put('/profile', validateUsernameBody, updateProfile);
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [ONLINE, AWAY, BUSY, INVISIBLE]
- *                 description: |
- *                   Estados permitidos:
- *                   - ONLINE: Visible y disponible.
- *                   - AWAY: Ausente temporalmente.
- *                   - BUSY: No molestar (bloqueo de notificaciones).
- *                   - INVISIBLE: Aparece como desconectado.
- *                 example: INVISIBLE
+ *                 enum: [DISCONNECTED, CONNECTED]
+ *                 description: Estados permitidos para cliente.
+ *                 example: CONNECTED
  *     responses:
  *       200:
  *         description: Estado actualizado exitosamente
@@ -155,10 +150,10 @@ router.put('/profile', validateUsernameBody, updateProfile);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: Ahora tu estado es INVISIBLE
+ *                   example: Ahora tu estado es: CONNECTED
  *                 status:
  *                   type: string
- *                   example: INVISIBLE
+ *                   example: CONNECTED
  *       400:
  *         description: Estado proporcionado no válido
  *         content:

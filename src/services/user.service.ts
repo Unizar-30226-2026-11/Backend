@@ -1,8 +1,10 @@
-import { User_States } from '@prisma/client';
-
 import { prisma } from '../infrastructure/prisma';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
+import {
+  isEditableUserStatus,
+  normalizePresenceForClient,
+} from '../shared/utils/presence.utils';
 
 export const UserService = {
   // --- Perfil y Búsqueda ---
@@ -28,8 +30,13 @@ export const UserService = {
 
       if (!user) return null;
 
+      const publicStatus = normalizePresenceForClient(user.state);
+
       return {
         ...user,
+        state: publicStatus,
+        status: publicStatus,
+        personalStatus: user.personal_state,
         id: `${ID_PREFIXES.USER}${user.id_user}`,
         boards: user.my_boards.map((ub) => ({
           id: `${ID_PREFIXES.BOARD}${ub.board.id_board}`,
@@ -70,9 +77,13 @@ export const UserService = {
     await invalidateCache(`cache:user:profile:${u_id}`); // Borramos la caché
 
     const { password, ...userWithoutPassword } = updated_user;
+    const publicStatus = normalizePresenceForClient(updated_user.state);
 
     return {
       ...userWithoutPassword,
+      state: publicStatus,
+      status: publicStatus,
+      personalStatus: updated_user.personal_state,
       id: `${ID_PREFIXES.USER}${updated_user.id_user}`,
     };
   },
@@ -82,7 +93,7 @@ export const UserService = {
    */
   updatePresence: async (u_id: string, status: string) => {
     // 1. Limpiar el prefijo 'u_' del ID.
-    // 2. Validar que el 'status' pertenece al enum permitido (DISCONNECTED, CONNECTED, UNKNOWN, IN_GAME).
+    // 2. Validar que el 'status' pertenece al enum permitido para el cliente.
     // 3. Actualizar el campo de estado en la base de datos.
     // 4. LÓGICA DE PRIVACIDAD: Si el estado es 'INVISIBLE', el sistema debe marcar
     //    internamente que no se emitan eventos de WebSocket (como 'user_connected') a los amigos.
@@ -90,18 +101,41 @@ export const UserService = {
 
     const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
 
-    if (!Object.values(User_States).includes(status as User_States)) {
+    if (!isEditableUserStatus(status)) {
       throw new Error('INVALID_STATUS');
     }
 
     const updated_user = await prisma.user.update({
       where: { id_user },
       data: {
-        state: status as User_States,
+        state: status,
       },
     });
 
     await invalidateCache(`cache:user:profile:${u_id}`); // Borramos la caché
+
+    const friendships = await prisma.friendships.findMany({
+      where: {
+        state: 'FRIEND',
+        OR: [{ id_user_1: id_user }, { id_user_2: id_user }],
+      },
+      select: {
+        id_user_1: true,
+        id_user_2: true,
+      },
+    });
+
+    const friendIds = friendships.map((friendship) =>
+      friendship.id_user_1 === id_user
+        ? friendship.id_user_2
+        : friendship.id_user_1,
+    );
+
+    await Promise.all(
+      friendIds.map((friendId) =>
+        invalidateCache(`cache:friends:confirmed:${ID_PREFIXES.USER}${friendId}`),
+      ),
+    );
 
     return {
       new_status: updated_user.state,

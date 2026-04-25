@@ -6,6 +6,7 @@ import { SignOptions } from 'jsonwebtoken';
 import { prisma } from '../infrastructure/prisma';
 import { UserRedisRepository } from '../repositories';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
+import { normalizePresenceForClient } from '../shared/utils';
 
 export const AuthService = {
   // Comprueba si ya existe un usuario con ese email o username
@@ -18,6 +19,8 @@ export const AuthService = {
 
     if (resultado == null) return null;
 
+    const publicStatus = normalizePresenceForClient(resultado.state);
+
     return {
       id: `${ID_PREFIXES.USER}${resultado.id_user}`,
       username: resultado.username,
@@ -25,8 +28,10 @@ export const AuthService = {
       coins: resultado.coins,
       exp_level: resultado.exp_level,
       progress_level: resultado.progress_level,
-      state: resultado.state,
+      state: publicStatus,
+      status: publicStatus,
       personal: resultado.personal_state,
+      personalStatus: resultado.personal_state,
     };
   },
 
@@ -52,6 +57,7 @@ export const AuthService = {
           username,
           password: hashedPassword,
           coins: 500,
+          state: 'DISCONNECTED',
         },
       });
 

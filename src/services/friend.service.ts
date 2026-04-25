@@ -5,6 +5,7 @@ import { Friendship_States } from '@prisma/client';
 import { prisma } from '../infrastructure/prisma';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
+import { normalizePresenceForClient } from '../shared/utils/presence.utils';
 
 export const FriendService = {
   // Obtener lista de amigos de un usuario
@@ -28,11 +29,13 @@ export const FriendService = {
           friendship.id_user_1 === id_user
             ? friendship.user_2
             : friendship.user_1;
+        const publicStatus = normalizePresenceForClient(friend.state);
 
         return {
           id: `${ID_PREFIXES.USER}${friend.id_user}`,
           username: friend.username,
-          status: friend.state,
+          state: publicStatus,
+          status: publicStatus,
         };
       });
     });
