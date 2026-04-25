@@ -12,11 +12,9 @@ const GameActionSchema = z.object({
   payload: z.any().optional(),
 });
 
-const MinigameResultSchema = z.object({
+const MinigameScoreSchema = z.object({
   lobbyCode: z.string().length(4, 'Código de sala inválido'),
-  winnerId: z.string().min(1, 'Falta el ID del ganador'),
-  loserId: z.string().min(1, 'Falta el ID del perdedor'),
-  isDuel: z.boolean(),
+  score: z.number().min(0, 'La puntuación no puede ser negativa'),
 });
 
 /**
@@ -116,17 +114,15 @@ export const registerGameHandlers = (
   });
 
   // MINIJUEGOS: Recibir resultado del Frontend
-  socket.on('client:game:minigame_result', async (rawPayload: unknown) => {
+  socket.on('client:game:minigame_score', async (rawPayload: unknown) => {
     try {
-      
-      // Validamos los datos 
-      const result = MinigameResultSchema.safeParse(rawPayload);
+      const result = MinigameScoreSchema.safeParse(rawPayload);
       if (!result.success) {
-        socket.emit('server:error', { message: 'Payload de minijuego inválido' });
+        socket.emit('server:error', { message: 'Payload de puntuación inválido' });
         return;
       }
 
-      const { lobbyCode, winnerId, loserId, isDuel } = result.data;
+      const { lobbyCode, score } = result.data;
       const userId = socket.user?.id;
 
       if (!userId) {
@@ -134,15 +130,14 @@ export const registerGameHandlers = (
         return;
       }
 
-      // Ejecutamos (El servicio se protege a sí mismo si ya se había resuelto)
-      const emissions = await gameService.submitConflictResult(
+      // El jugador envía su puntuación. El servicio espera al otro.
+      const emissions = await gameService.submitMinigameScore(
         lobbyCode,
-        winnerId,
-        loserId,
-        isDuel
+        userId,
+        score
       );
       
-      // Emitimos los resultados y el tablero actualizado a toda la sala
+      // Emitimos el resultado (si es el primero no pasa nada, si es el último emite)
       dispatchEmissions(io, emissions);
     } catch (error: any) {
       socket.emit('server:error', { message: error.message });

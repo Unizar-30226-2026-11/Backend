@@ -1082,7 +1082,7 @@ export class GameService {
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:special_event',
-      data: { effect: 'CONFLICT_RESOLVED', message },
+      data: { effect: 'CONFLICT_RESOLVED', message, winnerId, loserId, isDuel},
     });
 
     // Actualizamos el tablero general para todos
@@ -1133,5 +1133,58 @@ export class GameService {
         },
       },
     ];
+  }
+
+  /**
+   * Recibe la puntuación individual de un jugador en el minijuego.
+   * El servidor actúa como árbitro: espera a tener ambas para decidir quién gana.
+   */
+  public async submitMinigameScore(
+    lobbyCode: string,
+    playerId: string,
+    score: number,
+  ): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
+    if (!state || !state.isMinigameActive || !state.activeConflict) return [];
+
+    const { player1, player2, isDuel } = state.activeConflict;
+
+    // Seguridad: Solo los implicados en el minijuego pueden enviar puntuación
+    if (playerId !== player1 && playerId !== player2) return [];
+
+    // Inicializamos el registro si es el primero en llegar
+    if (!state.activeConflict.scores) {
+      state.activeConflict.scores = {};
+    }
+
+    // Guardamos la puntuación de este jugador y salvamos en Redis
+    state.activeConflict.scores[playerId] = score;
+    await this.redisRepo.saveGame(lobbyCode, state);
+
+    // Revisamos si el otro jugador ya había enviado su puntuación
+    const p1Score = state.activeConflict.scores[player1];
+    const p2Score = state.activeConflict.scores[player2];
+
+    if (p1Score === undefined || p2Score === undefined) {
+      // Falta uno por contestar. No hacemos nada más (array vacío).
+      return []; 
+    }
+
+    //Si ambos han contestado decidimos el ganador
+    let winnerId = player1;
+    let loserId = player2;
+
+    if (p2Score > p1Score) {
+      winnerId = player2;
+      loserId = player1;
+    } else if (p1Score === p2Score) {
+      // Si empatan también en el minijuego, lo decidimos a cara o cruz
+      const coinFlip = Math.random() > 0.5;
+      winnerId = coinFlip ? player1 : player2;
+      loserId = coinFlip ? player2 : player1;
+    }
+
+    // Usamos la función que ya tenemos para dar los puntos y desbloquear la partida
+    return this.submitConflictResult(lobbyCode, winnerId, loserId, isDuel);
   }
 }
