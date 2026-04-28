@@ -12,11 +12,6 @@ const GameActionSchema = z.object({
   payload: z.any().optional(),
 });
 
-const MinigameScoreSchema = z.object({
-  lobbyCode: z.string().length(4, 'Código de sala inválido'),
-  score: z.number().min(0, 'La puntuación no puede ser negativa'),
-});
-
 /**
  * Ejecuta todas las emisiones devueltas por el service.
  * Esta función es el único punto del handler que habla con Socket.io.
@@ -110,37 +105,6 @@ export const registerGameHandlers = (
       dispatchEmissions(io, emissions);
     } catch (error: unknown) {
       socket.emit('server:error', { message: (error as Error).message });
-    }
-  });
-
-  // MINIJUEGOS: Recibir resultado del Frontend
-  socket.on('client:game:minigame_score', async (rawPayload: unknown) => {
-    try {
-      const result = MinigameScoreSchema.safeParse(rawPayload);
-      if (!result.success) {
-        socket.emit('server:error', { message: 'Payload de puntuación inválido' });
-        return;
-      }
-
-      const { lobbyCode, score } = result.data;
-      const userId = socket.user?.id;
-
-      if (!userId) {
-        socket.emit('server:error', { message: 'No autenticado' });
-        return;
-      }
-
-      // El jugador envía su puntuación. El servicio espera al otro.
-      const emissions = await gameService.submitMinigameScore(
-        lobbyCode,
-        userId,
-        score
-      );
-      
-      // Emitimos el resultado (si es el primero no pasa nada, si es el último emite)
-      dispatchEmissions(io, emissions);
-    } catch (error: any) {
-      socket.emit('server:error', { message: error.message });
     }
   });
 };
