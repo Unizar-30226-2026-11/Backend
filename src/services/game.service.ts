@@ -274,7 +274,8 @@ export class GameService {
     if (
       currentState.isMinigameActive &&
       action.type !== 'RECONNECT_PLAYER' &&
-      action.type !== 'DISCONNECT_PLAYER'
+      action.type !== 'DISCONNECT_PLAYER' &&
+      action.type !== 'SUBMIT_MINIGAME_SCORE'
     ) {
       throw new Error(
         'Hay un conflicto en curso. Espera a que termine el minijuego.',
@@ -317,6 +318,17 @@ export class GameService {
           },
         },
       ];
+    }
+
+    if (action.type === 'SUBMIT_MINIGAME_SCORE') {
+      // Extraemos la puntuación de forma segura
+      const score = typeof action.payload?.score === 'number' ? action.payload.score : 0;
+      return await this.submitMinigameScore(lobbyCode, action.playerId, score);
+    }
+
+    // ✅ NUEVO: Alternar el modo de juego (Bonus Random)
+    if (action.type === 'ACCEPT_MODE_CHANGE') {
+      return await this.acceptModeChange(lobbyCode);
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
@@ -831,12 +843,102 @@ export class GameService {
         });
       }
 
+      // BONUS (CAMBIO DE MODO)
+      if (
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_1 ||
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_2 ||
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_3 ||
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
+      ) {
+        // Quitamos la restricción del modo. Ahora siempre aplica la probabilidad.
+        emissions.push(...this.applyRandomBonusEffect(state, pId));
+      }
       // MINIJUEGOS DESEMPATE
       const conflictEmissions = await this.checkConflictMinigame(state, pId);
       emissions.push(...conflictEmissions);
     }
 
     return emissions;
+  }
+
+  /**
+   * Efecto Bonus Random: Probabilidad de BOARD_CONFIG.CHANGE_OFFER_PROBABILITY % de ofrecer alternar el modo de juego (Stella <-> Standard).
+   */
+  private applyRandomBonusEffect(
+    state: GameState,
+    pId: string,
+  ): SocketEmission[] {
+    const chance = BOARD_CONFIG.CHANGE_OFFER_PROBABILITY;
+    const shouldOfferChange = Math.random() < chance;
+
+    if (shouldOfferChange) {
+  
+      const targetMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
+      
+      const message = targetMode === 'STELLA'
+        ? '¡Has encontrado un vórtice cósmico! ¿Quieres sumir la partida en el caos y cambiar al modo Stella?'
+        : '¡Un rayo de luz atraviesa el caos! ¿Quieres restaurar el orden y volver al modo Clásico?';
+
+      return [
+        {
+          room: pId, 
+          event: 'server:game:mode_change_offer', 
+          data: {
+            message,
+            targetMode 
+          },
+        },
+      ];
+    } else {
+      return [
+        {
+          room: pId,
+          event: 'server:game:special_event',
+          data: { effect: 'NOTHING_HAPPENED', message: 'La casilla Bonus no tuvo efecto esta vez...' },
+        }
+      ];
+    }
+  }
+
+  /**
+   * Ejecutado cuando el jugador acepta cambiar el modo de juego.
+   * Alterna bidireccionalmente entre STELLA y STANDARD.
+   */
+  public async acceptModeChange(lobbyCode: string): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
+    if (!state) return [];
+
+    // Cambiamos al modo contrario
+    const newMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
+    state.mode = newMode;
+    
+    await this.redisRepo.saveGame(lobbyCode, state);
+
+    // Preparamos los textos según el nuevo modo
+    const effectName = newMode === 'STELLA' ? 'MODE_CHANGED_TO_STELLA' : 'MODE_CHANGED_TO_STANDARD';
+    const broadcastMessage = newMode === 'STELLA'
+      ? '¡Un jugador ha aceptado el pacto! Las reglas han cambiado. ¡Bienvenidos al modo Stella!'
+      : '¡Se ha restaurado el orden! La partida vuelve a las reglas clásicas.';
+
+    // Avisamos a toda la sala
+    return [
+      {
+        room: lobbyCode,
+        event: 'server:game:special_event',
+        data: {
+          effect: effectName,
+          message: broadcastMessage,
+        },
+      },
+      {
+        room: lobbyCode,
+        event: 'server:game:state_updated',
+        data: {
+          state: this.maskPrivateState(state),
+          lastAction: effectName,
+        },
+      }
+    ];
   }
 
   /**

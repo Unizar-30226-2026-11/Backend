@@ -231,6 +231,20 @@ export interface ActionResolveDuel {
   payload: { targetId: string };
 }
 
+/** Acción enviada por cada jugador al terminar un minijuego con su puntuación */
+export interface ActionSubmitMinigameScore {
+  type: 'SUBMIT_MINIGAME_SCORE';
+  playerId: string;
+  payload: { score: number };
+}
+
+/** Acción enviada cuando un jugador acepta el pacto del bonus aleatorio para cambiar de modo */
+export interface ActionAcceptModeChange {
+  type: 'ACCEPT_MODE_CHANGE';
+  playerId: string;
+  payload?: never; // No necesita payload
+}
+
 // Acciones Standard (Exclusivas de las mecánicas Dixit clásico)
 
 /** Acción enviada por el cuentacuentos con su carta seleccionada y la pista */
@@ -284,4 +298,6 @@ export type GameAction =
   | ActionSubmitCard
   | ActionCastVote
   | ActionStellaSubmitMarks
-  | ActionStellaRevealMark;
+  | ActionStellaRevealMark
+  | ActionSubmitMinigameScore 
+  | ActionAcceptModeChange;   
