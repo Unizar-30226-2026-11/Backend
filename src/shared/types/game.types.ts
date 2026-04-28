@@ -136,6 +136,8 @@ interface BaseGameState {
   isStarActive: boolean;
   /** Timestamp en milisegundos de cuándo debe desaparecer la estrella */
   starExpiresAt: number;
+  /** VersiÃ³n monotÃ³nica de fase/ronda para invalidar timeouts antiguos */
+  phaseVersion: number;
 
   /** Indica si hay un minijuego de conflicto activo.
    *  Bloquea el procesamiento de acciones normales.

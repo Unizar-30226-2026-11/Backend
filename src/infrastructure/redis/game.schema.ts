@@ -23,6 +23,7 @@ export const gameStateSchema = new Schema(
     // Powerup: Estrella Fugaz
     isStarActive: { type: 'boolean' },
     starExpiresAt: { type: 'number' },
+    phaseVersion: { type: 'number' },
 
     // Para las casilas del tablero
     // Registro de visitas a casillas: Record<SquareID, PlayerID[]>
