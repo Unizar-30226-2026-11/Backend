@@ -150,7 +150,7 @@ router.put('/profile', validateUsernameBody, updateProfile);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: Ahora tu estado es: CONNECTED
+ *                   example: "Ahora tu estado es: CONNECTED"
  *                 status:
  *                   type: string
  *                   example: CONNECTED
