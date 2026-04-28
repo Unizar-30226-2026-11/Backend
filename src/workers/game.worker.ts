@@ -16,7 +16,7 @@ export const initializeGameWorker = (io: Server) => {
     'game-timeouts',
     async (job: Job) => {
       // Extraemos las propiedades. Nota: a veces usáis lobbyCode y otras gameId para referiros al mismo ID de sala.
-      const { lobbyCode, expectedPhase, gameId } = job.data;
+      const { lobbyCode, expectedPhase, expectedPhaseVersion, gameId } = job.data;
 
       // Unificamos el ID de la sala por si acaso en el frontend/backend usan diferentes nombres de variable en el payload
       const targetRoomId = gameId || lobbyCode;
@@ -34,7 +34,10 @@ export const initializeGameWorker = (io: Server) => {
             const state: any = await GameRedisRepository.getGame(targetRoomId);
             if (!state) return;
 
-            if (state.phase !== expectedPhase) {
+            if (
+              state.phase !== expectedPhase ||
+              (expectedPhaseVersion && state.phaseVersion !== expectedPhaseVersion)
+            ) {
               console.log(
                 `[Worker] La sala ${targetRoomId} ya está en ${state.phase}. Ignorando timer.`,
               );
@@ -87,13 +90,13 @@ export const initializeGameWorker = (io: Server) => {
                 break;
               }
               case 'VOTING': {
-                const votes = state.currentRound.votes || {};
+                const votes = state.currentRound.votes || [];
                 const boardCards = state.currentRound.boardCards || [];
 
                 const missingPlayers = state.players.filter(
                   (pId: string) =>
                     pId !== state.currentRound.storytellerId &&
-                    votes[pId] === undefined,
+                    !votes.some((vote: { voterId: string }) => vote.voterId === pId),
                 );
 
                 for (const pId of missingPlayers) {

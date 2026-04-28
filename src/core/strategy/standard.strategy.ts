@@ -6,6 +6,7 @@ import {
   GameState,
   StandardGameState,
 } from '../../shared/types';
+import { parsePrefixedCardId } from '../../shared/utils';
 import { GameModeStrategy } from './core.strategy';
 
 export class StandardStrategy implements GameModeStrategy {
@@ -52,7 +53,7 @@ export class StandardStrategy implements GameModeStrategy {
     if (state.currentRound.storytellerId !== action.playerId)
       throw new Error('No eres el narrador.');
 
-    const cardId = action.payload.cardId;
+    const cardId = parsePrefixedCardId(action.payload.cardId) as number;
     const hand = state.hands[action.playerId];
 
     if (!hand || !hand.includes(cardId)) throw new Error('Carta no válida.');
@@ -78,7 +79,7 @@ export class StandardStrategy implements GameModeStrategy {
     if (state.currentRound.playedCards[action.playerId])
       throw new Error('Ya has jugado.');
 
-    const cardId = action.payload.cardId;
+    const cardId = parsePrefixedCardId(action.payload.cardId) as number;
     const hand = state.hands[action.playerId];
 
     if (!hand || !hand.includes(cardId)) throw new Error('Carta no poseída.');
@@ -99,7 +100,7 @@ export class StandardStrategy implements GameModeStrategy {
     if (state.currentRound.storytellerId === action.playerId)
       throw new Error('El narrador no vota.');
 
-    const targetCardId = action.payload.cardId;
+    const targetCardId = parsePrefixedCardId(action.payload.cardId) as number;
 
     if (state.currentRound.playedCards[action.playerId] === targetCardId) {
       throw new Error('No puedes votar por tu propia carta.');

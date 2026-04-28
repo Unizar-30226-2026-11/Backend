@@ -148,6 +148,7 @@ export class GameService {
       discardPile: [],
       phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,
+      phaseVersion: 1,
       isMinigameActive: false,
       activeConflict: null,
       activeBoardId: boardIdToUse,
@@ -194,7 +195,12 @@ export class GameService {
     }
 
     // Arrancar el temporizador inicial (ej: 60s)
-    await this.schedulePhaseTimeout(lobbyCode, initialState.phase, 60000);
+    await this.schedulePhaseTimeout(
+      lobbyCode,
+      initialState.phase,
+      60000,
+      initialState.phaseVersion,
+    );
 
     return emissions;
   }
@@ -321,6 +327,7 @@ export class GameService {
 
     // 3. Ejecutar la transición en memoria (Lógica Pura)
     const newState = engine.transition(currentState, action);
+    newState.phaseVersion = currentState.phaseVersion ?? 1;
 
     // 4. Comprobar la lógica del tablero — devuelve emisiones adicionales
     const specialEmissions = await this.checkSpecialSquares(
@@ -366,6 +373,7 @@ export class GameService {
 
     // 10. Gestión de Timeouts si cambió de fase
     if (oldPhase !== newState.phase) {
+      newState.phaseVersion += 1;
       const timeLimits: Record<string, number> = {
         STORYTELLING: 60000,
         SUBMISSION: 45000,
@@ -374,7 +382,12 @@ export class GameService {
       };
       const delay = timeLimits[newState.phase];
       if (delay) {
-        await this.schedulePhaseTimeout(lobbyCode, newState.phase, delay);
+        await this.schedulePhaseTimeout(
+          lobbyCode,
+          newState.phase,
+          delay,
+          newState.phaseVersion,
+        );
       }
     }
 
@@ -563,10 +576,11 @@ export class GameService {
     lobbyCode: string,
     phase: string,
     delayMs: number,
+    phaseVersion: number,
   ) {
     await gameTimeoutsQueue.add(
       'phase-timeout',
-      { lobbyCode, expectedPhase: phase },
+      { lobbyCode, expectedPhase: phase, expectedPhaseVersion: phaseVersion },
       {
         delay: delayMs,
         jobId: `timeout-${lobbyCode}-${phase}-${Date.now()}`,
@@ -599,6 +613,15 @@ export class GameService {
     state.isStarActive = true;
     state.starExpiresAt = Date.now() + movement.duration;
     await this.redisRepo.saveGame(lobbyCode, state);
+
+    if (state.phase === 'SCORING') {
+      await this.schedulePhaseTimeout(
+        lobbyCode,
+        state.phase,
+        10000,
+        state.phaseVersion ?? 1,
+      );
+    }
 
     const emissions: SocketEmission[] = [];
 
@@ -645,6 +668,15 @@ export class GameService {
     state.scores[playerId] = (state.scores[playerId] || 0) + 3;
 
     await this.redisRepo.saveGame(lobbyCode, state);
+
+    if (state.phase === 'SCORING') {
+      await this.schedulePhaseTimeout(
+        lobbyCode,
+        state.phase,
+        10000,
+        state.phaseVersion ?? 1,
+      );
+    }
 
     return [
       {

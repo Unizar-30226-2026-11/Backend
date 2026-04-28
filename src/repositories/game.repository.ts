@@ -14,6 +14,7 @@ export const GameRedisRepository = {
     // Convertimos los strings de Redis en los tipos reales de TS
     return {
       ...data,
+      phaseVersion: (data.phaseVersion as number) || 1,
       players: data.players as string[],
       disconnectedPlayers: data.disconnectedPlayers as string[],
       // Parseo de seguridad con fallback a objeto vacío si falla
