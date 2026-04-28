@@ -35,7 +35,8 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-
+      - name: 🛠️ Generar cliente de Prisma
+        run: npx prisma generate
       - name: 📦 Instalar dependencias
         run: npm ci
 
