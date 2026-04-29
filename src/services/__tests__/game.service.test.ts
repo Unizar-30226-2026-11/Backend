@@ -2,6 +2,7 @@ import { prisma } from '../../infrastructure/prisma';
 import { BOARD_CONFIG } from '../../shared/constants/board-config';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { GameState } from '../../shared/types';
+import { DixitEngine } from '../../core/engines';
 import { GameService, gameTimeoutsQueue } from '../game.service';
 
 jest.mock('bullmq', () => ({
@@ -195,6 +196,68 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           expect.objectContaining({ delay: 60000 }),
         );
       });
+
+      test('Debe incluir las URLs de las cartas del tablero en game:started para STELLA', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STELLA', players: [p1, p2, p3] };
+
+        const mockDecks = [
+          {
+            cards: Array(60).fill({
+              user_card: {
+                id_card: 100,
+                card: { id_card: 100, url_image: 'img.png' },
+              },
+            }),
+          },
+        ];
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 10, url_image: 'url10.png' },
+          { id_card: 20, url_image: 'url20.png' },
+          { id_card: 30, url_image: 'url30.png' },
+        ]);
+        (DixitEngine.transition as jest.Mock).mockImplementationOnce((state) => ({
+          ...state,
+          mode: 'STELLA',
+          phase: 'STELLA_WORD_REVEAL',
+          currentRound: {
+            word: 'Bosque Encantado',
+            boardCards: [10, 20, 30],
+            playerMarks: {},
+            revealedCards: [],
+            currentScoutId: null,
+            fallenPlayers: [],
+            inTheDarkPlayerId: null,
+            roundScores: { [p1]: 0, [p2]: 0, [p3]: 0 },
+            successfulMarks: { [p1]: 0, [p2]: 0, [p3]: 0 },
+          },
+        }));
+
+        const emissions = await gameService.initializeGame(
+          'ROOM-STELLA-START',
+          lobbyData,
+        );
+
+        const startEmission = emissions.find(
+          (e) => e.event === 'server:game:started',
+        );
+
+        expect((startEmission?.data as any).state.currentRound.boardCards).toEqual([
+          10, 20, 30,
+        ]);
+        expect(
+          (startEmission?.data as any).state.currentRound.boardCardsDetailed,
+        ).toEqual([
+          { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+          { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+          { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+        ]);
+        expect((startEmission?.data as any).state).not.toHaveProperty('cardUrls');
+      });
     });
 
     describe('handleAction', () => {
@@ -210,11 +273,20 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       test('Debe actualizar el estado, enmascarar datos privados y generar emisiones', async () => {
         const mockState = {
           lobbyCode: 'ROOM-ACTION',
+          mode: 'STANDARD',
           players: ['p1'],
           scores: { p1: 0 },
           hands: { p1: [5, 6] },
           centralDeck: [1, 2, 3],
           phase: 'STORYTELLING',
+          currentRound: {
+            storytellerId: 'p1',
+            clue: null,
+            storytellerCardId: null,
+            playedCards: {},
+            boardCards: [],
+            votes: [],
+          },
           cardUrls: { 5: 'img5.png', 6: 'img6.png' },
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
@@ -240,6 +312,57 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           (e) => e.event === 'server:game:private_hand',
         );
         expect(handEmission).toBeDefined();
+      });
+
+      test('Debe incluir las cartas de votación hidratadas en el estado público', async () => {
+        const mockState = {
+          lobbyCode: 'ROOM-VOTING',
+          mode: 'STANDARD',
+          players: ['p1', 'p2', 'p3'],
+          disconnectedPlayers: [],
+          scores: { p1: 0, p2: 0, p3: 0 },
+          hands: { p1: [], p2: [], p3: [] },
+          centralDeck: [99],
+          discardPile: [],
+          boardRegistry: {},
+          isStarActive: false,
+          starExpiresAt: 0,
+          phaseVersion: 1,
+          isMinigameActive: false,
+          phase: 'VOTING',
+          currentRound: {
+            storytellerId: 'p1',
+            clue: 'pista',
+            storytellerCardId: 10,
+            playedCards: { p1: 10, p2: 20, p3: 30 },
+            boardCards: [30, 10, 20],
+            votes: [],
+          },
+          cardUrls: {
+            10: 'url10.png',
+            20: 'url20.png',
+            30: 'url30.png',
+          },
+        };
+        mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
+        const emissions = await gameService.handleAction('ROOM-VOTING', action);
+
+        const updateEmission = emissions.find(
+          (e) => e.event === 'server:game:state_updated',
+        );
+
+        expect((updateEmission?.data as any).state.currentRound.boardCards).toEqual([
+          30, 10, 20,
+        ]);
+        expect(
+          (updateEmission?.data as any).state.currentRound.boardCardsDetailed,
+        ).toEqual([
+          { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+          { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+          { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+        ]);
       });
 
       test('Debe rehidratar y enviar SOLO la mano privada al jugador que se reconecta', async () => {

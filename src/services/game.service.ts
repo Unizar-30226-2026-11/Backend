@@ -609,6 +609,15 @@ export class GameService {
     delete (publicState as any).centralDeck;
     delete (publicState as any).hands;
     delete (publicState as any).cardUrls;
+
+    if (Array.isArray(publicState.currentRound?.boardCards)) {
+      (publicState.currentRound as any).boardCardsDetailed =
+        this.serializePublicCards(
+          publicState.currentRound.boardCards,
+          state.cardUrls || {},
+        );
+    }
+
     return publicState;
   }
 
@@ -1110,7 +1119,14 @@ export class GameService {
     handIds: number[],
     cardDictionary: Record<number, string>,
   ) {
-    return handIds.map((id) => ({
+    return this.serializePublicCards(handIds, cardDictionary);
+  }
+
+  private serializePublicCards(
+    cardIds: number[],
+    cardDictionary: Record<number, string>,
+  ) {
+    return cardIds.map((id) => ({
       id: `${ID_PREFIXES.CARD}${id}`,
       url_image: cardDictionary[id] || '',
     }));
