@@ -779,13 +779,25 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
   // SISTEMA DE CONFLICTOS: DUELOS Y EMPATES
   // ==========================================
   describe('Sistema de Conflictos y Minijuegos', () => {
-    test('Debe bloquear acciones normales si hay un minijuego activo', async () => {
+    test('Debe ignorar NEXT_ROUND si hay un minijuego activo', async () => {
       mockRedisRepo.getGame.mockResolvedValueOnce({
         lobbyCode: 'ROOM-1',
         isMinigameActive: true, // Partida bloqueada
       });
 
       const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
+      const emissions = await gameService.handleAction('ROOM-1', action);
+
+      expect(emissions).toEqual([]);
+    });
+
+    test('Debe bloquear otras acciones normales si hay un minijuego activo', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true, // Partida bloqueada
+      });
+
+      const action = { type: 'CAST_VOTE', playerId: 'p1', payload: {} } as any;
 
       await expect(gameService.handleAction('ROOM-1', action)).rejects.toThrow(
         'Hay un conflicto en curso. Espera a que termine el minijuego.',

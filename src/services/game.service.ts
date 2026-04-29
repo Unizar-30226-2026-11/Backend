@@ -318,6 +318,10 @@ export class GameService {
     // ==========================================
     // SISTEMA DE BLOQUEO Y DUELOS
     // ==========================================
+    if (currentState.isMinigameActive && action.type === 'NEXT_ROUND') {
+      return [];
+    }
+
     if (
       currentState.isMinigameActive &&
       action.type !== 'RECONNECT_PLAYER' &&

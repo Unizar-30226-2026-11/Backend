@@ -11,6 +11,7 @@ import { GameAction } from '../shared/types/game.types';
 
 export const initializeGameWorker = (io: Server) => {
   const gameService = new GameService(GameRedisRepository);
+  const MINIGAME_PHASE_TIMEOUT_RETRY_MS = 5000;
 
   const gameWorker = new Worker(
     'game-timeouts',
@@ -40,6 +41,26 @@ export const initializeGameWorker = (io: Server) => {
             ) {
               console.log(
                 `[Worker] La sala ${targetRoomId} ya está en ${state.phase}. Ignorando timer.`,
+              );
+              return;
+            }
+
+            if (state.isMinigameActive) {
+              console.log(
+                `[Worker] La sala ${targetRoomId} tiene un minijuego activo. Reprogramando timeout de fase ${expectedPhase}.`,
+              );
+              await gameTimeoutsQueue.add(
+                'phase-timeout',
+                {
+                  lobbyCode: targetRoomId,
+                  expectedPhase,
+                  expectedPhaseVersion,
+                },
+                {
+                  delay: MINIGAME_PHASE_TIMEOUT_RETRY_MS,
+                  jobId: `timeout-${targetRoomId}-${expectedPhase}-${Date.now()}`,
+                  removeOnComplete: true,
+                },
               );
               return;
             }

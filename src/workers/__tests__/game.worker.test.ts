@@ -3,7 +3,7 @@ import { Worker } from 'bullmq';
 import { Server } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
-import { GameService } from '../../services/game.service';
+import { GameService, gameTimeoutsQueue } from '../../services/game.service';
 import { initializeGameWorker } from '../../workers/game.worker';
 
 // 1. Mockeamos las dependencias externas
@@ -23,6 +23,7 @@ describe('Game Worker (game-timeouts)', () => {
   let workerCallback: (job: any) => Promise<void>;
   let mockHandleAction: jest.Mock;
   let mockForceUnlock: jest.Mock;
+  let mockQueueAdd: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -48,6 +49,9 @@ describe('Game Worker (game-timeouts)', () => {
 
     mockHandleAction = jest.fn().mockResolvedValue([]);
     mockForceUnlock = jest.fn().mockResolvedValue([]);
+    mockQueueAdd = jest.fn().mockResolvedValue(undefined);
+
+    (gameTimeoutsQueue as any).add = mockQueueAdd;
 
     (GameService as unknown as jest.Mock).mockImplementation(() => ({
       handleAction: mockHandleAction,
@@ -98,6 +102,39 @@ describe('Game Worker (game-timeouts)', () => {
           type: 'SEND_STORY',
           playerId: 'u_1',
           payload: expect.objectContaining({ clue: 'Tiempo agotado (Bot)' }),
+        }),
+      );
+    });
+
+    it('Debe reprogramar el timeout si hay un minijuego activo y no ejecutar acciones bloqueadas', async () => {
+      (GameRedisRepository.getGame as jest.Mock).mockResolvedValue({
+        phase: 'SCORING',
+        phaseVersion: 3,
+        isMinigameActive: true,
+      });
+
+      const job = {
+        name: 'phase-timeout',
+        data: {
+          lobbyCode: 'SALA1',
+          expectedPhase: 'SCORING',
+          expectedPhaseVersion: 3,
+        },
+      };
+
+      await workerCallback(job);
+
+      expect(mockHandleAction).not.toHaveBeenCalled();
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        'phase-timeout',
+        expect.objectContaining({
+          lobbyCode: 'SALA1',
+          expectedPhase: 'SCORING',
+          expectedPhaseVersion: 3,
+        }),
+        expect.objectContaining({
+          delay: 5000,
+          removeOnComplete: true,
         }),
       );
     });
