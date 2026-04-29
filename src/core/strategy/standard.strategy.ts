@@ -100,6 +100,13 @@ export class StandardStrategy implements GameModeStrategy {
     if (state.currentRound.storytellerId === action.playerId)
       throw new Error('El narrador no vota.');
 
+    const existingVote = state.currentRound.votes.find(
+      (vote) => vote.voterId === action.playerId,
+    );
+    if (existingVote) {
+      return state;
+    }
+
     const targetCardId = parsePrefixedCardId(action.payload.cardId) as number;
 
     if (state.currentRound.playedCards[action.playerId] === targetCardId) {
@@ -107,9 +114,6 @@ export class StandardStrategy implements GameModeStrategy {
     }
     if (!Object.values(state.currentRound.playedCards).includes(targetCardId)) {
       throw new Error('Esa carta no existe en la mesa.');
-    }
-    if (state.currentRound.votes.some((v) => v.voterId === action.playerId)) {
-      throw new Error('Ya has votado.');
     }
 
     state.currentRound.votes.push({ voterId: action.playerId, targetCardId });

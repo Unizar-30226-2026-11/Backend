@@ -82,6 +82,17 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
       payload: { cardId: 20 },
     });
 
+    state = DixitEngine.transition(state, {
+      type: 'CAST_VOTE',
+      playerId: 'P3',
+      payload: { cardId: 10 },
+    });
+
+    expect((state.currentRound as any).votes).toEqual([
+      { voterId: 'P2', targetCardId: 10 },
+      { voterId: 'P3', targetCardId: 20 },
+    ]);
+
     // Al emitir el último voto, se calculan las puntuaciones y se avanza a SCORING
     state = DixitEngine.transition(state, {
       type: 'CAST_VOTE',
