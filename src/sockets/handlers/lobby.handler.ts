@@ -96,6 +96,20 @@ export const registerLobbyHandlers = (
     try {
       console.log(`[Lobby] ${socket.user?.username} se ha desconectado.`);
 
+      const activeGame = await GameRedisRepository.getGame(lobbyCode);
+      if (activeGame) {
+        const gameService = new GameService(GameRedisRepository);
+        const emissions = await gameService.handleAction(lobbyCode, {
+          type: 'DISCONNECT_PLAYER',
+          playerId: userId,
+        } as any);
+
+        for (const { room, event, data } of emissions) {
+          io.to(room).emit(event, data);
+        }
+        return;
+      }
+
       // Sacamos al jugador de la sala en Redis
       await LobbyService.leaveLobby(lobbyCode, userId);
 
