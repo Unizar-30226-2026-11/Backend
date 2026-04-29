@@ -3,7 +3,11 @@ import { BOARD_CONFIG } from '../../shared/constants/board-config';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { GameState } from '../../shared/types';
 import { DixitEngine } from '../../core/engines';
-import { GameService, gameTimeoutsQueue } from '../game.service';
+import {
+  buildRecoveredGameState,
+  GameService,
+  gameTimeoutsQueue,
+} from '../game.service';
 
 jest.mock('bullmq', () => ({
   Queue: jest.fn().mockReturnValue({
@@ -397,6 +401,52 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Debe comprobar que la mano va hidratada
         const sentHand = (handEmissions[0].data as any).hand;
         expect(sentHand[0]).toHaveProperty('url_image', 'url10.png');
+      });
+
+      test('Debe incluir en recuperación solo la carta votada por el jugador reconectado', () => {
+        const recoveredState = buildRecoveredGameState(
+          {
+            lobbyCode: 'ROOM-VOTE-RECOVER',
+            status: 'playing',
+            mode: 'STANDARD',
+            players: ['p1', 'p2', 'p3'],
+            disconnectedPlayers: [],
+            scores: { p1: 0, p2: 0, p3: 0 },
+            hands: { p1: [], p2: [], p3: [] },
+            centralDeck: [],
+            discardPile: [],
+            boardRegistry: {},
+            isStarActive: false,
+            starExpiresAt: 0,
+            phaseVersion: 1,
+            isMinigameActive: false,
+            activeConflict: null,
+            cardUrls: {
+              10: 'url10.png',
+              20: 'url20.png',
+              30: 'url30.png',
+            },
+            phase: 'VOTING',
+            currentRound: {
+              storytellerId: 'p1',
+              clue: 'pista',
+              storytellerCardId: 10,
+              playedCards: { p1: 10, p2: 20, p3: 30 },
+              boardCards: [30, 10, 20],
+              votes: [{ voterId: 'p2', targetCardId: 20 }],
+            },
+          } as any,
+          'p2',
+        );
+
+        expect((recoveredState as any).currentRound.selectedVoteCardId).toBe(
+          `${ID_PREFIXES.CARD}20`,
+        );
+        expect((recoveredState as any).currentRound.boardCardsDetailed).toEqual([
+          { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+          { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+          { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+        ]);
       });
 
       test('Debe programar un nuevo Timeout en BullMQ si hay un cambio de fase', async () => {

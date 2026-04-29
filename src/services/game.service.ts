@@ -49,6 +49,13 @@ export const serializePublicCards = (
   }));
 
 export const buildPublicGameState = (state: GameState): Partial<GameState> => {
+  return buildRecoveredGameState(state);
+};
+
+export const buildRecoveredGameState = (
+  state: GameState,
+  viewerPlayerId?: string,
+): Partial<GameState> => {
   const publicState = structuredClone(state);
   delete (publicState as any).centralDeck;
   delete (publicState as any).hands;
@@ -60,6 +67,20 @@ export const buildPublicGameState = (state: GameState): Partial<GameState> => {
         publicState.currentRound.boardCards,
         state.cardUrls || {},
       );
+  }
+
+  if (
+    viewerPlayerId &&
+    state.mode === 'STANDARD' &&
+    state.phase === 'VOTING'
+  ) {
+    const playerVote = state.currentRound.votes.find(
+      (vote) => vote.voterId === viewerPlayerId,
+    );
+
+    (publicState.currentRound as any).selectedVoteCardId = playerVote
+      ? `${ID_PREFIXES.CARD}${playerVote.targetCardId}`
+      : null;
   }
 
   return publicState;

@@ -4,7 +4,11 @@ import { GameRedisRepository } from '../../repositories/game.repository';
 import { LobbyRedisRepository } from '../../repositories/lobby.repository';
 import { UserRedisRepository } from '../../repositories/user.repository';
 // Importa tu cola de timeouts (la que ya usas para el game.worker)
-import { gameTimeoutsQueue } from '../../services/game.service';
+import {
+  buildRecoveredGameState,
+  gameTimeoutsQueue,
+  serializePublicCards,
+} from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { SERVER_EVENTS } from '../events';
 import {
@@ -81,17 +85,15 @@ export const setupSockets = (io: Server) => {
         if (gameState) {
           //Le enviamos su mano privada
           socket.emit(SERVER_EVENTS.PRIVATE_HAND, {
-            hand: gameState.hands[userId],
+            hand: serializePublicCards(
+              gameState.hands[userId] || [],
+              gameState.cardUrls || {},
+            ),
           });
 
-          // Está jugando, le enviamos el tablero
-          //Eliminamos información privada primero
-          const publicState = structuredClone(gameState);
-          delete (publicState as any).centralDeck;
-          delete (publicState as any).hands;
           socket.emit(SERVER_EVENTS.SESSION_RECOVERED, {
             lobbyCode,
-            state: publicState,
+            state: buildRecoveredGameState(gameState, userId),
           });
         } else {
           // No hay partida, pero hay lobbyCode, así que está en la sala de espera
