@@ -299,7 +299,10 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Verifica que BullMQ recibe la tarea con el retraso correcto (45000ms para SUBMISSION)
         expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
           'phase-timeout',
-          { lobbyCode: 'ROOM-PHASE', expectedPhase: 'SUBMISSION' },
+          expect.objectContaining({ 
+              lobbyCode: 'ROOM-PHASE', 
+              expectedPhase: 'SUBMISSION' 
+            }),
           expect.objectContaining({ delay: 45000 }),
         );
       });

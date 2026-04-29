@@ -6,6 +6,7 @@ describe('DixitEngine - Simulación de Ronda Completa (Stella)', () => {
     // 1. ESTADO INICIAL PREPARADO PARA STELLA (Actualizado con nuevas propiedades)
     let state: GameState = {
       lobbyCode: 'TEST-STELLA',
+      phaseVersion: 1,
       status: 'playing',
       mode: 'STELLA',
       phase: 'STELLA_MARKING',
