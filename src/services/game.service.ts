@@ -39,6 +39,32 @@ export interface IGameEngine {
   transition(state: GameState, action: GameAction): GameState;
 }
 
+export const serializePublicCards = (
+  cardIds: number[],
+  cardDictionary: Record<number, string>,
+) =>
+  cardIds.map((id) => ({
+    id: `${ID_PREFIXES.CARD}${id}`,
+    url_image: cardDictionary[id] || '',
+  }));
+
+export const buildPublicGameState = (state: GameState): Partial<GameState> => {
+  const publicState = structuredClone(state);
+  delete (publicState as any).centralDeck;
+  delete (publicState as any).hands;
+  delete (publicState as any).cardUrls;
+
+  if (Array.isArray(publicState.currentRound?.boardCards)) {
+    (publicState.currentRound as any).boardCardsDetailed =
+      serializePublicCards(
+        publicState.currentRound.boardCards,
+        state.cardUrls || {},
+      );
+  }
+
+  return publicState;
+};
+
 export class GameService {
   constructor(private readonly redisRepo: typeof GameRedisRepository) {}
 
@@ -605,20 +631,7 @@ export class GameService {
   }
 
   private maskPrivateState(state: GameState): Partial<GameState> {
-    const publicState = structuredClone(state);
-    delete (publicState as any).centralDeck;
-    delete (publicState as any).hands;
-    delete (publicState as any).cardUrls;
-
-    if (Array.isArray(publicState.currentRound?.boardCards)) {
-      (publicState.currentRound as any).boardCardsDetailed =
-        this.serializePublicCards(
-          publicState.currentRound.boardCards,
-          state.cardUrls || {},
-        );
-    }
-
-    return publicState;
+    return buildPublicGameState(state);
   }
 
   //
@@ -1126,10 +1139,7 @@ export class GameService {
     cardIds: number[],
     cardDictionary: Record<number, string>,
   ) {
-    return cardIds.map((id) => ({
-      id: `${ID_PREFIXES.CARD}${id}`,
-      url_image: cardDictionary[id] || '',
-    }));
+    return serializePublicCards(cardIds, cardDictionary);
   }
 
   /**
