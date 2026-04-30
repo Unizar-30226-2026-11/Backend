@@ -57,6 +57,16 @@ export interface ModifierData {
   turnsLeft: number;
 }
 
+/**
+ * Oferta temporal para cambiar el modo de juego durante la fase actual.
+ */
+export interface PendingModeChangeOffer {
+  /** Jugador autorizado a aceptar la oferta */
+  playerId: string;
+  /** VersiÃ³n de fase en la que naciÃ³ la oferta */
+  phaseVersion: number;
+}
+
 // ==========================================
 // ESTRUCTURAS DE RONDA
 // ==========================================
@@ -138,6 +148,8 @@ interface BaseGameState {
   starExpiresAt: number;
   /** VersiÃ³n monotÃ³nica de fase/ronda para invalidar timeouts antiguos */
   phaseVersion: number;
+  /** Oferta pendiente para cambiar de modo, solo vÃ¡lida en SCORING */
+  pendingModeChangeOffer?: PendingModeChangeOffer | null;
 
   /** Indica si hay un minijuego de conflicto activo.
    *  Bloquea el procesamiento de acciones normales.

@@ -60,6 +60,7 @@ export const buildRecoveredGameState = (
   delete (publicState as any).centralDeck;
   delete (publicState as any).hands;
   delete (publicState as any).cardUrls;
+  delete (publicState as any).pendingModeChangeOffer;
 
   if (Array.isArray(publicState.currentRound?.boardCards)) {
     (publicState.currentRound as any).boardCardsDetailed =
@@ -196,6 +197,7 @@ export class GameService {
       phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,
       phaseVersion: 1,
+      pendingModeChangeOffer: null,
       isMinigameActive: false,
       activeConflict: null,
       activeBoardId: boardIdToUse,
@@ -379,7 +381,7 @@ export class GameService {
 
     // ✅ NUEVO: Alternar el modo de juego (Bonus Random)
     if (action.type === 'ACCEPT_MODE_CHANGE') {
-      return await this.acceptModeChange(lobbyCode);
+      return await this.acceptModeChange(lobbyCode, action.playerId);
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
@@ -397,6 +399,10 @@ export class GameService {
       newState,
       previousScores,
     );
+
+    if (oldPhase !== newState.phase) {
+      this.clearExpiredModeChangeOffer(newState);
+    }
 
     // 5. Guardar el nuevo estado machacando el anterior
     await this.redisRepo.saveGame(lobbyCode, newState);
@@ -919,6 +925,10 @@ export class GameService {
     const shouldOfferChange = Math.random() < chance;
 
     if (shouldOfferChange) {
+      state.pendingModeChangeOffer = {
+        playerId: pId,
+        phaseVersion: state.phaseVersion ?? 1,
+      };
   
       const targetMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
       
@@ -951,13 +961,31 @@ export class GameService {
    * Ejecutado cuando el jugador acepta cambiar el modo de juego.
    * Alterna bidireccionalmente entre STELLA y STANDARD.
    */
-  public async acceptModeChange(lobbyCode: string): Promise<SocketEmission[]> {
+  public async acceptModeChange(
+    lobbyCode: string,
+    playerId: string,
+  ): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
     if (!state) return [];
+
+    const pendingOffer = state.pendingModeChangeOffer;
+    const currentPhaseVersion = state.phaseVersion ?? 1;
+    const isOfferValid =
+      state.phase === 'SCORING' &&
+      pendingOffer &&
+      pendingOffer.playerId === playerId &&
+      pendingOffer.phaseVersion === currentPhaseVersion;
+
+    if (!isOfferValid) {
+      throw new Error(
+        'La oferta de cambio de modo ya no estÃ¡ disponible en esta fase.',
+      );
+    }
 
     // Cambiamos al modo contrario
     const newMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
     state.mode = newMode;
+    state.pendingModeChangeOffer = null;
     
     await this.redisRepo.saveGame(lobbyCode, state);
 
@@ -986,6 +1014,14 @@ export class GameService {
         },
       }
     ];
+  }
+
+  private clearExpiredModeChangeOffer(state: GameState): void {
+    if (!state.pendingModeChangeOffer) {
+      return;
+    }
+
+    state.pendingModeChangeOffer = null;
   }
 
   /**
