@@ -17,7 +17,8 @@ export const initializeGameWorker = (io: Server) => {
     'game-timeouts',
     async (job: Job) => {
       // Extraemos las propiedades. Nota: a veces usáis lobbyCode y otras gameId para referiros al mismo ID de sala.
-      const { lobbyCode, expectedPhase, expectedPhaseVersion, gameId } = job.data;
+      const { lobbyCode, expectedPhase, expectedPhaseVersion, gameId } =
+        job.data;
 
       // Unificamos el ID de la sala por si acaso en el frontend/backend usan diferentes nombres de variable en el payload
       const targetRoomId = gameId || lobbyCode;
@@ -37,7 +38,8 @@ export const initializeGameWorker = (io: Server) => {
 
             if (
               state.phase !== expectedPhase ||
-              (expectedPhaseVersion && state.phaseVersion !== expectedPhaseVersion)
+              (expectedPhaseVersion &&
+                state.phaseVersion !== expectedPhaseVersion)
             ) {
               console.log(
                 `[Worker] La sala ${targetRoomId} ya está en ${state.phase}. Ignorando timer.`,
@@ -117,7 +119,9 @@ export const initializeGameWorker = (io: Server) => {
                 const missingPlayers = state.players.filter(
                   (pId: string) =>
                     pId !== state.currentRound.storytellerId &&
-                    !votes.some((vote: { voterId: string }) => vote.voterId === pId),
+                    !votes.some(
+                      (vote: { voterId: string }) => vote.voterId === pId,
+                    ),
                 );
 
                 for (const pId of missingPlayers) {

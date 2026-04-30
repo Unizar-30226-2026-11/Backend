@@ -103,7 +103,13 @@ export const setupSockets = (io: Server) => {
 
           // Salvaguarda por compatibilidad: si por cualquier motivo no hubo
           // emisiÃ³n privada, le enviamos la mano manualmente.
-          if (!reconnectEmissions.some((emission) => emission.room === userId && emission.event === SERVER_EVENTS.PRIVATE_HAND)) {
+          if (
+            !reconnectEmissions.some(
+              (emission) =>
+                emission.room === userId &&
+                emission.event === SERVER_EVENTS.PRIVATE_HAND,
+            )
+          ) {
             socket.emit(SERVER_EVENTS.PRIVATE_HAND, {
               hand: serializePublicCards(
                 refreshedGameState.hands[userId] || [],

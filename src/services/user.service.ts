@@ -133,7 +133,9 @@ export const UserService = {
 
     await Promise.all(
       friendIds.map((friendId) =>
-        invalidateCache(`cache:friends:confirmed:${ID_PREFIXES.USER}${friendId}`),
+        invalidateCache(
+          `cache:friends:confirmed:${ID_PREFIXES.USER}${friendId}`,
+        ),
       ),
     );
 

@@ -63,18 +63,13 @@ export const buildRecoveredGameState = (
   delete (publicState as any).pendingModeChangeOffer;
 
   if (Array.isArray(publicState.currentRound?.boardCards)) {
-    (publicState.currentRound as any).boardCardsDetailed =
-      serializePublicCards(
-        publicState.currentRound.boardCards,
-        state.cardUrls || {},
-      );
+    (publicState.currentRound as any).boardCardsDetailed = serializePublicCards(
+      publicState.currentRound.boardCards,
+      state.cardUrls || {},
+    );
   }
 
-  if (
-    viewerPlayerId &&
-    state.mode === 'STANDARD' &&
-    state.phase === 'VOTING'
-  ) {
+  if (viewerPlayerId && state.mode === 'STANDARD' && state.phase === 'VOTING') {
     const playerVote = state.currentRound.votes.find(
       (vote) => vote.voterId === viewerPlayerId,
     );
@@ -267,7 +262,10 @@ export class GameService {
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
-    if (currentState.phase === 'FINISHED' || currentState.status === 'finished') {
+    if (
+      currentState.phase === 'FINISHED' ||
+      currentState.status === 'finished'
+    ) {
       throw new Error('La partida ya ha finalizado.');
     }
 
@@ -378,7 +376,8 @@ export class GameService {
 
     if (action.type === 'SUBMIT_MINIGAME_SCORE') {
       // Extraemos la puntuación de forma segura
-      const score = typeof action.payload?.score === 'number' ? action.payload.score : 0;
+      const score =
+        typeof action.payload?.score === 'number' ? action.payload.score : 0;
       return await this.submitMinigameScore(lobbyCode, action.playerId, score);
     }
 
@@ -976,20 +975,21 @@ export class GameService {
         playerId: pId,
         phaseVersion: state.phaseVersion ?? 1,
       };
-  
+
       const targetMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
-      
-      const message = targetMode === 'STELLA'
-        ? '¡Has encontrado un vórtice cósmico! ¿Quieres sumir la partida en el caos y cambiar al modo Stella?'
-        : '¡Un rayo de luz atraviesa el caos! ¿Quieres restaurar el orden y volver al modo Clásico?';
+
+      const message =
+        targetMode === 'STELLA'
+          ? '¡Has encontrado un vórtice cósmico! ¿Quieres sumir la partida en el caos y cambiar al modo Stella?'
+          : '¡Un rayo de luz atraviesa el caos! ¿Quieres restaurar el orden y volver al modo Clásico?';
 
       return [
         {
-          room: pId, 
-          event: 'server:game:mode_change_offer', 
+          room: pId,
+          event: 'server:game:mode_change_offer',
           data: {
             message,
-            targetMode 
+            targetMode,
           },
         },
       ];
@@ -998,8 +998,11 @@ export class GameService {
         {
           room: pId,
           event: 'server:game:special_event',
-          data: { effect: 'NOTHING_HAPPENED', message: 'La casilla Bonus no tuvo efecto esta vez...' },
-        }
+          data: {
+            effect: 'NOTHING_HAPPENED',
+            message: 'La casilla Bonus no tuvo efecto esta vez...',
+          },
+        },
       ];
     }
   }
@@ -1033,14 +1036,18 @@ export class GameService {
     const newMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
     state.mode = newMode;
     state.pendingModeChangeOffer = null;
-    
+
     await this.redisRepo.saveGame(lobbyCode, state);
 
     // Preparamos los textos según el nuevo modo
-    const effectName = newMode === 'STELLA' ? 'MODE_CHANGED_TO_STELLA' : 'MODE_CHANGED_TO_STANDARD';
-    const broadcastMessage = newMode === 'STELLA'
-      ? '¡Un jugador ha aceptado el pacto! Las reglas han cambiado. ¡Bienvenidos al modo Stella!'
-      : '¡Se ha restaurado el orden! La partida vuelve a las reglas clásicas.';
+    const effectName =
+      newMode === 'STELLA'
+        ? 'MODE_CHANGED_TO_STELLA'
+        : 'MODE_CHANGED_TO_STANDARD';
+    const broadcastMessage =
+      newMode === 'STELLA'
+        ? '¡Un jugador ha aceptado el pacto! Las reglas han cambiado. ¡Bienvenidos al modo Stella!'
+        : '¡Se ha restaurado el orden! La partida vuelve a las reglas clásicas.';
 
     // Avisamos a toda la sala
     return [
@@ -1059,7 +1066,7 @@ export class GameService {
           state: this.maskPrivateState(state),
           lastAction: effectName,
         },
-      }
+      },
     ];
   }
 
@@ -1350,7 +1357,7 @@ export class GameService {
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:special_event',
-      data: { effect: 'CONFLICT_RESOLVED', message, winnerId, loserId, isDuel},
+      data: { effect: 'CONFLICT_RESOLVED', message, winnerId, loserId, isDuel },
     });
 
     // Actualizamos el tablero general para todos
@@ -1435,7 +1442,7 @@ export class GameService {
 
     if (p1Score === undefined || p2Score === undefined) {
       // Falta uno por contestar. No hacemos nada más (array vacío).
-      return []; 
+      return [];
     }
 
     //Si ambos han contestado decidimos el ganador

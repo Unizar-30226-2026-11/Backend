@@ -1,8 +1,8 @@
+import { DixitEngine } from '../../core/engines';
 import { prisma } from '../../infrastructure/prisma';
 import { BOARD_CONFIG } from '../../shared/constants/board-config';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { GameState } from '../../shared/types';
-import { DixitEngine } from '../../core/engines';
 import {
   buildRecoveredGameState,
   GameService,
@@ -240,7 +240,10 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
       expect(mockState.status).toBe('finished');
       expect(mockState.phase).toBe('FINISHED');
-      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-END', mockState);
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith(
+        'ROOM-END',
+        mockState,
+      );
       expect(mockRedisRepo.deleteGame).toHaveBeenCalledWith('ROOM-END');
       expect(
         emissions.some((emission) => emission.event === 'server:game:ended'),
@@ -420,22 +423,24 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           { id_card: 20, url_image: 'url20.png' },
           { id_card: 30, url_image: 'url30.png' },
         ]);
-        (DixitEngine.transition as jest.Mock).mockImplementationOnce((state) => ({
-          ...state,
-          mode: 'STELLA',
-          phase: 'STELLA_WORD_REVEAL',
-          currentRound: {
-            word: 'Bosque Encantado',
-            boardCards: [10, 20, 30],
-            playerMarks: {},
-            revealedCards: [],
-            currentScoutId: null,
-            fallenPlayers: [],
-            inTheDarkPlayerId: null,
-            roundScores: { [p1]: 0, [p2]: 0, [p3]: 0 },
-            successfulMarks: { [p1]: 0, [p2]: 0, [p3]: 0 },
-          },
-        }));
+        (DixitEngine.transition as jest.Mock).mockImplementationOnce(
+          (state) => ({
+            ...state,
+            mode: 'STELLA',
+            phase: 'STELLA_WORD_REVEAL',
+            currentRound: {
+              word: 'Bosque Encantado',
+              boardCards: [10, 20, 30],
+              playerMarks: {},
+              revealedCards: [],
+              currentScoutId: null,
+              fallenPlayers: [],
+              inTheDarkPlayerId: null,
+              roundScores: { [p1]: 0, [p2]: 0, [p3]: 0 },
+              successfulMarks: { [p1]: 0, [p2]: 0, [p3]: 0 },
+            },
+          }),
+        );
 
         const emissions = await gameService.initializeGame(
           'ROOM-STELLA-START',
@@ -446,9 +451,9 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           (e) => e.event === 'server:game:started',
         );
 
-        expect((startEmission?.data as any).state.currentRound.boardCards).toEqual([
-          10, 20, 30,
-        ]);
+        expect(
+          (startEmission?.data as any).state.currentRound.boardCards,
+        ).toEqual([10, 20, 30]);
         expect(
           (startEmission?.data as any).state.currentRound.boardCardsDetailed,
         ).toEqual([
@@ -456,7 +461,9 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
           { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
         ]);
-        expect((startEmission?.data as any).state).not.toHaveProperty('cardUrls');
+        expect((startEmission?.data as any).state).not.toHaveProperty(
+          'cardUrls',
+        );
       });
     });
 
@@ -553,9 +560,9 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           (e) => e.event === 'server:game:state_updated',
         );
 
-        expect((updateEmission?.data as any).state.currentRound.boardCards).toEqual([
-          30, 10, 20,
-        ]);
+        expect(
+          (updateEmission?.data as any).state.currentRound.boardCards,
+        ).toEqual([30, 10, 20]);
         expect(
           (updateEmission?.data as any).state.currentRound.boardCardsDetailed,
         ).toEqual([
@@ -638,11 +645,13 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         expect((recoveredState as any).currentRound.selectedVoteCardId).toBe(
           `${ID_PREFIXES.CARD}20`,
         );
-        expect((recoveredState as any).currentRound.boardCardsDetailed).toEqual([
-          { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
-          { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
-          { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
-        ]);
+        expect((recoveredState as any).currentRound.boardCardsDetailed).toEqual(
+          [
+            { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+            { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+            { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+          ],
+        );
       });
 
       test('Debe programar un nuevo Timeout en BullMQ si hay un cambio de fase', async () => {
@@ -668,10 +677,10 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Verifica que BullMQ recibe la tarea con el retraso correcto (45000ms para SUBMISSION)
         expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
           'phase-timeout',
-          expect.objectContaining({ 
-              lobbyCode: 'ROOM-PHASE', 
-              expectedPhase: 'SUBMISSION' 
-            }),
+          expect.objectContaining({
+            lobbyCode: 'ROOM-PHASE',
+            expectedPhase: 'SUBMISSION',
+          }),
           expect.objectContaining({ delay: 45000 }),
         );
       });
