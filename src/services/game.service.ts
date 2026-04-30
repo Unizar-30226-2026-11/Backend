@@ -60,6 +60,7 @@ export const buildRecoveredGameState = (
   delete (publicState as any).centralDeck;
   delete (publicState as any).hands;
   delete (publicState as any).cardUrls;
+  delete (publicState as any).pendingModeChangeOffer;
 
   if (Array.isArray(publicState.currentRound?.boardCards)) {
     (publicState.currentRound as any).boardCardsDetailed =
@@ -196,6 +197,7 @@ export class GameService {
       phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,
       phaseVersion: 1,
+      pendingModeChangeOffer: null,
       isMinigameActive: false,
       activeConflict: null,
       activeBoardId: boardIdToUse,
@@ -264,6 +266,9 @@ export class GameService {
     const currentState = await this.redisRepo.getGame(lobbyCode);
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
+    }
+    if (currentState.phase === 'FINISHED' || currentState.status === 'finished') {
+      throw new Error('La partida ya ha finalizado.');
     }
 
     // ==========================================
@@ -379,7 +384,7 @@ export class GameService {
 
     // ✅ NUEVO: Alternar el modo de juego (Bonus Random)
     if (action.type === 'ACCEPT_MODE_CHANGE') {
-      return await this.acceptModeChange(lobbyCode);
+      return await this.acceptModeChange(lobbyCode, action.playerId);
     }
 
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
@@ -397,6 +402,16 @@ export class GameService {
       newState,
       previousScores,
     );
+
+    if (oldPhase !== newState.phase) {
+      newState.phaseVersion += 1;
+
+      if (oldPhase === 'SCORING' && newState.pendingModeChangeOffer) {
+        this.clearExpiredModeChangeOffer(newState);
+      } else if (newState.pendingModeChangeOffer) {
+        newState.pendingModeChangeOffer.phaseVersion = newState.phaseVersion;
+      }
+    }
 
     // 5. Guardar el nuevo estado machacando el anterior
     await this.redisRepo.saveGame(lobbyCode, newState);
@@ -436,7 +451,6 @@ export class GameService {
 
     // 10. Gestión de Timeouts si cambió de fase
     if (oldPhase !== newState.phase) {
-      newState.phaseVersion += 1;
       const timeLimits: Record<string, number> = {
         STORYTELLING: 60000,
         SUBMISSION: 45000,
@@ -539,6 +553,10 @@ export class GameService {
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
+    currentState.status = 'finished';
+    currentState.phase = 'FINISHED';
+    await this.redisRepo.saveGame(lobbyCode, currentState);
+
     const ranking = Object.entries(currentState.scores)
       .sort(([, a], [, b]) => b - a)
       .map(([playerId, points], index) => ({
@@ -615,12 +633,14 @@ export class GameService {
         });
       }
 
+      await this.redisRepo.deleteGame(lobbyCode);
       return emissions;
     } catch (error) {
       console.error(
         `[GameService] Error al finalizar la partida ${lobbyCode}:`,
         error,
       );
+      await this.redisRepo.deleteGame(lobbyCode);
       return [
         {
           room: lobbyCode,
@@ -652,6 +672,27 @@ export class GameService {
     );
     console.log(
       `[BullMQ] Timeout programado para ${lobbyCode} en fase ${phase} (${delayMs / 1000}s)`,
+    );
+  }
+
+  public async rearmCurrentPhaseTimeout(state: GameState): Promise<void> {
+    const timeLimits: Record<string, number> = {
+      STORYTELLING: 60000,
+      SUBMISSION: 45000,
+      VOTING: 45000,
+      SCORING: 10000,
+    };
+
+    const delay = timeLimits[state.phase];
+    if (!delay) {
+      return;
+    }
+
+    await this.schedulePhaseTimeout(
+      state.lobbyCode,
+      state.phase,
+      delay,
+      state.phaseVersion ?? 1,
     );
   }
 
@@ -805,6 +846,7 @@ export class GameService {
   ): Promise<SocketEmission[]> {
     const { SPECIAL_SQUARES, CHECKPOINT_65 } = BOARD_CONFIG;
     const emissions: SocketEmission[] = [];
+    let modeChangeOfferResolved = false;
 
     // Nos aseguramos de tener el registro global inicializado en el estado
     if (!state.boardRegistry) state.boardRegistry = {};
@@ -898,7 +940,18 @@ export class GameService {
         currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
       ) {
         // Quitamos la restricción del modo. Ahora siempre aplica la probabilidad.
-        emissions.push(...this.applyRandomBonusEffect(state, pId));
+        if (!modeChangeOfferResolved && !state.pendingModeChangeOffer) {
+          const bonusEmissions = this.applyRandomBonusEffect(state, pId);
+          emissions.push(...bonusEmissions);
+
+          if (
+            bonusEmissions.some(
+              (emission) => emission.event === 'server:game:mode_change_offer',
+            )
+          ) {
+            modeChangeOfferResolved = true;
+          }
+        }
       }
       // MINIJUEGOS DESEMPATE
       const conflictEmissions = await this.checkConflictMinigame(state, pId);
@@ -919,6 +972,10 @@ export class GameService {
     const shouldOfferChange = Math.random() < chance;
 
     if (shouldOfferChange) {
+      state.pendingModeChangeOffer = {
+        playerId: pId,
+        phaseVersion: state.phaseVersion ?? 1,
+      };
   
       const targetMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
       
@@ -951,13 +1008,31 @@ export class GameService {
    * Ejecutado cuando el jugador acepta cambiar el modo de juego.
    * Alterna bidireccionalmente entre STELLA y STANDARD.
    */
-  public async acceptModeChange(lobbyCode: string): Promise<SocketEmission[]> {
+  public async acceptModeChange(
+    lobbyCode: string,
+    playerId: string,
+  ): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
     if (!state) return [];
+
+    const pendingOffer = state.pendingModeChangeOffer;
+    const currentPhaseVersion = state.phaseVersion ?? 1;
+    const isOfferValid =
+      state.phase === 'SCORING' &&
+      pendingOffer &&
+      pendingOffer.playerId === playerId &&
+      pendingOffer.phaseVersion === currentPhaseVersion;
+
+    if (!isOfferValid) {
+      throw new Error(
+        'La oferta de cambio de modo ya no estÃ¡ disponible en esta fase.',
+      );
+    }
 
     // Cambiamos al modo contrario
     const newMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
     state.mode = newMode;
+    state.pendingModeChangeOffer = null;
     
     await this.redisRepo.saveGame(lobbyCode, state);
 
@@ -986,6 +1061,14 @@ export class GameService {
         },
       }
     ];
+  }
+
+  private clearExpiredModeChangeOffer(state: GameState): void {
+    if (!state.pendingModeChangeOffer) {
+      return;
+    }
+
+    state.pendingModeChangeOffer = null;
   }
 
   /**

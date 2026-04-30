@@ -29,7 +29,10 @@ jest.mock('../../infrastructure/prisma', () => ({
         { id_card: 3, url_image: 'url3.jpg' },
       ]),
     },
-    user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+    user: {
+      findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }),
+      update: jest.fn(),
+    },
     board: {
       findUnique: jest.fn().mockResolvedValue({
         id_board: 1,
@@ -39,6 +42,7 @@ jest.mock('../../infrastructure/prisma', () => ({
     },
     userGameStats: { create: jest.fn() },
     games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) },
+    $transaction: jest.fn().mockResolvedValue([]),
   },
 }));
 
@@ -59,12 +63,204 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
     mockRedisRepo = {
       getGame: jest.fn(),
       saveGame: jest.fn(),
+      deleteGame: jest.fn(),
     };
     gameService = new GameService(mockRedisRepo);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('Oferta de cambio de modo', () => {
+    test('Debe ocultar la oferta pendiente del estado pÃºblico', () => {
+      const publicState = buildRecoveredGameState({
+        lobbyCode: 'ROOM-1',
+        status: 'playing',
+        players: ['p1'],
+        disconnectedPlayers: [],
+        scores: { p1: 10 },
+        hands: { p1: [1] },
+        centralDeck: [2, 3],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 4,
+        pendingModeChangeOffer: { playerId: 'p1', phaseVersion: 4 },
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: { 1: 'url1' },
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        currentRound: {
+          storytellerId: 'p1',
+          clue: null,
+          storytellerCardId: null,
+          playedCards: {},
+          boardCards: [],
+          votes: [],
+        },
+      } as unknown as GameState);
+
+      expect(publicState).not.toHaveProperty('pendingModeChangeOffer');
+    });
+
+    test('Debe aceptar el cambio solo para el jugador ofertado durante SCORING', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        phaseVersion: 7,
+        pendingModeChangeOffer: { playerId: 'p1', phaseVersion: 7 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+      const emissions = await gameService.handleAction('ROOM-1', {
+        type: 'ACCEPT_MODE_CHANGE',
+        playerId: 'p1',
+      } as any);
+
+      expect(mockState.mode).toBe('STELLA');
+      expect(mockState.pendingModeChangeOffer).toBeNull();
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-1', mockState);
+      expect(emissions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            room: 'ROOM-1',
+            event: 'server:game:special_event',
+          }),
+          expect.objectContaining({
+            room: 'ROOM-1',
+            event: 'server:game:state_updated',
+          }),
+        ]),
+      );
+    });
+
+    test('Debe invalidar la oferta al cambiar de fase con NEXT_ROUND', async () => {
+      const currentState = {
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        phaseVersion: 3,
+        pendingModeChangeOffer: { playerId: 'p1', phaseVersion: 3 },
+        isMinigameActive: false,
+        players: ['p1', 'p2'],
+        hands: { p1: [], p2: [] },
+        scores: { p1: 5, p2: 4 },
+        cardUrls: {},
+      } as unknown as GameState;
+
+      const nextState = {
+        ...currentState,
+        phase: 'STORYTELLING',
+      } as unknown as GameState;
+
+      mockRedisRepo.getGame.mockResolvedValueOnce(currentState);
+      (DixitEngine.transition as jest.Mock).mockReturnValueOnce(nextState);
+
+      await gameService.handleAction('ROOM-1', {
+        type: 'NEXT_ROUND',
+        playerId: 'SYSTEM',
+      } as any);
+
+      expect(nextState.pendingModeChangeOffer).toBeNull();
+      expect(nextState.phaseVersion).toBe(4);
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-1', nextState);
+    });
+
+    test('Debe invalidar la oferta al salir de SCORING tambiÃ©n en STELLA', async () => {
+      const currentState = {
+        lobbyCode: 'ROOM-2',
+        mode: 'STELLA',
+        phase: 'SCORING',
+        phaseVersion: 5,
+        pendingModeChangeOffer: { playerId: 'p2', phaseVersion: 5 },
+        isMinigameActive: false,
+        players: ['p1', 'p2'],
+        hands: { p1: [], p2: [] },
+        scores: { p1: 8, p2: 9 },
+        cardUrls: {},
+      } as unknown as GameState;
+
+      const nextState = {
+        ...currentState,
+        phase: 'STELLA_WORD_REVEAL',
+      } as unknown as GameState;
+
+      mockRedisRepo.getGame.mockResolvedValueOnce(currentState);
+      (DixitEngine.transition as jest.Mock).mockReturnValueOnce(nextState);
+
+      await gameService.handleAction('ROOM-2', {
+        type: 'NEXT_ROUND',
+        playerId: 'SYSTEM',
+      } as any);
+
+      expect(nextState.pendingModeChangeOffer).toBeNull();
+      expect(nextState.phaseVersion).toBe(6);
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-2', nextState);
+    });
+
+    test('Debe rechazar una aceptaciÃ³n cuando la oferta ya caducÃ³ por cambio de fase', async () => {
+      mockRedisRepo.getGame.mockResolvedValue({
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        phase: 'STORYTELLING',
+        phaseVersion: 8,
+        pendingModeChangeOffer: null,
+      });
+
+      await expect(
+        gameService.handleAction('ROOM-1', {
+          type: 'ACCEPT_MODE_CHANGE',
+          playerId: 'p1',
+        } as any),
+      ).rejects.toThrow(
+        'La oferta de cambio de modo ya no estÃ¡ disponible en esta fase.',
+      );
+    });
+  });
+
+  describe('FinalizaciÃ³n manual de partida', () => {
+    test('finalizeGame debe marcar la partida como finalizada y borrarla de Redis', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-END',
+        status: 'playing',
+        phase: 'SCORING',
+        scores: { u_1: 12, u_2: 8, u_3: 4 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+      (prisma.user.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ coins: 110 })
+        .mockResolvedValueOnce({ coins: 95 })
+        .mockResolvedValueOnce({ coins: 80 });
+
+      const emissions = await gameService.finalizeGame('ROOM-END');
+
+      expect(mockState.status).toBe('finished');
+      expect(mockState.phase).toBe('FINISHED');
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-END', mockState);
+      expect(mockRedisRepo.deleteGame).toHaveBeenCalledWith('ROOM-END');
+      expect(
+        emissions.some((emission) => emission.event === 'server:game:ended'),
+      ).toBe(true);
+    });
+
+    test('handleAction debe rechazar acciones sobre una partida ya finalizada', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-FINISHED',
+        status: 'finished',
+        phase: 'FINISHED',
+      });
+
+      await expect(
+        gameService.handleAction('ROOM-FINISHED', {
+          type: 'NEXT_ROUND',
+          playerId: 'SYSTEM',
+        } as any),
+      ).rejects.toThrow('La partida ya ha finalizado.');
+    });
   });
 
   // ==========================================
