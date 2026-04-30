@@ -14,7 +14,7 @@ export const BOARD_CONFIG = {
     EVEN_SQUARE_2: 11, // Pares
 
     // Fase Primera Mitad:
-    BONUS_RANDOM_1: 15,
+    BONUS_RANDOM_1: 10,
     SHUFFLE_1: 18,
     BONUS_RANDOM_2: 21,
 
