@@ -267,6 +267,9 @@ export class GameService {
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
+    if (currentState.phase === 'FINISHED' || currentState.status === 'finished') {
+      throw new Error('La partida ya ha finalizado.');
+    }
 
     // ==========================================
     // SISTEMA DE RECONEXIÓN DE USUARIOS
@@ -401,7 +404,13 @@ export class GameService {
     );
 
     if (oldPhase !== newState.phase) {
-      this.clearExpiredModeChangeOffer(newState);
+      newState.phaseVersion += 1;
+
+      if (oldPhase === 'SCORING' && newState.pendingModeChangeOffer) {
+        this.clearExpiredModeChangeOffer(newState);
+      } else if (newState.pendingModeChangeOffer) {
+        newState.pendingModeChangeOffer.phaseVersion = newState.phaseVersion;
+      }
     }
 
     // 5. Guardar el nuevo estado machacando el anterior
@@ -442,7 +451,6 @@ export class GameService {
 
     // 10. Gestión de Timeouts si cambió de fase
     if (oldPhase !== newState.phase) {
-      newState.phaseVersion += 1;
       const timeLimits: Record<string, number> = {
         STORYTELLING: 60000,
         SUBMISSION: 45000,
@@ -545,6 +553,10 @@ export class GameService {
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
+    currentState.status = 'finished';
+    currentState.phase = 'FINISHED';
+    await this.redisRepo.saveGame(lobbyCode, currentState);
+
     const ranking = Object.entries(currentState.scores)
       .sort(([, a], [, b]) => b - a)
       .map(([playerId, points], index) => ({
@@ -621,12 +633,14 @@ export class GameService {
         });
       }
 
+      await this.redisRepo.deleteGame(lobbyCode);
       return emissions;
     } catch (error) {
       console.error(
         `[GameService] Error al finalizar la partida ${lobbyCode}:`,
         error,
       );
+      await this.redisRepo.deleteGame(lobbyCode);
       return [
         {
           room: lobbyCode,
@@ -658,6 +672,27 @@ export class GameService {
     );
     console.log(
       `[BullMQ] Timeout programado para ${lobbyCode} en fase ${phase} (${delayMs / 1000}s)`,
+    );
+  }
+
+  public async rearmCurrentPhaseTimeout(state: GameState): Promise<void> {
+    const timeLimits: Record<string, number> = {
+      STORYTELLING: 60000,
+      SUBMISSION: 45000,
+      VOTING: 45000,
+      SCORING: 10000,
+    };
+
+    const delay = timeLimits[state.phase];
+    if (!delay) {
+      return;
+    }
+
+    await this.schedulePhaseTimeout(
+      state.lobbyCode,
+      state.phase,
+      delay,
+      state.phaseVersion ?? 1,
     );
   }
 
@@ -811,6 +846,7 @@ export class GameService {
   ): Promise<SocketEmission[]> {
     const { SPECIAL_SQUARES, CHECKPOINT_65 } = BOARD_CONFIG;
     const emissions: SocketEmission[] = [];
+    let modeChangeOfferResolved = false;
 
     // Nos aseguramos de tener el registro global inicializado en el estado
     if (!state.boardRegistry) state.boardRegistry = {};
@@ -904,7 +940,18 @@ export class GameService {
         currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
       ) {
         // Quitamos la restricción del modo. Ahora siempre aplica la probabilidad.
-        emissions.push(...this.applyRandomBonusEffect(state, pId));
+        if (!modeChangeOfferResolved && !state.pendingModeChangeOffer) {
+          const bonusEmissions = this.applyRandomBonusEffect(state, pId);
+          emissions.push(...bonusEmissions);
+
+          if (
+            bonusEmissions.some(
+              (emission) => emission.event === 'server:game:mode_change_offer',
+            )
+          ) {
+            modeChangeOfferResolved = true;
+          }
+        }
       }
       // MINIJUEGOS DESEMPATE
       const conflictEmissions = await this.checkConflictMinigame(state, pId);

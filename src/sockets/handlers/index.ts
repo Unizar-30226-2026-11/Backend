@@ -6,6 +6,7 @@ import { UserRedisRepository } from '../../repositories/user.repository';
 // Importa tu cola de timeouts (la que ya usas para el game.worker)
 import {
   buildRecoveredGameState,
+  GameService,
   gameTimeoutsQueue,
   serializePublicCards,
 } from '../../services/game.service';
@@ -83,17 +84,37 @@ export const setupSockets = (io: Server) => {
         const gameState = await GameRedisRepository.getGame(lobbyCode);
 
         if (gameState) {
-          //Le enviamos su mano privada
-          socket.emit(SERVER_EVENTS.PRIVATE_HAND, {
-            hand: serializePublicCards(
-              gameState.hands[userId] || [],
-              gameState.cardUrls || {},
-            ),
-          });
+          const gameService = new GameService(GameRedisRepository);
+          const reconnectEmissions = await gameService.handleAction(lobbyCode, {
+            type: 'RECONNECT_PLAYER',
+            playerId: userId,
+          } as any);
+
+          for (const { room, event, data } of reconnectEmissions) {
+            io.to(room).emit(event, data);
+          }
+
+          const refreshedGameState =
+            (await GameRedisRepository.getGame(lobbyCode)) || gameState;
+
+          if (refreshedGameState.phase === 'SCORING') {
+            await gameService.rearmCurrentPhaseTimeout(refreshedGameState);
+          }
+
+          // Salvaguarda por compatibilidad: si por cualquier motivo no hubo
+          // emisiÃ³n privada, le enviamos la mano manualmente.
+          if (!reconnectEmissions.some((emission) => emission.room === userId && emission.event === SERVER_EVENTS.PRIVATE_HAND)) {
+            socket.emit(SERVER_EVENTS.PRIVATE_HAND, {
+              hand: serializePublicCards(
+                refreshedGameState.hands[userId] || [],
+                refreshedGameState.cardUrls || {},
+              ),
+            });
+          }
 
           socket.emit(SERVER_EVENTS.SESSION_RECOVERED, {
             lobbyCode,
-            state: buildRecoveredGameState(gameState, userId),
+            state: buildRecoveredGameState(refreshedGameState, userId),
           });
         } else {
           // No hay partida, pero hay lobbyCode, así que está en la sala de espera

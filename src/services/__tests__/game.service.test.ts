@@ -29,7 +29,10 @@ jest.mock('../../infrastructure/prisma', () => ({
         { id_card: 3, url_image: 'url3.jpg' },
       ]),
     },
-    user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+    user: {
+      findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }),
+      update: jest.fn(),
+    },
     board: {
       findUnique: jest.fn().mockResolvedValue({
         id_board: 1,
@@ -39,6 +42,7 @@ jest.mock('../../infrastructure/prisma', () => ({
     },
     userGameStats: { create: jest.fn() },
     games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) },
+    $transaction: jest.fn().mockResolvedValue([]),
   },
 }));
 
@@ -59,6 +63,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
     mockRedisRepo = {
       getGame: jest.fn(),
       saveGame: jest.fn(),
+      deleteGame: jest.fn(),
     };
     gameService = new GameService(mockRedisRepo);
   });
@@ -214,6 +219,47 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       ).rejects.toThrow(
         'La oferta de cambio de modo ya no estÃ¡ disponible en esta fase.',
       );
+    });
+  });
+
+  describe('FinalizaciÃ³n manual de partida', () => {
+    test('finalizeGame debe marcar la partida como finalizada y borrarla de Redis', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-END',
+        status: 'playing',
+        phase: 'SCORING',
+        scores: { u_1: 12, u_2: 8, u_3: 4 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+      (prisma.user.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ coins: 110 })
+        .mockResolvedValueOnce({ coins: 95 })
+        .mockResolvedValueOnce({ coins: 80 });
+
+      const emissions = await gameService.finalizeGame('ROOM-END');
+
+      expect(mockState.status).toBe('finished');
+      expect(mockState.phase).toBe('FINISHED');
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-END', mockState);
+      expect(mockRedisRepo.deleteGame).toHaveBeenCalledWith('ROOM-END');
+      expect(
+        emissions.some((emission) => emission.event === 'server:game:ended'),
+      ).toBe(true);
+    });
+
+    test('handleAction debe rechazar acciones sobre una partida ya finalizada', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-FINISHED',
+        status: 'finished',
+        phase: 'FINISHED',
+      });
+
+      await expect(
+        gameService.handleAction('ROOM-FINISHED', {
+          type: 'NEXT_ROUND',
+          playerId: 'SYSTEM',
+        } as any),
+      ).rejects.toThrow('La partida ya ha finalizado.');
     });
   });
 
