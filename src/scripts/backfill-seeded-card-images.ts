@@ -10,17 +10,14 @@ type StorageListEntry = {
 };
 
 type StorageCardInfo = {
-  collection: string;
-  theme: string;
-  filename: string;
   publicUrl: string;
   rarity: Rarity;
-  title: string;
 };
 
 const BUCKET_NAME = 'game-assets';
 const STORAGE_BASE_PATH = 'cards';
 const PLACEHOLDER_URL = 'https://ejemplo.com/placeholder.jpg';
+const SEEDED_CARDS_TO_BACKFILL = 168;
 
 const RARITY_TOKENS: Array<{ token: string; rarity: Rarity }> = [
   { token: 'legendary', rarity: Rarity.LEGENDARY },
@@ -30,21 +27,6 @@ const RARITY_TOKENS: Array<{ token: string; rarity: Rarity }> = [
   { token: 'rare', rarity: Rarity.UNCOMMON },
   { token: 'common', rarity: Rarity.COMMON },
 ];
-
-function toDisplayName(raw: string): string {
-  return raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function cleanTitleBase(rawNameWithoutExt: string): string {
-  let cleaned = rawNameWithoutExt;
-
-  for (const { token } of RARITY_TOKENS) {
-    const pattern = new RegExp(`(?:_|-|\\s)${token}(?=$|_|-|\\s)`, 'gi');
-    cleaned = cleaned.replace(pattern, ' ');
-  }
-
-  return toDisplayName(cleaned);
-}
 
 function inferRarity(rawNameWithoutExt: string): Rarity {
   const normalized = rawNameWithoutExt.toLowerCase();
@@ -109,16 +91,12 @@ function parseStorageCard(storagePath: string): StorageCardInfo | null {
   const segments = storagePath.split('/');
   if (segments.length < 4) return null;
 
-  const [, collection, theme, filename] = segments;
+  const [, , , filename] = segments;
   const filenameWithoutExt = filename.replace(/\.[^.]+$/, '');
 
   return {
-    collection: toDisplayName(collection),
-    theme: toDisplayName(theme),
-    filename,
     publicUrl: getPublicUrl(storagePath),
     rarity: inferRarity(filenameWithoutExt),
-    title: `${toDisplayName(theme)} - ${cleanTitleBase(filenameWithoutExt)}`,
   };
 }
 
@@ -144,18 +122,18 @@ async function main() {
 
   const existingRealCards = await prisma.cards.findMany({
     where: { NOT: { url_image: PLACEHOLDER_URL } },
-    select: { title: true, url_image: true },
+    select: { url_image: true },
   });
 
-  const usedTitles = new Set(existingRealCards.map((card) => card.title));
   const usedUrls = new Set(existingRealCards.map((card) => card.url_image));
   const availableStorageCards = storageCards.filter(
-    (card) => !usedTitles.has(card.title) && !usedUrls.has(card.publicUrl),
+    (card) => !usedUrls.has(card.publicUrl),
   );
 
   const placeholderCards = await prisma.cards.findMany({
     where: { url_image: PLACEHOLDER_URL },
     orderBy: { id_card: 'asc' },
+    take: SEEDED_CARDS_TO_BACKFILL,
     select: { id_card: true },
   });
 
@@ -178,73 +156,26 @@ async function main() {
   const cardsToUpdate = Math.min(
     availableStorageCards.length,
     placeholderCards.length,
+    SEEDED_CARDS_TO_BACKFILL,
   );
-  const collectionCache = new Map<string, number>();
-  let createdCollections = 0;
-  let createdCards = 0;
-
-  const ensureCollectionId = async (
-    collectionName: string,
-  ): Promise<number> => {
-    const cachedCollectionId = collectionCache.get(collectionName);
-    if (cachedCollectionId) return cachedCollectionId;
-
-    const existingCollection = await prisma.collection.findUnique({
-      where: { name: collectionName },
-      select: { id_collection: true },
-    });
-
-    if (existingCollection) {
-      collectionCache.set(collectionName, existingCollection.id_collection);
-      return existingCollection.id_collection;
-    }
-
-    const createdCollection = await prisma.collection.create({
-      data: { name: collectionName },
-      select: { id_collection: true },
-    });
-
-    createdCollections += 1;
-    collectionCache.set(collectionName, createdCollection.id_collection);
-    return createdCollection.id_collection;
-  };
 
   for (let i = 0; i < cardsToUpdate; i += 1) {
     const dbCard = placeholderCards[i];
     const storageCard = availableStorageCards[i];
-    const collectionId = await ensureCollectionId(storageCard.collection);
 
     await prisma.cards.update({
       where: { id_card: dbCard.id_card },
       data: {
-        title: storageCard.title,
         rarity: storageCard.rarity,
         url_image: storageCard.publicUrl,
-        id_collection: collectionId,
       },
     });
-  }
-
-  for (let i = cardsToUpdate; i < availableStorageCards.length; i += 1) {
-    const storageCard = availableStorageCards[i];
-    const collectionId = await ensureCollectionId(storageCard.collection);
-
-    await prisma.cards.create({
-      data: {
-        title: storageCard.title,
-        rarity: storageCard.rarity,
-        url_image: storageCard.publicUrl,
-        id_collection: collectionId,
-      },
-    });
-
-    createdCards += 1;
   }
 
   console.log('\nBackfill completado');
   console.log(`- Cartas actualizadas: ${cardsToUpdate}`);
-  console.log(`- Cartas insertadas: ${createdCards}`);
-  console.log(`- Colecciones creadas: ${createdCollections}`);
+  console.log('- Cartas insertadas: 0');
+  console.log('- Colecciones creadas: 0');
 
   if (availableStorageCards.length < placeholderCards.length) {
     console.log(
@@ -254,7 +185,7 @@ async function main() {
 
   if (availableStorageCards.length > placeholderCards.length) {
     console.log(
-      `- Aviso: se han insertado ${availableStorageCards.length - placeholderCards.length} cartas nuevas porque habia mas imagenes que placeholders.`,
+      `- Aviso: se han ignorado ${availableStorageCards.length - placeholderCards.length} imagenes extra porque este script solo rellena las primeras ${SEEDED_CARDS_TO_BACKFILL} cartas del seed.`,
     );
   }
 }
