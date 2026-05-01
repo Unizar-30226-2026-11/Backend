@@ -103,41 +103,61 @@ export class GameService {
     });
 
     let centralDeck: number[] = [];
-    const hostId = numericPlayerIds[0];
-    const hostData = await prisma.user.findUnique({
-      where: { id_user: hostId },
-      select: { active_board_id: true },
-    });
+    const defaultBoardPayload = {
+      id: `${ID_PREFIXES.BOARD}1`,
+      name: 'CLASSIC',
+      url_image: 'tablero_classic.png',
+    };
 
-    const boardIdToUse = hostData?.active_board_id || 1;
-    const boardData = await prisma.board.findUnique({
-      where: { id_board: boardIdToUse },
-    });
-
-    const boardPayload = boardData
-      ? {
-          id: `${ID_PREFIXES.BOARD}${boardData.id_board}`,
-          name: boardData.name,
-          url_image: (boardData as any).url_image || '',
-        }
-      : {
-          id: `${ID_PREFIXES.BOARD}1`,
-          name: 'CLASSIC',
-          url_image: 'tablero_classic.png',
-        };
+    let dynamicStats: {
+      selectedDecks: {
+        userId: number;
+        deckId: number;
+        deckName: string;
+        cardCount: number;
+      }[];
+      totalFromDecks: number;
+      autoAddedCount: number;
+      trimmedCount: number;
+    } | null = null;
 
     // Extraer cartas de los mazos (o usar el predeterminado al azar)
     if (options.useDynamicPool) {
+      dynamicStats = {
+        selectedDecks: [],
+        totalFromDecks: 0,
+        autoAddedCount: 0,
+        trimmedCount: 0,
+      };
+
       // Extraer cartas de los mazos de los jugadores
       const userDecks = await prisma.deck.findMany({
         where: { id_user: { in: numericPlayerIds } },
         include: { cards: { include: { user_card: true } } },
       });
 
+      const decksByUser = new Map<number, typeof userDecks>();
       userDecks.forEach((deck) => {
-        deck.cards.forEach((dc) => {
-          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+        const list = decksByUser.get(deck.id_user) ?? [];
+        list.push(deck);
+        decksByUser.set(deck.id_user, list);
+      });
+
+      decksByUser.forEach((decks, userId) => {
+        if (decks.length === 0) return;
+        const randomDeck = decks[Math.floor(Math.random() * decks.length)];
+        const deckCardIds = randomDeck.cards
+          .map((dc) => dc.user_card?.id_card)
+          .filter((id): id is number => typeof id === 'number');
+
+        centralDeck.push(...deckCardIds);
+        dynamicStats!.selectedDecks.push({
+          userId,
+          deckId: randomDeck.id_deck,
+          deckName: randomDeck.name,
+          cardCount: deckCardIds.length,
         });
+        dynamicStats!.totalFromDecks += deckCardIds.length;
       });
     } else {
       const keys = PREDEFINED_DECK_KEYS;
@@ -160,7 +180,11 @@ export class GameService {
         select: { id_card: true },
       });
       centralDeck.push(...fallbackCards.map((c) => c.id_card));
+      if (dynamicStats) dynamicStats.autoAddedCount = missingAmount;
     } else if (centralDeck.length > TARGET_DECK_SIZE) {
+      if (dynamicStats) {
+        dynamicStats.trimmedCount = centralDeck.length - TARGET_DECK_SIZE;
+      }
       centralDeck = this.shuffleArray(centralDeck).slice(0, TARGET_DECK_SIZE); // Mezclamos antes de cortar para que sea justo
     }
 
@@ -175,6 +199,68 @@ export class GameService {
     const cardDictionary: Record<number, string> = {};
     allCardsInfo.forEach((c) => {
       cardDictionary[c.id_card] = c.url_image || '';
+    });
+
+    if (dynamicStats) {
+      console.log(`\n[Decks] Pool dinamico para lobby ${lobbyCode}`);
+      dynamicStats.selectedDecks.forEach((deck) => {
+        console.log(
+          `[Decks] Usuario ${deck.userId} -> deck ${deck.deckId} (${deck.deckName}): ${deck.cardCount} cartas`,
+        );
+      });
+      console.log(
+        `[Decks] Total cartas desde decks: ${dynamicStats.totalFromDecks}`,
+      );
+      console.log(
+        `[Decks] Cartas anadidas automaticamente: ${dynamicStats.autoAddedCount}`,
+      );
+      if (dynamicStats.trimmedCount > 0) {
+        console.log(
+          `[Decks] Cartas descartadas por exceso: ${dynamicStats.trimmedCount}`,
+        );
+      }
+    }
+
+    const userBoards = await prisma.user.findMany({
+      where: { id_user: { in: numericPlayerIds } },
+      select: { id_user: true, active_board_id: true },
+    });
+
+    const boardIds = Array.from(
+      new Set(
+        userBoards
+          .map((u) => u.active_board_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
+
+    const boards = boardIds.length
+      ? await prisma.board.findMany({
+          where: { id_board: { in: boardIds } },
+          select: { id_board: true, name: true, url_image: true },
+        })
+      : [];
+
+    const boardsById = new Map<number, (typeof boards)[number]>();
+    boards.forEach((board) => {
+      boardsById.set(board.id_board, board);
+    });
+
+    const boardPayloadByUserId = new Map<number, typeof defaultBoardPayload>();
+    userBoards.forEach((user) => {
+      const board = user.active_board_id
+        ? boardsById.get(user.active_board_id)
+        : null;
+
+      const payload = board
+        ? {
+            id: `${ID_PREFIXES.BOARD}${board.id_board}`,
+            name: board.name,
+            url_image: board.url_image || '',
+          }
+        : defaultBoardPayload;
+
+      boardPayloadByUserId.set(user.id_user, payload);
     });
 
     const safeMode = normalizeGameMode(mode) ?? 'STANDARD';
@@ -195,7 +281,6 @@ export class GameService {
       pendingModeChangeOffer: null,
       isMinigameActive: false,
       activeConflict: null,
-      activeBoardId: boardIdToUse,
       boardRegistry: {},
       cardUrls: cardDictionary,
     };
@@ -222,19 +307,24 @@ export class GameService {
       event: 'server:game:started',
       data: {
         state: this.maskPrivateState(initialState),
-        board: boardPayload,
         message: '¡La partida ha comenzado!',
       },
     });
 
     for (const playerId of initialState.players) {
       const handIds = initialState.hands[playerId] as number[];
+      const numericPlayerId = parseInt(playerId.replace(ID_PREFIXES.USER, ''));
+      const boardPayload =
+        boardPayloadByUserId.get(numericPlayerId) ?? defaultBoardPayload;
 
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: this.serializeHand(handIds, cardDictionary) },
+        data: {
+          hand: this.serializeHand(handIds, cardDictionary),
+          board: boardPayload,
+        },
       });
     }
 

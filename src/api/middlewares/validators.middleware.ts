@@ -7,6 +7,7 @@ import {
   LOBBY_CODE_REGEX,
   LOBBY_MAX_PLAYERS,
   LOBBY_MIN_PLAYERS,
+  NUM_MIN_CARDS_IN_DECK,
 } from '../../shared/constants';
 import { AuthenticatedRequest } from '../../shared/types';
 import {
@@ -230,6 +231,23 @@ export const validateStatusBody = (
   if (!isEditableUserStatus(status)) {
     res.status(400).json({
       message: `Estado no valido. Opciones: ${EDITABLE_USER_STATUSES.join(', ')}`,
+    });
+    return;
+  }
+
+  next();
+};
+
+export const validateMinCardsInDeck = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const { cardIds } = req.body;
+
+  if (!Array.isArray(cardIds) || cardIds.length < NUM_MIN_CARDS_IN_DECK) {
+    res.status(400).json({
+      message: `El mazo debe contener al menos ${NUM_MIN_CARDS_IN_DECK} cartas.`,
     });
     return;
   }
