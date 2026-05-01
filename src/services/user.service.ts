@@ -270,25 +270,22 @@ export const UserService = {
       // Contamos las instancias de cada carta
       const cardCounts: Record<
         number,
-        { name: string; quantity: number; rarity: string; url_image: string }
+        { name: string; rarity: string; url_image: string }
       > = {};
 
       userCards.forEach((u_card) => {
         if (!cardCounts[u_card.id_card]) {
           cardCounts[u_card.id_card] = {
             name: u_card.card.title,
-            quantity: 0,
             rarity: u_card.card.rarity,
             url_image: u_card.card.url_image,
           };
         }
-        cardCounts[u_card.id_card].quantity += 1;
       });
 
       return Object.entries(cardCounts).map(([cardId, data]) => ({
         cardId: `${ID_PREFIXES.CARD}${cardId}`,
         name: data.name,
-        quantity: data.quantity,
         rarity: data.rarity,
         url_image: data.url_image,
       }));

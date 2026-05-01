@@ -328,9 +328,6 @@ router.get('/search', searchUsers);
  *                       name:
  *                         type: string
  *                         example: Dragón de Fuego
- *                       quantity:
- *                         type: integer
- *                         example: 2
  *       401:
  *         description: No autenticado
  *         content:

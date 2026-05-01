@@ -266,7 +266,6 @@ describe('UserService - Pruebas Funciones', () => {
                   new RegExp(`^${ID_PREFIXES.CARD}\\d+$`),
                 ),
                 name: expect.any(String),
-                quantity: expect.any(Number),
                 url_image: expect.any(String),
               }),
             ]),
