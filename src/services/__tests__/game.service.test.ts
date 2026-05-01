@@ -30,10 +30,20 @@ jest.mock('../../infrastructure/prisma', () => ({
       ]),
     },
     user: {
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id_user: 1, active_board_id: 1 }]),
       findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }),
       update: jest.fn(),
     },
     board: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id_board: 1,
+          name: 'Tablero Classic',
+          url_image: 'classic.png',
+        },
+      ]),
       findUnique: jest.fn().mockResolvedValue({
         id_board: 1,
         name: 'Tablero Classic',
