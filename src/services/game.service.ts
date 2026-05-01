@@ -151,13 +151,13 @@ export class GameService {
           .filter((id): id is number => typeof id === 'number');
 
         centralDeck.push(...deckCardIds);
-        dynamicStats.selectedDecks.push({
+        dynamicStats!.selectedDecks.push({
           userId,
           deckId: randomDeck.id_deck,
           deckName: randomDeck.name,
           cardCount: deckCardIds.length,
         });
-        dynamicStats.totalFromDecks += deckCardIds.length;
+        dynamicStats!.totalFromDecks += deckCardIds.length;
       });
     } else {
       const keys = PREDEFINED_DECK_KEYS;
