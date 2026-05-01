@@ -23,6 +23,7 @@ import {
   isDeckOwner,
   validateDeckBody,
   validateIdParam,
+  validateMinCardsInDeck,
   validateStatusBody,
   validateUsernameBody,
 } from '../middlewares';
@@ -458,7 +459,13 @@ router.get('/cards', getOwnedCards);
 router.get('/decks', getUserDecks);
 
 // CREAR: 1.Auth -> 2.Formato -> 3.Dueño de cartas -> 4.Controller
-router.post('/decks', validateDeckBody, hasCardsInCollection, createDeck);
+router.post(
+  '/decks',
+  validateDeckBody,
+  hasCardsInCollection,
+  validateMinCardsInDeck,
+  createDeck,
+);
 
 /**
  * @swagger
@@ -594,6 +601,7 @@ router.put(
   isDeckOwner,
   validateDeckBody,
   hasCardsInCollection,
+  validateMinCardsInDeck,
   updateDeck,
 );
 router.delete(

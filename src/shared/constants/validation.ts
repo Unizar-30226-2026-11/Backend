@@ -16,3 +16,5 @@ export const LOBBY_MAX_PLAYERS = 6;
  */
 export const ID_MAX_LENGTH = 30;
 export const ID_MIN_LENGTH = 3;
+
+export const NUM_MIN_CARDS_IN_DECK = 16;
