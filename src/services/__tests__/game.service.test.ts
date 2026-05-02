@@ -959,6 +959,31 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       );
     });
 
+    test('triggerStarEvent no debe crear la estrella durante un desempate activo', async () => {
+      const mockState = {
+        lobbyCode: 'LOBBY1',
+        isStarActive: false,
+        isMinigameActive: true,
+        activeConflict: {
+          player1: 'player1',
+          player2: 'player2',
+          isDuel: false,
+        },
+        scores: {},
+      };
+      mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+      const emissions = await gameService.triggerStarEvent('LOBBY1');
+
+      expect(emissions).toEqual([]);
+      expect(mockRedisRepo.saveGame).not.toHaveBeenCalled();
+      expect(gameTimeoutsQueue.add).not.toHaveBeenCalledWith(
+        'star-expiration',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
     test('claimStar debe dar 3 puntos y apagar la estrella si se pulsa a tiempo', async () => {
       const mockState = {
         lobbyCode: 'LOBBY1',

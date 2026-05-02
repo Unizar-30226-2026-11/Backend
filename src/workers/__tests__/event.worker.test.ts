@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
 import { GameService } from '../../services/game.service';
+import { RANDOM_EVENT_CONFIG } from '../../shared/constants';
 import { initializeEventWorker } from '../../workers/event.worker';
 
 jest.mock('bullmq');
@@ -46,9 +47,9 @@ describe('Event Worker (game-events / Scheduler)', () => {
     jest.spyOn(global.Math, 'random').mockRestore();
   });
 
-  it('Debe disparar el evento de estrella si Math.random es menor a 0.15', async () => {
-    // 1. Forzamos Math.random para que devuelva 0.10 (así entra en el IF del 15%)
-    jest.spyOn(global.Math, 'random').mockReturnValue(0.1);
+  it('Debe disparar el evento de estrella si Math.random es menor al umbral configurado', async () => {
+    // 1. Forzamos Math.random para que devuelva un valor inferior al umbral
+    jest.spyOn(global.Math, 'random').mockReturnValue(0.01);
 
     // 2. Simulamos que hay dos salas activas
     (GameRedisRepository.getAllActiveLobbies as jest.Mock).mockResolvedValue([
@@ -83,8 +84,8 @@ describe('Event Worker (game-events / Scheduler)', () => {
     });
   });
 
-  it('No debe disparar nada si Math.random es mayor a 0.15', async () => {
-    // Forzamos un número alto (ej. 0.80)
+  it('No debe disparar nada si Math.random es mayor al umbral configurado', async () => {
+    // Forzamos un número alto para quedar por encima del umbral
     jest.spyOn(global.Math, 'random').mockReturnValue(0.8);
     (GameRedisRepository.getAllActiveLobbies as jest.Mock).mockResolvedValue([
       'SALA1',
@@ -96,5 +97,9 @@ describe('Event Worker (game-events / Scheduler)', () => {
 
     // Como la probabilidad falló, nunca debe llamar al trigger
     expect(mockTriggerStar).not.toHaveBeenCalled();
+  });
+
+  it('Debe usar la probabilidad compartida configurada', () => {
+    expect(RANDOM_EVENT_CONFIG.STAR_SPAWN_PROBABILITY).toBe(0.03);
   });
 });

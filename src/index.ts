@@ -4,11 +4,13 @@ import { createServer } from 'http'; // Para crear el servidor HTTP necesario pa
 import { Server } from 'socket.io'; // Para manejar WebSockets
 
 import app from './app';
+import { initializeScheduler } from './infrastructure/bullmq/scheduler';
 import { prisma } from './infrastructure/prisma';
 import { connectRedis, redisClient } from './infrastructure/redis';
 import { initRedisIndices } from './infrastructure/redis/index';
 import { setupSockets } from './sockets/handlers'; // Para configurar los handlers de Socket.io
-import { initializeGameWorker } from './workers/game.worker';
+import { initializeEventWorker, initializeGameWorker } from './workers';
+
 const PORT = process.env.PORT || 3000;
 
 async function bootstrap() {
@@ -35,6 +37,10 @@ async function bootstrap() {
 
     //Levantamos nuestra lógica de sockets
     setupSockets(io);
+
+    // Inicializamos el scheduler y el worker de eventos aleatorios
+    await initializeScheduler();
+    initializeEventWorker(io);
 
     //Inicializamos el Worker que vigilará los tiempos muertos
     initializeGameWorker(io);
