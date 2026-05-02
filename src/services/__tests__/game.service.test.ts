@@ -292,18 +292,27 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Simulamos que los jugadores traen MUCHAS cartas (ej: 60 cartas en total) para no entrar al fallback
         const mockDecks = [
           {
-            cards: Array(60).fill({
+            id_user: 1,
+            id_deck: 10,
+            name: 'Deck 1',
+            cards: Array.from({ length: 60 }, (_, i) => ({
               user_card: {
-                id_card: 100,
-                card: { id_card: 100, url_image: 'img.png' },
+                id_card: 100 + i,
+                card: {
+                  id_card: 100 + i,
+                  url_image: `img-${100 + i}.png`,
+                },
               },
-            }),
+            })),
           },
         ];
         (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
-        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
-          { id_card: 100, url_image: 'img.png' },
-        ]);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
+          Array.from({ length: 48 }, (_, i) => ({
+            id_card: 100 + i,
+            url_image: `img-${100 + i}.png`,
+          })),
+        );
 
         const emissions = await gameService.initializeGame(
           'ROOM-INIT',
@@ -357,13 +366,14 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         // Simulamos la respuesta del fallback
         (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
-          Array(16).fill({ id_card: 99, url_image: 'img99.png' }),
+          Array.from({ length: 16 }, (_, i) => ({ id_card: 99 + i })),
         );
 
         await gameService.initializeGame('ROOM-FALLBACK', lobbyData);
 
         // Verifica que se llamó al fallback pidiendo EXACTAMENTE las 16 cartas que faltan
         expect(prisma.cards.findMany).toHaveBeenCalledWith({
+          where: { id_card: { notIn: [] } },
           take: 16,
           select: { id_card: true },
         });
@@ -378,18 +388,27 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         const mockDecks = [
           {
-            cards: Array(60).fill({
+            id_user: 1,
+            id_deck: 20,
+            name: 'Deck Stella',
+            cards: Array.from({ length: 60 }, (_, i) => ({
               user_card: {
-                id_card: 100,
-                card: { id_card: 100, url_image: 'img.png' },
+                id_card: 200 + i,
+                card: {
+                  id_card: 200 + i,
+                  url_image: `img-${200 + i}.png`,
+                },
               },
-            }),
+            })),
           },
         ];
         (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
-        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
-          { id_card: 100, url_image: 'img.png' },
-        ]);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
+          Array.from({ length: 48 }, (_, i) => ({
+            id_card: 200 + i,
+            url_image: `img-${200 + i}.png`,
+          })),
+        );
 
         await gameService.initializeGame('ROOM-STELLA', lobbyData);
 
@@ -419,12 +438,18 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         const mockDecks = [
           {
-            cards: Array(60).fill({
+            id_user: 1,
+            id_deck: 30,
+            name: 'Deck Stella Start',
+            cards: Array.from({ length: 60 }, (_, i) => ({
               user_card: {
-                id_card: 100,
-                card: { id_card: 100, url_image: 'img.png' },
+                id_card: 300 + i,
+                card: {
+                  id_card: 300 + i,
+                  url_image: `img-${300 + i}.png`,
+                },
               },
-            }),
+            })),
           },
         ];
         (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
@@ -473,6 +498,84 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         ]);
         expect((startEmission?.data as any).state).not.toHaveProperty(
           'cardUrls',
+        );
+      });
+
+      test('Debe deduplicar el pool antes de llamar al motor de juego', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STANDARD', players: [p1, p2, p3] };
+
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce([
+          {
+            id_user: 1,
+            id_deck: 40,
+            name: 'Deck repetido',
+            cards: Array.from({ length: 24 }, (_, i) => ({
+              user_card: {
+                id_card: i < 12 ? i + 1 : i - 11,
+              },
+            })),
+          },
+        ]);
+        (prisma.cards.findMany as jest.Mock)
+          .mockResolvedValueOnce(
+            Array.from({ length: 36 }, (_, i) => ({ id_card: 100 + i })),
+          )
+          .mockResolvedValueOnce(
+            Array.from({ length: 48 }, (_, i) => ({
+              id_card: i < 12 ? i + 1 : 100 + (i - 12),
+              url_image: `img-${i}.png`,
+            })),
+          );
+
+        await gameService.initializeGame('ROOM-DEDUPE', lobbyData);
+
+        expect(prisma.cards.findMany).toHaveBeenNthCalledWith(1, {
+          where: {
+            id_card: {
+              notIn: Array.from({ length: 12 }, (_, i) => i + 1),
+            },
+          },
+          take: 36,
+          select: { id_card: true },
+        });
+
+        const initAction = (DixitEngine.transition as jest.Mock).mock.calls[0][1];
+        const uniqueDeck = initAction.payload.deck as number[];
+
+        expect(uniqueDeck).toHaveLength(48);
+        expect(new Set(uniqueDeck).size).toBe(48);
+      });
+
+      test('Debe fallar si no hay suficientes cartas únicas para arrancar sin repeticiones', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STANDARD', players: [p1, p2, p3] };
+
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce([
+          {
+            id_user: 1,
+            id_deck: 50,
+            name: 'Deck insuficiente',
+            cards: Array.from({ length: 20 }, () => ({
+              user_card: { id_card: 7 },
+            })),
+          },
+        ]);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 8 },
+          { id_card: 9 },
+        ]);
+
+        await expect(
+          gameService.initializeGame('ROOM-NO-UNIQUE', lobbyData),
+        ).rejects.toThrow(
+          'No hay suficientes cartas unicas para iniciar la partida sin repeticiones.',
         );
       });
     });

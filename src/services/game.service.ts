@@ -146,9 +146,11 @@ export class GameService {
       decksByUser.forEach((decks, userId) => {
         if (decks.length === 0) return;
         const randomDeck = decks[Math.floor(Math.random() * decks.length)];
-        const deckCardIds = randomDeck.cards
+        const deckCardIds = this.getUniqueCardIds(
+          randomDeck.cards
           .map((dc) => dc.user_card?.id_card)
-          .filter((id): id is number => typeof id === 'number');
+          .filter((id): id is number => typeof id === 'number'),
+        );
 
         centralDeck.push(...deckCardIds);
         dynamicStats!.selectedDecks.push({
@@ -162,8 +164,10 @@ export class GameService {
     } else {
       const keys = PREDEFINED_DECK_KEYS;
       const randomKey = keys[Math.floor(Math.random() * keys.length)];
-      centralDeck = [...PREDEFINED_DECKS[randomKey]];
+      centralDeck = this.getUniqueCardIds(PREDEFINED_DECKS[randomKey]);
     }
+
+    centralDeck = this.getUniqueCardIds(centralDeck);
 
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
@@ -176,16 +180,27 @@ export class GameService {
     if (centralDeck.length < TARGET_DECK_SIZE) {
       const missingAmount = TARGET_DECK_SIZE - centralDeck.length;
       const fallbackCards = await prisma.cards.findMany({
+        where: { id_card: { notIn: [...centralDeck] } },
         take: missingAmount,
         select: { id_card: true },
       });
-      centralDeck.push(...fallbackCards.map((c) => c.id_card));
-      if (dynamicStats) dynamicStats.autoAddedCount = missingAmount;
+      const fallbackCardIds = this.getUniqueCardIds(
+        fallbackCards.map((c) => c.id_card),
+      );
+      centralDeck.push(...fallbackCardIds);
+      centralDeck = this.getUniqueCardIds(centralDeck);
+      if (dynamicStats) dynamicStats.autoAddedCount = fallbackCardIds.length;
     } else if (centralDeck.length > TARGET_DECK_SIZE) {
       if (dynamicStats) {
         dynamicStats.trimmedCount = centralDeck.length - TARGET_DECK_SIZE;
       }
       centralDeck = this.shuffleArray(centralDeck).slice(0, TARGET_DECK_SIZE); // Mezclamos antes de cortar para que sea justo
+    }
+
+    if (centralDeck.length < TARGET_DECK_SIZE) {
+      throw new Error(
+        `No hay suficientes cartas unicas para iniciar la partida sin repeticiones. Requeridas: ${TARGET_DECK_SIZE}, disponibles: ${centralDeck.length}.`,
+      );
     }
 
     // Barajamos
@@ -1237,6 +1252,10 @@ export class GameService {
       [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
     }
     return newArray;
+  }
+
+  private getUniqueCardIds(cardIds: number[]): number[] {
+    return Array.from(new Set(cardIds));
   }
 
   /**
