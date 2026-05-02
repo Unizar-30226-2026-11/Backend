@@ -808,9 +808,13 @@ export class GameService {
   // ESTRELLA SÍNCRONA
   //
 
+  private canSpawnStar(state: GameState): boolean {
+    return !(state.isMinigameActive && state.activeConflict?.isDuel === false);
+  }
+
   public async triggerStarEvent(lobbyCode: string): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
-    if (!state || state.isStarActive) return [];
+    if (!state || state.isStarActive || !this.canSpawnStar(state)) return [];
 
     const movement = this.calculateStarPath();
 

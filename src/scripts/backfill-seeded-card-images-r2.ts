@@ -63,9 +63,7 @@ function createHmac(key: Buffer | string, value: string): Buffer {
 function buildCanonicalQueryString(query: Record<string, string>): string {
   return Object.entries(query)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(
-      ([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`,
-    )
+    .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
     .join('&');
 }
 
@@ -182,10 +180,13 @@ async function listR2FilesRecursively(
       secretAccessKey,
     );
 
-    const response = await fetch(`${url.toString()}?${signedRequest.queryString}`, {
-      method: 'GET',
-      headers: signedRequest.headers,
-    });
+    const response = await fetch(
+      `${url.toString()}?${signedRequest.queryString}`,
+      {
+        method: 'GET',
+        headers: signedRequest.headers,
+      },
+    );
 
     if (!response.ok) {
       throw new Error(
