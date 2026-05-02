@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { GameService } from '../services/game.service';
+import { RANDOM_EVENT_CONFIG } from '../shared/constants';
 
 export const initializeEventWorker = (io: Server) => {
   // Instanciamos el servicio como lo hace tu compañero
@@ -25,8 +26,8 @@ export const initializeEventWorker = (io: Server) => {
 
           // 2. Iteramos sobre cada sala para ver si le toca evento
           for (const lobbyCode of activeLobbies) {
-            // Probabilidad aleatoria (RF-11) -> 15% de posibilidad
-            if (Math.random() < 0.15) {
+            // Probabilidad aleatoria de aparición de estrella
+            if (Math.random() < RANDOM_EVENT_CONFIG.STAR_SPAWN_PROBABILITY) {
               console.log(
                 `[EventWorker] 🌟 ¡Evento de estrella disparado para la sala ${lobbyCode}!`,
               );
