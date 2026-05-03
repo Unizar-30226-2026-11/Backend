@@ -349,9 +349,15 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         expect(startEmission).toBeDefined();
         expect(startEmission!.data).not.toHaveProperty('state.centralDeck'); // Privacidad
         expect(startEmission!.data).not.toHaveProperty('state.cardUrls'); // Sobrecarga
-        expect(
-          emissions.filter((e) => e.event === 'server:game:private_hand'),
-        ).toHaveLength(3);
+        const privateHandEmissions = emissions.filter(
+          (e) => e.event === 'server:game:private_hand',
+        );
+        expect(privateHandEmissions).toHaveLength(3);
+        expect((privateHandEmissions[0].data as any).board).toEqual({
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'Tablero Classic',
+          url_image: 'classic.png',
+        });
       });
 
       test('Debe rellenar con cartas fallback (dinámico) si faltan cartas para el mazo objetivo', async () => {
@@ -632,6 +638,11 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           (e) => e.event === 'server:game:private_hand',
         );
         expect(handEmission).toBeDefined();
+        expect((handEmission?.data as any).board).toEqual({
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'CLASSIC',
+          url_image: 'tablero_classic.png',
+        });
       });
 
       test('Debe incluir las cartas de votación hidratadas en el estado público', async () => {
@@ -717,6 +728,11 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Debe comprobar que la mano va hidratada
         const sentHand = (handEmissions[0].data as any).hand;
         expect(sentHand[0]).toHaveProperty('url_image', 'url10.png');
+        expect((handEmissions[0].data as any).board).toEqual({
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'CLASSIC',
+          url_image: 'tablero_classic.png',
+        });
       });
 
       test('Debe incluir en recuperación solo la carta votada por el jugador reconectado', () => {
@@ -950,6 +966,11 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         { id: `${ID_PREFIXES.CARD}2`, url_image: 'img2.png' },
         { id: `${ID_PREFIXES.CARD}1`, url_image: 'img1.png' },
       ]);
+      expect((handEmission!.data as any).board).toEqual({
+        id: `${ID_PREFIXES.BOARD}1`,
+        name: 'CLASSIC',
+        url_image: 'tablero_classic.png',
+      });
     });
 
     test('Debe intercambiar puntos con otro jugador al azar en modo STELLA', async () => {

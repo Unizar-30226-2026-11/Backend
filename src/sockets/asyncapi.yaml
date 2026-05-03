@@ -443,8 +443,22 @@ components:
               required:
                 - id
                 - url_image
+          board:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              url_image:
+                type: string
+            required:
+              - id
+              - name
+              - url_image
         required:
           - hand
+          - board
 
     ServerGameEnded:
       name: ServerGameEnded

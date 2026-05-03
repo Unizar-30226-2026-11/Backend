@@ -39,6 +39,12 @@ export interface IGameEngine {
   transition(state: GameState, action: GameAction): GameState;
 }
 
+const DEFAULT_BOARD_PAYLOAD = {
+  id: `${ID_PREFIXES.BOARD}1`,
+  name: 'CLASSIC',
+  url_image: 'tablero_classic.png',
+};
+
 export const serializePublicCards = (
   cardIds: number[],
   cardDictionary: Record<number, string>,
@@ -103,11 +109,6 @@ export class GameService {
     });
 
     let centralDeck: number[] = [];
-    const defaultBoardPayload = {
-      id: `${ID_PREFIXES.BOARD}1`,
-      name: 'CLASSIC',
-      url_image: 'tablero_classic.png',
-    };
 
     let dynamicStats: {
       selectedDecks: {
@@ -261,7 +262,7 @@ export class GameService {
       boardsById.set(board.id_board, board);
     });
 
-    const boardPayloadByUserId = new Map<number, typeof defaultBoardPayload>();
+    const boardPayloadByUserId = new Map<number, typeof DEFAULT_BOARD_PAYLOAD>();
     userBoards.forEach((user) => {
       const board = user.active_board_id
         ? boardsById.get(user.active_board_id)
@@ -273,7 +274,7 @@ export class GameService {
             name: board.name,
             url_image: board.url_image || '',
           }
-        : defaultBoardPayload;
+        : DEFAULT_BOARD_PAYLOAD;
 
       boardPayloadByUserId.set(user.id_user, payload);
     });
@@ -330,7 +331,7 @@ export class GameService {
       const handIds = initialState.hands[playerId] as number[];
       const numericPlayerId = parseInt(playerId.replace(ID_PREFIXES.USER, ''));
       const boardPayload =
-        boardPayloadByUserId.get(numericPlayerId) ?? defaultBoardPayload;
+        boardPayloadByUserId.get(numericPlayerId) ?? DEFAULT_BOARD_PAYLOAD;
 
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
       emissions.push({
@@ -388,11 +389,13 @@ export class GameService {
           handIds,
           currentState.cardUrls || {},
         );
+        const boardPayload =
+          await this.getBoardPayloadForPlayer(reconnectingPlayerId);
 
         reconnectEmissions.push({
           room: reconnectingPlayerId,
           event: 'server:game:private_hand',
-          data: { hand: hydratedHand },
+          data: { hand: hydratedHand, board: boardPayload },
         });
       }
     }
@@ -538,6 +541,10 @@ export class GameService {
       action.type !== 'RECONNECT_PLAYER' &&
       action.type !== 'DISCONNECT_PLAYER'
     ) {
+      const boardPayloadByPlayerId = await this.getBoardPayloadsForPlayers(
+        newState.players,
+      );
+
       for (let i = 0; i < newState.players.length; i++) {
         const playerId = newState.players[i];
         const handIds = (newState.hands[playerId] as number[]) || [];
@@ -545,7 +552,11 @@ export class GameService {
         emissions.push({
           room: playerId,
           event: 'server:game:private_hand',
-          data: { hand: this.serializeHand(handIds, newState.cardUrls || {}) },
+          data: {
+            hand: this.serializeHand(handIds, newState.cardUrls || {}),
+            board:
+              boardPayloadByPlayerId.get(playerId) ?? DEFAULT_BOARD_PAYLOAD,
+          },
         });
       }
     }
@@ -619,6 +630,9 @@ export class GameService {
 
     // Notify remaining players about their hand
     // (though kick shouldn't affect their hand, it's good practice to sync)
+    const boardPayloadByPlayerId = await this.getBoardPayloadsForPlayers(
+      newState.players,
+    );
 
     for (let i = 0; i < newState.players.length; i++) {
       const playerId = newState.players[i];
@@ -630,6 +644,7 @@ export class GameService {
             newState.hands[playerId],
             newState.cardUrls || {},
           ),
+          board: boardPayloadByPlayerId.get(playerId) ?? DEFAULT_BOARD_PAYLOAD,
         },
       });
     }
@@ -1307,7 +1322,10 @@ export class GameService {
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: this.serializeHand(newHand, state.cardUrls || {}) },
+      data: {
+        hand: this.serializeHand(newHand, state.cardUrls || {}),
+        board: await this.getBoardPayloadForPlayer(pId),
+      },
     });
 
     emissions.push({
@@ -1361,6 +1379,85 @@ export class GameService {
     cardDictionary: Record<number, string>,
   ) {
     return this.serializePublicCards(handIds, cardDictionary);
+  }
+
+  private async getBoardPayloadsForPlayers(
+    playerIds: string[],
+  ): Promise<Map<string, typeof DEFAULT_BOARD_PAYLOAD>> {
+    const numericPlayerIds = playerIds
+      .map((playerId) => ({
+        playerId,
+        numericPlayerId: parseInt(playerId.replace(ID_PREFIXES.USER, '')),
+      }))
+      .filter(
+        (
+          player,
+        ): player is { playerId: string; numericPlayerId: number } =>
+          !Number.isNaN(player.numericPlayerId),
+      );
+
+    if (numericPlayerIds.length === 0) {
+      return new Map();
+    }
+
+    const userBoards = await prisma.user.findMany({
+      where: {
+        id_user: { in: numericPlayerIds.map((player) => player.numericPlayerId) },
+      },
+      select: { id_user: true, active_board_id: true },
+    });
+
+    const boardIds = Array.from(
+      new Set(
+        userBoards
+          .map((user) => user.active_board_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
+
+    const boards = boardIds.length
+      ? await prisma.board.findMany({
+          where: { id_board: { in: boardIds } },
+          select: { id_board: true, name: true, url_image: true },
+        })
+      : [];
+
+    const boardsById = new Map<number, (typeof boards)[number]>();
+    boards.forEach((board) => {
+      boardsById.set(board.id_board, board);
+    });
+
+    const boardPayloadByPlayerId = new Map<
+      string,
+      typeof DEFAULT_BOARD_PAYLOAD
+    >();
+    numericPlayerIds.forEach(({ playerId, numericPlayerId }) => {
+      const activeBoardId = userBoards.find(
+        (user) => user.id_user === numericPlayerId,
+      )?.active_board_id;
+      const board =
+        typeof activeBoardId === 'number' ? boardsById.get(activeBoardId) : null;
+
+      boardPayloadByPlayerId.set(
+        playerId,
+        board
+          ? {
+              id: `${ID_PREFIXES.BOARD}${board.id_board}`,
+              name: board.name,
+              url_image: board.url_image || '',
+            }
+          : DEFAULT_BOARD_PAYLOAD,
+      );
+    });
+
+    return boardPayloadByPlayerId;
+  }
+
+  private async getBoardPayloadForPlayer(playerId: string) {
+    return (
+      (await this.getBoardPayloadsForPlayers([playerId])).get(playerId) ??
+      DEFAULT_BOARD_PAYLOAD
+    );
   }
 
   private serializePublicCards(

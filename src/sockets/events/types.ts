@@ -41,7 +41,7 @@ export interface BoardPayload {
 
 export interface PrivateHandPayload {
   hand: number[];
-  board?: BoardPayload;
+  board: BoardPayload;
 }
 
 export interface DuelAvailablePayload {
