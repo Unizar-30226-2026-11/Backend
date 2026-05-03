@@ -108,6 +108,7 @@ export class DixitEngine {
     state.disconnectedPlayers = [];
     state.scores = {};
     state.hands = {};
+    state.activeModifiers = {};
 
     // Reparto inicial de manos y puntuaciones
     for (let i = 0; i < players.length; i++) {
@@ -151,6 +152,7 @@ export class DixitEngine {
     }
 
     state.mode = newMode;
+    state.activeModifiers = {};
 
     // Arrancamos la primera ronda del nuevo modo
     return this.strategies[state.mode].handleNextRound(state);
@@ -203,5 +205,6 @@ export class DixitEngine {
 
     // Eliminamos sus puntos
     delete state.scores[playerId];
+    delete state.activeModifiers[playerId];
   }
 }

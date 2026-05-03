@@ -13,6 +13,7 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
       players: ['P1', 'P2', 'P3', 'P4'],
       disconnectedPlayers: [],
       scores: { P1: 0, P2: 0, P3: 0, P4: 0 },
+      activeModifiers: {},
       hands: {
         P1: [10, 11, 12, 13, 14, 15],
         P2: [20, 21, 22, 23, 24, 25],
@@ -133,5 +134,167 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
     // Todos deben haber robado una carta nueva para tener 6 otra vez
     expect(state.hands['P1']).toHaveLength(6);
     expect(state.hands['P2']).toHaveLength(6);
+  });
+
+  test('Aplica un modificador global de +1 a todos los jugadores al cerrar una ronda clasica', () => {
+    const randomSpy = jest.spyOn(global.Math, 'random');
+    randomSpy
+      .mockReturnValueOnce(0.01) // activa el 5%
+      .mockReturnValueOnce(0.9); // selecciona +1
+
+    const state = DixitEngine.transition(
+      {
+        lobbyCode: 'TEST-MOD-ALL-PLUS',
+        status: 'playing',
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        players: ['P1', 'P2', 'P3', 'P4'],
+        disconnectedPlayers: [],
+        scores: { P1: 3, P2: 4, P3: 0, P4: 3 },
+        activeModifiers: {},
+        hands: {
+          P1: [11, 12, 13, 14, 15],
+          P2: [21, 22, 23, 24, 25],
+          P3: [31, 32, 33, 34, 35],
+          P4: [41, 42, 43, 44, 45],
+        },
+        centralDeck: [101, 102, 103, 104, 105, 106, 107, 108],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 1,
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: {},
+        currentRound: {
+          storytellerId: 'P1',
+          clue: 'Pista',
+          storytellerCardId: 10,
+          playedCards: { P1: 10, P2: 20, P3: 30, P4: 40 },
+          boardCards: [10, 20, 30, 40],
+          votes: [
+            { voterId: 'P2', targetCardId: 10 },
+            { voterId: 'P3', targetCardId: 20 },
+            { voterId: 'P4', targetCardId: 10 },
+          ],
+        },
+      } as any,
+      {
+        type: 'NEXT_ROUND',
+        playerId: 'system',
+      },
+    );
+
+    expect(state.phase).toBe('STORYTELLING');
+    expect(state.activeModifiers).toEqual({
+      P1: { type: 'HAND_LIMIT', value: 1, turnsLeft: 1 },
+      P2: { type: 'HAND_LIMIT', value: 1, turnsLeft: 1 },
+      P3: { type: 'HAND_LIMIT', value: 1, turnsLeft: 1 },
+      P4: { type: 'HAND_LIMIT', value: 1, turnsLeft: 1 },
+    });
+    expect(state.hands['P1']).toHaveLength(7);
+    expect(state.hands['P2']).toHaveLength(7);
+    expect(state.hands['P3']).toHaveLength(7);
+    expect(state.hands['P4']).toHaveLength(7);
+    expect(new Set(state.hands['P1']).size).toBe(7);
+    expect(new Set(state.hands['P2']).size).toBe(7);
+
+    randomSpy.mockRestore();
+  });
+
+  test('Aplica un modificador global de -2 y lo limpia en la siguiente ronda', () => {
+    const randomSpy = jest.spyOn(global.Math, 'random');
+    randomSpy
+      .mockReturnValueOnce(0.01) // activa el 5%
+      .mockReturnValueOnce(0.0) // selecciona -2
+      .mockReturnValueOnce(0.99); // siguiente ronda: no activa nada
+
+    let state = DixitEngine.transition(
+      {
+        lobbyCode: 'TEST-MOD-ALL-MINUS',
+        status: 'playing',
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        players: ['P1', 'P2', 'P3', 'P4'],
+        disconnectedPlayers: [],
+        scores: { P1: 5, P2: 5, P3: 5, P4: 5 },
+        activeModifiers: {},
+        hands: {
+          P1: [11, 12, 13, 14, 15],
+          P2: [21, 22, 23, 24, 25],
+          P3: [31, 32, 33, 34, 35],
+          P4: [41, 42, 43, 44, 45],
+        },
+        centralDeck: [101, 102, 103, 104],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 1,
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: {},
+        currentRound: {
+          storytellerId: 'P4',
+          clue: 'Otra pista',
+          storytellerCardId: 40,
+          playedCards: { P1: 10, P2: 20, P3: 30, P4: 40 },
+          boardCards: [10, 20, 30, 40],
+          votes: [
+            { voterId: 'P1', targetCardId: 20 },
+            { voterId: 'P2', targetCardId: 40 },
+            { voterId: 'P3', targetCardId: 40 },
+          ],
+        },
+      } as any,
+      {
+        type: 'NEXT_ROUND',
+        playerId: 'system',
+      },
+    );
+
+    expect(state.activeModifiers).toEqual({
+      P1: { type: 'HAND_LIMIT', value: -2, turnsLeft: 1 },
+      P2: { type: 'HAND_LIMIT', value: -2, turnsLeft: 1 },
+      P3: { type: 'HAND_LIMIT', value: -2, turnsLeft: 1 },
+      P4: { type: 'HAND_LIMIT', value: -2, turnsLeft: 1 },
+    });
+    expect(state.hands['P1']).toHaveLength(4);
+    expect(state.hands['P2']).toHaveLength(4);
+    expect(state.hands['P3']).toHaveLength(4);
+    expect(state.hands['P4']).toHaveLength(4);
+    expect(new Set(state.hands['P3']).size).toBe(4);
+
+    state = DixitEngine.transition(
+      {
+        ...state,
+        phase: 'SCORING',
+        currentRound: {
+          storytellerId: 'P1',
+          clue: 'Siguiente',
+          storytellerCardId: 11,
+          playedCards: { P1: 11, P2: 21, P3: 31, P4: 41 },
+          boardCards: [11, 21, 31, 41],
+          votes: [
+            { voterId: 'P2', targetCardId: 11 },
+            { voterId: 'P3', targetCardId: 11 },
+            { voterId: 'P4', targetCardId: 21 },
+          ],
+        },
+      } as any,
+      {
+        type: 'NEXT_ROUND',
+        playerId: 'system',
+      },
+    );
+
+    expect(state.activeModifiers).toEqual({});
+    expect(state.hands['P1']).toHaveLength(6);
+    expect(state.hands['P2']).toHaveLength(6);
+    expect(state.hands['P3']).toHaveLength(6);
+    expect(state.hands['P4']).toHaveLength(6);
+
+    randomSpy.mockRestore();
   });
 });

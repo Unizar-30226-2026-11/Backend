@@ -294,6 +294,7 @@ export class GameService {
       phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,
       phaseVersion: 1,
+      activeModifiers: {},
       pendingModeChangeOffer: null,
       isMinigameActive: false,
       activeConflict: null,
