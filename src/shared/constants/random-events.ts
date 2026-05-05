@@ -1,0 +1,5 @@
+export const RANDOM_EVENT_CONFIG = {
+  STAR_SPAWN_PROBABILITY: 0.03,
+  HAND_MODIFIER_PROBABILITY: 0.05,
+  HAND_MODIFIER_VALUES: [-2, -1, 1] as const,
+} as const;

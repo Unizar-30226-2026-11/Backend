@@ -183,11 +183,12 @@ describe('UserService - Pruebas Funciones', () => {
               email: expect.stringMatching(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
               exp_level: expect.any(Number),
               progress_level: expect.any(Number),
-              state: expect.stringMatching(
-                /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
-              ),
+              state: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
+              status: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
               personal_state:
                 resultado?.personal_state === null ? null : expect.any(String),
+              personalStatus:
+                resultado?.personalStatus === null ? null : expect.any(String),
               id: expect.stringMatching(
                 new RegExp(`^${ID_PREFIXES.USER}\\d+$`),
               ),
@@ -265,7 +266,6 @@ describe('UserService - Pruebas Funciones', () => {
                   new RegExp(`^${ID_PREFIXES.CARD}\\d+$`),
                 ),
                 name: expect.any(String),
-                quantity: expect.any(Number),
                 url_image: expect.any(String),
               }),
             ]),
@@ -515,11 +515,12 @@ describe('UserService - Pruebas Funciones', () => {
             email: expect.stringMatching(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
             exp_level: expect.any(Number),
             progress_level: expect.any(Number),
-            state: expect.stringMatching(
-              /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
-            ),
+            state: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
+            status: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
             personal_state:
               resultado?.personal_state === null ? null : expect.any(String),
+            personalStatus:
+              resultado?.personalStatus === null ? null : expect.any(String),
             id: expect.stringMatching(new RegExp(`^${ID_PREFIXES.USER}\\d+$`)),
           }),
         );
@@ -549,7 +550,7 @@ describe('UserService - Pruebas Funciones', () => {
 
     describe('Actualizacion del estado de usuario. -> updatePresence()', () => {
       test('Prueba cambio de estados correcta: ', async () => {
-        for (const state of Object.values(User_States)) {
+        for (const state of [User_States.DISCONNECTED, User_States.CONNECTED]) {
           const resultado = await UserService.updatePresence(
             main_u,
             String(state),
@@ -558,9 +559,7 @@ describe('UserService - Pruebas Funciones', () => {
           expect(resultado).toBeDefined();
           expect(resultado).toEqual(
             expect.objectContaining({
-              new_status: expect.stringMatching(
-                /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
-              ),
+              new_status: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
             }),
           );
         }
@@ -569,6 +568,10 @@ describe('UserService - Pruebas Funciones', () => {
       test('Estado no permitido (INVALID_STATUS)', async () => {
         await expect(
           UserService.updatePresence(main_u, 'desconectado'),
+        ).rejects.toThrow('INVALID_STATUS');
+
+        await expect(
+          UserService.updatePresence(main_u, User_States.UNKNOWN),
         ).rejects.toThrow('INVALID_STATUS');
       });
 

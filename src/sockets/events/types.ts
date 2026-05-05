@@ -33,8 +33,15 @@ export interface GameStartedPayload {
   state: any;
 }
 
+export interface BoardPayload {
+  id: string;
+  name: string;
+  url_image: string;
+}
+
 export interface PrivateHandPayload {
   hand: number[];
+  board: BoardPayload;
 }
 
 export interface DuelAvailablePayload {

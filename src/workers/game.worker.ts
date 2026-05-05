@@ -11,12 +11,14 @@ import { GameAction } from '../shared/types/game.types';
 
 export const initializeGameWorker = (io: Server) => {
   const gameService = new GameService(GameRedisRepository);
+  const MINIGAME_PHASE_TIMEOUT_RETRY_MS = 5000;
 
   const gameWorker = new Worker(
     'game-timeouts',
     async (job: Job) => {
       // Extraemos las propiedades. Nota: a veces usáis lobbyCode y otras gameId para referiros al mismo ID de sala.
-      const { lobbyCode, expectedPhase, gameId } = job.data;
+      const { lobbyCode, expectedPhase, expectedPhaseVersion, gameId } =
+        job.data;
 
       // Unificamos el ID de la sala por si acaso en el frontend/backend usan diferentes nombres de variable en el payload
       const targetRoomId = gameId || lobbyCode;
@@ -34,9 +36,33 @@ export const initializeGameWorker = (io: Server) => {
             const state: any = await GameRedisRepository.getGame(targetRoomId);
             if (!state) return;
 
-            if (state.phase !== expectedPhase) {
+            if (
+              state.phase !== expectedPhase ||
+              (expectedPhaseVersion &&
+                state.phaseVersion !== expectedPhaseVersion)
+            ) {
               console.log(
                 `[Worker] La sala ${targetRoomId} ya está en ${state.phase}. Ignorando timer.`,
+              );
+              return;
+            }
+
+            if (state.isMinigameActive) {
+              console.log(
+                `[Worker] La sala ${targetRoomId} tiene un minijuego activo. Reprogramando timeout de fase ${expectedPhase}.`,
+              );
+              await gameTimeoutsQueue.add(
+                'phase-timeout',
+                {
+                  lobbyCode: targetRoomId,
+                  expectedPhase,
+                  expectedPhaseVersion,
+                },
+                {
+                  delay: MINIGAME_PHASE_TIMEOUT_RETRY_MS,
+                  jobId: `timeout-${targetRoomId}-${expectedPhase}-${Date.now()}`,
+                  removeOnComplete: true,
+                },
               );
               return;
             }
@@ -87,13 +113,15 @@ export const initializeGameWorker = (io: Server) => {
                 break;
               }
               case 'VOTING': {
-                const votes = state.currentRound.votes || {};
+                const votes = state.currentRound.votes || [];
                 const boardCards = state.currentRound.boardCards || [];
 
                 const missingPlayers = state.players.filter(
                   (pId: string) =>
                     pId !== state.currentRound.storytellerId &&
-                    votes[pId] === undefined,
+                    !votes.some(
+                      (vote: { voterId: string }) => vote.voterId === pId,
+                    ),
                 );
 
                 for (const pId of missingPlayers) {

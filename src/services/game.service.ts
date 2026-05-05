@@ -39,6 +39,55 @@ export interface IGameEngine {
   transition(state: GameState, action: GameAction): GameState;
 }
 
+const DEFAULT_BOARD_PAYLOAD = {
+  id: `${ID_PREFIXES.BOARD}1`,
+  name: 'CLASSIC',
+  url_image: 'tablero_classic.png',
+};
+
+export const serializePublicCards = (
+  cardIds: number[],
+  cardDictionary: Record<number, string>,
+) =>
+  cardIds.map((id) => ({
+    id: `${ID_PREFIXES.CARD}${id}`,
+    url_image: cardDictionary[id] || '',
+  }));
+
+export const buildPublicGameState = (state: GameState): Partial<GameState> => {
+  return buildRecoveredGameState(state);
+};
+
+export const buildRecoveredGameState = (
+  state: GameState,
+  viewerPlayerId?: string,
+): Partial<GameState> => {
+  const publicState = structuredClone(state);
+  delete (publicState as any).centralDeck;
+  delete (publicState as any).hands;
+  delete (publicState as any).cardUrls;
+  delete (publicState as any).pendingModeChangeOffer;
+
+  if (Array.isArray(publicState.currentRound?.boardCards)) {
+    (publicState.currentRound as any).boardCardsDetailed = serializePublicCards(
+      publicState.currentRound.boardCards,
+      state.cardUrls || {},
+    );
+  }
+
+  if (viewerPlayerId && state.mode === 'STANDARD' && state.phase === 'VOTING') {
+    const playerVote = state.currentRound.votes.find(
+      (vote) => vote.voterId === viewerPlayerId,
+    );
+
+    (publicState.currentRound as any).selectedVoteCardId = playerVote
+      ? `${ID_PREFIXES.CARD}${playerVote.targetCardId}`
+      : null;
+  }
+
+  return publicState;
+};
+
 export class GameService {
   constructor(private readonly redisRepo: typeof GameRedisRepository) {}
 
@@ -60,47 +109,66 @@ export class GameService {
     });
 
     let centralDeck: number[] = [];
-    const hostId = numericPlayerIds[0];
-    const hostData = await prisma.user.findUnique({
-      where: { id_user: hostId },
-      select: { active_board_id: true },
-    });
 
-    const boardIdToUse = hostData?.active_board_id || 1;
-    const boardData = await prisma.board.findUnique({
-      where: { id_board: boardIdToUse },
-    });
-
-    const boardPayload = boardData
-      ? {
-          id: `${ID_PREFIXES.BOARD}${boardData.id_board}`,
-          name: boardData.name,
-          url_image: (boardData as any).url_image || '',
-        }
-      : {
-          id: `${ID_PREFIXES.BOARD}1`,
-          name: 'CLASSIC',
-          url_image: 'tablero_classic.png',
-        };
+    let dynamicStats: {
+      selectedDecks: {
+        userId: number;
+        deckId: number;
+        deckName: string;
+        cardCount: number;
+      }[];
+      totalFromDecks: number;
+      autoAddedCount: number;
+      trimmedCount: number;
+    } | null = null;
 
     // Extraer cartas de los mazos (o usar el predeterminado al azar)
     if (options.useDynamicPool) {
+      dynamicStats = {
+        selectedDecks: [],
+        totalFromDecks: 0,
+        autoAddedCount: 0,
+        trimmedCount: 0,
+      };
+
       // Extraer cartas de los mazos de los jugadores
       const userDecks = await prisma.deck.findMany({
         where: { id_user: { in: numericPlayerIds } },
         include: { cards: { include: { user_card: true } } },
       });
 
+      const decksByUser = new Map<number, typeof userDecks>();
       userDecks.forEach((deck) => {
-        deck.cards.forEach((dc) => {
-          if (dc.user_card) centralDeck.push(dc.user_card.id_card);
+        const list = decksByUser.get(deck.id_user) ?? [];
+        list.push(deck);
+        decksByUser.set(deck.id_user, list);
+      });
+
+      decksByUser.forEach((decks, userId) => {
+        if (decks.length === 0) return;
+        const randomDeck = decks[Math.floor(Math.random() * decks.length)];
+        const deckCardIds = this.getUniqueCardIds(
+          randomDeck.cards
+          .map((dc) => dc.user_card?.id_card)
+          .filter((id): id is number => typeof id === 'number'),
+        );
+
+        centralDeck.push(...deckCardIds);
+        dynamicStats!.selectedDecks.push({
+          userId,
+          deckId: randomDeck.id_deck,
+          deckName: randomDeck.name,
+          cardCount: deckCardIds.length,
         });
+        dynamicStats!.totalFromDecks += deckCardIds.length;
       });
     } else {
       const keys = PREDEFINED_DECK_KEYS;
       const randomKey = keys[Math.floor(Math.random() * keys.length)];
-      centralDeck = [...PREDEFINED_DECKS[randomKey]];
+      centralDeck = this.getUniqueCardIds(PREDEFINED_DECKS[randomKey]);
     }
+
+    centralDeck = this.getUniqueCardIds(centralDeck);
 
     // Lo dejo aqui de momento para definirlo entre todos, quiza luego en costantes para facilitar el acceso
     // He puesto 16 para que si cada jugador pone 12 en el mazo simepre en todas las partidas exisran cartas aleatorias,
@@ -113,12 +181,27 @@ export class GameService {
     if (centralDeck.length < TARGET_DECK_SIZE) {
       const missingAmount = TARGET_DECK_SIZE - centralDeck.length;
       const fallbackCards = await prisma.cards.findMany({
+        where: { id_card: { notIn: [...centralDeck] } },
         take: missingAmount,
         select: { id_card: true },
       });
-      centralDeck.push(...fallbackCards.map((c) => c.id_card));
+      const fallbackCardIds = this.getUniqueCardIds(
+        fallbackCards.map((c) => c.id_card),
+      );
+      centralDeck.push(...fallbackCardIds);
+      centralDeck = this.getUniqueCardIds(centralDeck);
+      if (dynamicStats) dynamicStats.autoAddedCount = fallbackCardIds.length;
     } else if (centralDeck.length > TARGET_DECK_SIZE) {
+      if (dynamicStats) {
+        dynamicStats.trimmedCount = centralDeck.length - TARGET_DECK_SIZE;
+      }
       centralDeck = this.shuffleArray(centralDeck).slice(0, TARGET_DECK_SIZE); // Mezclamos antes de cortar para que sea justo
+    }
+
+    if (centralDeck.length < TARGET_DECK_SIZE) {
+      throw new Error(
+        `No hay suficientes cartas unicas para iniciar la partida sin repeticiones. Requeridas: ${TARGET_DECK_SIZE}, disponibles: ${centralDeck.length}.`,
+      );
     }
 
     // Barajamos
@@ -132,6 +215,68 @@ export class GameService {
     const cardDictionary: Record<number, string> = {};
     allCardsInfo.forEach((c) => {
       cardDictionary[c.id_card] = c.url_image || '';
+    });
+
+    if (dynamicStats) {
+      console.log(`\n[Decks] Pool dinamico para lobby ${lobbyCode}`);
+      dynamicStats.selectedDecks.forEach((deck) => {
+        console.log(
+          `[Decks] Usuario ${deck.userId} -> deck ${deck.deckId} (${deck.deckName}): ${deck.cardCount} cartas`,
+        );
+      });
+      console.log(
+        `[Decks] Total cartas desde decks: ${dynamicStats.totalFromDecks}`,
+      );
+      console.log(
+        `[Decks] Cartas anadidas automaticamente: ${dynamicStats.autoAddedCount}`,
+      );
+      if (dynamicStats.trimmedCount > 0) {
+        console.log(
+          `[Decks] Cartas descartadas por exceso: ${dynamicStats.trimmedCount}`,
+        );
+      }
+    }
+
+    const userBoards = await prisma.user.findMany({
+      where: { id_user: { in: numericPlayerIds } },
+      select: { id_user: true, active_board_id: true },
+    });
+
+    const boardIds = Array.from(
+      new Set(
+        userBoards
+          .map((u) => u.active_board_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
+
+    const boards = boardIds.length
+      ? await prisma.board.findMany({
+          where: { id_board: { in: boardIds } },
+          select: { id_board: true, name: true, url_image: true },
+        })
+      : [];
+
+    const boardsById = new Map<number, (typeof boards)[number]>();
+    boards.forEach((board) => {
+      boardsById.set(board.id_board, board);
+    });
+
+    const boardPayloadByUserId = new Map<number, typeof DEFAULT_BOARD_PAYLOAD>();
+    userBoards.forEach((user) => {
+      const board = user.active_board_id
+        ? boardsById.get(user.active_board_id)
+        : null;
+
+      const payload = board
+        ? {
+            id: `${ID_PREFIXES.BOARD}${board.id_board}`,
+            name: board.name,
+            url_image: board.url_image || '',
+          }
+        : DEFAULT_BOARD_PAYLOAD;
+
+      boardPayloadByUserId.set(user.id_user, payload);
     });
 
     const safeMode = normalizeGameMode(mode) ?? 'STANDARD';
@@ -148,9 +293,11 @@ export class GameService {
       discardPile: [],
       phase: safeMode === 'STELLA' ? 'STELLA_WORD_REVEAL' : 'STORYTELLING',
       isStarActive: false,
+      phaseVersion: 1,
+      activeModifiers: {},
+      pendingModeChangeOffer: null,
       isMinigameActive: false,
       activeConflict: null,
-      activeBoardId: boardIdToUse,
       boardRegistry: {},
       cardUrls: cardDictionary,
     };
@@ -177,24 +324,34 @@ export class GameService {
       event: 'server:game:started',
       data: {
         state: this.maskPrivateState(initialState),
-        board: boardPayload,
         message: '¡La partida ha comenzado!',
       },
     });
 
     for (const playerId of initialState.players) {
       const handIds = initialState.hands[playerId] as number[];
+      const numericPlayerId = parseInt(playerId.replace(ID_PREFIXES.USER, ''));
+      const boardPayload =
+        boardPayloadByUserId.get(numericPlayerId) ?? DEFAULT_BOARD_PAYLOAD;
 
       // Mapeamos los IDs de la mano a objetos que contengan la URL buscando en la caché
       emissions.push({
         room: playerId,
         event: 'server:game:private_hand',
-        data: { hand: this.serializeHand(handIds, cardDictionary) },
+        data: {
+          hand: this.serializeHand(handIds, cardDictionary),
+          board: boardPayload,
+        },
       });
     }
 
     // Arrancar el temporizador inicial (ej: 60s)
-    await this.schedulePhaseTimeout(lobbyCode, initialState.phase, 60000);
+    await this.schedulePhaseTimeout(
+      lobbyCode,
+      initialState.phase,
+      60000,
+      initialState.phaseVersion,
+    );
 
     return emissions;
   }
@@ -212,6 +369,12 @@ export class GameService {
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
+    if (
+      currentState.phase === 'FINISHED' ||
+      currentState.status === 'finished'
+    ) {
+      throw new Error('La partida ya ha finalizado.');
+    }
 
     // ==========================================
     // SISTEMA DE RECONEXIÓN DE USUARIOS
@@ -227,11 +390,13 @@ export class GameService {
           handIds,
           currentState.cardUrls || {},
         );
+        const boardPayload =
+          await this.getBoardPayloadForPlayer(reconnectingPlayerId);
 
         reconnectEmissions.push({
           room: reconnectingPlayerId,
           event: 'server:game:private_hand',
-          data: { hand: hydratedHand },
+          data: { hand: hydratedHand, board: boardPayload },
         });
       }
     }
@@ -265,10 +430,15 @@ export class GameService {
     // ==========================================
     // SISTEMA DE BLOQUEO Y DUELOS
     // ==========================================
+    if (currentState.isMinigameActive && action.type === 'NEXT_ROUND') {
+      return [];
+    }
+
     if (
       currentState.isMinigameActive &&
       action.type !== 'RECONNECT_PLAYER' &&
-      action.type !== 'DISCONNECT_PLAYER'
+      action.type !== 'DISCONNECT_PLAYER' &&
+      action.type !== 'SUBMIT_MINIGAME_SCORE'
     ) {
       throw new Error(
         'Hay un conflicto en curso. Espera a que termine el minijuego.',
@@ -313,6 +483,18 @@ export class GameService {
       ];
     }
 
+    if (action.type === 'SUBMIT_MINIGAME_SCORE') {
+      // Extraemos la puntuación de forma segura
+      const score =
+        typeof action.payload?.score === 'number' ? action.payload.score : 0;
+      return await this.submitMinigameScore(lobbyCode, action.playerId, score);
+    }
+
+    // ✅ NUEVO: Alternar el modo de juego (Bonus Random)
+    if (action.type === 'ACCEPT_MODE_CHANGE') {
+      return await this.acceptModeChange(lobbyCode, action.playerId);
+    }
+
     // 2. PATRÓN STRATEGY: Seleccionar el motor dinámicamente
     const engine: IGameEngine = this.getEngine();
 
@@ -321,12 +503,23 @@ export class GameService {
 
     // 3. Ejecutar la transición en memoria (Lógica Pura)
     const newState = engine.transition(currentState, action);
+    newState.phaseVersion = currentState.phaseVersion ?? 1;
 
     // 4. Comprobar la lógica del tablero — devuelve emisiones adicionales
     const specialEmissions = await this.checkSpecialSquares(
       newState,
       previousScores,
     );
+
+    if (oldPhase !== newState.phase) {
+      newState.phaseVersion += 1;
+
+      if (oldPhase === 'SCORING' && newState.pendingModeChangeOffer) {
+        this.clearExpiredModeChangeOffer(newState);
+      } else if (newState.pendingModeChangeOffer) {
+        newState.pendingModeChangeOffer.phaseVersion = newState.phaseVersion;
+      }
+    }
 
     // 5. Guardar el nuevo estado machacando el anterior
     await this.redisRepo.saveGame(lobbyCode, newState);
@@ -349,6 +542,10 @@ export class GameService {
       action.type !== 'RECONNECT_PLAYER' &&
       action.type !== 'DISCONNECT_PLAYER'
     ) {
+      const boardPayloadByPlayerId = await this.getBoardPayloadsForPlayers(
+        newState.players,
+      );
+
       for (let i = 0; i < newState.players.length; i++) {
         const playerId = newState.players[i];
         const handIds = (newState.hands[playerId] as number[]) || [];
@@ -356,7 +553,11 @@ export class GameService {
         emissions.push({
           room: playerId,
           event: 'server:game:private_hand',
-          data: { hand: this.serializeHand(handIds, newState.cardUrls || {}) },
+          data: {
+            hand: this.serializeHand(handIds, newState.cardUrls || {}),
+            board:
+              boardPayloadByPlayerId.get(playerId) ?? DEFAULT_BOARD_PAYLOAD,
+          },
         });
       }
     }
@@ -374,7 +575,12 @@ export class GameService {
       };
       const delay = timeLimits[newState.phase];
       if (delay) {
-        await this.schedulePhaseTimeout(lobbyCode, newState.phase, delay);
+        await this.schedulePhaseTimeout(
+          lobbyCode,
+          newState.phase,
+          delay,
+          newState.phaseVersion,
+        );
       }
     }
 
@@ -425,6 +631,9 @@ export class GameService {
 
     // Notify remaining players about their hand
     // (though kick shouldn't affect their hand, it's good practice to sync)
+    const boardPayloadByPlayerId = await this.getBoardPayloadsForPlayers(
+      newState.players,
+    );
 
     for (let i = 0; i < newState.players.length; i++) {
       const playerId = newState.players[i];
@@ -436,6 +645,7 @@ export class GameService {
             newState.hands[playerId],
             newState.cardUrls || {},
           ),
+          board: boardPayloadByPlayerId.get(playerId) ?? DEFAULT_BOARD_PAYLOAD,
         },
       });
     }
@@ -463,6 +673,10 @@ export class GameService {
     if (!currentState) {
       throw new Error('Partida no encontrada o expirada.');
     }
+    currentState.status = 'finished';
+    currentState.phase = 'FINISHED';
+    await this.redisRepo.saveGame(lobbyCode, currentState);
+
     const ranking = Object.entries(currentState.scores)
       .sort(([, a], [, b]) => b - a)
       .map(([playerId, points], index) => ({
@@ -539,12 +753,14 @@ export class GameService {
         });
       }
 
+      await this.redisRepo.deleteGame(lobbyCode);
       return emissions;
     } catch (error) {
       console.error(
         `[GameService] Error al finalizar la partida ${lobbyCode}:`,
         error,
       );
+      await this.redisRepo.deleteGame(lobbyCode);
       return [
         {
           room: lobbyCode,
@@ -563,10 +779,11 @@ export class GameService {
     lobbyCode: string,
     phase: string,
     delayMs: number,
+    phaseVersion: number,
   ) {
     await gameTimeoutsQueue.add(
       'phase-timeout',
-      { lobbyCode, expectedPhase: phase },
+      { lobbyCode, expectedPhase: phase, expectedPhaseVersion: phaseVersion },
       {
         delay: delayMs,
         jobId: `timeout-${lobbyCode}-${phase}-${Date.now()}`,
@@ -578,27 +795,57 @@ export class GameService {
     );
   }
 
+  public async rearmCurrentPhaseTimeout(state: GameState): Promise<void> {
+    const timeLimits: Record<string, number> = {
+      STORYTELLING: 60000,
+      SUBMISSION: 45000,
+      VOTING: 45000,
+      SCORING: 10000,
+    };
+
+    const delay = timeLimits[state.phase];
+    if (!delay) {
+      return;
+    }
+
+    await this.schedulePhaseTimeout(
+      state.lobbyCode,
+      state.phase,
+      delay,
+      state.phaseVersion ?? 1,
+    );
+  }
+
   private maskPrivateState(state: GameState): Partial<GameState> {
-    const publicState = structuredClone(state);
-    delete (publicState as any).centralDeck;
-    delete (publicState as any).hands;
-    delete (publicState as any).cardUrls;
-    return publicState;
+    return buildPublicGameState(state);
   }
 
   //
   // ESTRELLA SÍNCRONA
   //
 
+  private canSpawnStar(state: GameState): boolean {
+    return !(state.isMinigameActive && state.activeConflict?.isDuel === false);
+  }
+
   public async triggerStarEvent(lobbyCode: string): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
-    if (!state || state.isStarActive) return [];
+    if (!state || state.isStarActive || !this.canSpawnStar(state)) return [];
 
     const movement = this.calculateStarPath();
 
     state.isStarActive = true;
     state.starExpiresAt = Date.now() + movement.duration;
     await this.redisRepo.saveGame(lobbyCode, state);
+
+    if (state.phase === 'SCORING') {
+      await this.schedulePhaseTimeout(
+        lobbyCode,
+        state.phase,
+        10000,
+        state.phaseVersion ?? 1,
+      );
+    }
 
     const emissions: SocketEmission[] = [];
 
@@ -645,6 +892,15 @@ export class GameService {
     state.scores[playerId] = (state.scores[playerId] || 0) + 3;
 
     await this.redisRepo.saveGame(lobbyCode, state);
+
+    if (state.phase === 'SCORING') {
+      await this.schedulePhaseTimeout(
+        lobbyCode,
+        state.phase,
+        10000,
+        state.phaseVersion ?? 1,
+      );
+    }
 
     return [
       {
@@ -714,6 +970,7 @@ export class GameService {
   ): Promise<SocketEmission[]> {
     const { SPECIAL_SQUARES, CHECKPOINT_65 } = BOARD_CONFIG;
     const emissions: SocketEmission[] = [];
+    let modeChangeOfferResolved = false;
 
     // Nos aseguramos de tener el registro global inicializado en el estado
     if (!state.boardRegistry) state.boardRegistry = {};
@@ -799,12 +1056,151 @@ export class GameService {
         });
       }
 
+      // BONUS (CAMBIO DE MODO)
+      if (
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_1 ||
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_2 ||
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_3 ||
+        currentPos === SPECIAL_SQUARES.BONUS_RANDOM_4
+      ) {
+        // Quitamos la restricción del modo. Ahora siempre aplica la probabilidad.
+        if (!modeChangeOfferResolved && !state.pendingModeChangeOffer) {
+          const bonusEmissions = this.applyRandomBonusEffect(state, pId);
+          emissions.push(...bonusEmissions);
+
+          if (
+            bonusEmissions.some(
+              (emission) => emission.event === 'server:game:mode_change_offer',
+            )
+          ) {
+            modeChangeOfferResolved = true;
+          }
+        }
+      }
       // MINIJUEGOS DESEMPATE
       const conflictEmissions = await this.checkConflictMinigame(state, pId);
       emissions.push(...conflictEmissions);
     }
 
     return emissions;
+  }
+
+  /**
+   * Efecto Bonus Random: Probabilidad de BOARD_CONFIG.CHANGE_OFFER_PROBABILITY % de ofrecer alternar el modo de juego (Stella <-> Standard).
+   */
+  private applyRandomBonusEffect(
+    state: GameState,
+    pId: string,
+  ): SocketEmission[] {
+    const chance = BOARD_CONFIG.CHANGE_OFFER_PROBABILITY;
+    const shouldOfferChange = Math.random() < chance;
+
+    if (shouldOfferChange) {
+      state.pendingModeChangeOffer = {
+        playerId: pId,
+        phaseVersion: state.phaseVersion ?? 1,
+      };
+
+      const targetMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
+
+      const message =
+        targetMode === 'STELLA'
+          ? '¡Has encontrado un vórtice cósmico! ¿Quieres sumir la partida en el caos y cambiar al modo Stella?'
+          : '¡Un rayo de luz atraviesa el caos! ¿Quieres restaurar el orden y volver al modo Clásico?';
+
+      return [
+        {
+          room: pId,
+          event: 'server:game:mode_change_offer',
+          data: {
+            message,
+            targetMode,
+          },
+        },
+      ];
+    } else {
+      return [
+        {
+          room: pId,
+          event: 'server:game:special_event',
+          data: {
+            effect: 'NOTHING_HAPPENED',
+            message: 'La casilla Bonus no tuvo efecto esta vez...',
+          },
+        },
+      ];
+    }
+  }
+
+  /**
+   * Ejecutado cuando el jugador acepta cambiar el modo de juego.
+   * Alterna bidireccionalmente entre STELLA y STANDARD.
+   */
+  public async acceptModeChange(
+    lobbyCode: string,
+    playerId: string,
+  ): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
+    if (!state) return [];
+
+    const pendingOffer = state.pendingModeChangeOffer;
+    const currentPhaseVersion = state.phaseVersion ?? 1;
+    const isOfferValid =
+      state.phase === 'SCORING' &&
+      pendingOffer &&
+      pendingOffer.playerId === playerId &&
+      pendingOffer.phaseVersion === currentPhaseVersion;
+
+    if (!isOfferValid) {
+      throw new Error(
+        'La oferta de cambio de modo ya no estÃ¡ disponible en esta fase.',
+      );
+    }
+
+    // Cambiamos al modo contrario
+    const newMode = state.mode === 'STELLA' ? 'STANDARD' : 'STELLA';
+    state.mode = newMode;
+    state.pendingModeChangeOffer = null;
+
+    await this.redisRepo.saveGame(lobbyCode, state);
+
+    // Preparamos los textos según el nuevo modo
+    const effectName =
+      newMode === 'STELLA'
+        ? 'MODE_CHANGED_TO_STELLA'
+        : 'MODE_CHANGED_TO_STANDARD';
+    const broadcastMessage =
+      newMode === 'STELLA'
+        ? '¡Un jugador ha aceptado el pacto! Las reglas han cambiado. ¡Bienvenidos al modo Stella!'
+        : '¡Se ha restaurado el orden! La partida vuelve a las reglas clásicas.';
+
+    // Avisamos a toda la sala
+    return [
+      {
+        room: lobbyCode,
+        event: 'server:game:special_event',
+        data: {
+          effect: effectName,
+          message: broadcastMessage,
+        },
+      },
+      {
+        room: lobbyCode,
+        event: 'server:game:state_updated',
+        data: {
+          state: this.maskPrivateState(state),
+          lastAction: effectName,
+        },
+      },
+    ];
+  }
+
+  private clearExpiredModeChangeOffer(state: GameState): void {
+    if (!state.pendingModeChangeOffer) {
+      return;
+    }
+
+    state.pendingModeChangeOffer = null;
   }
 
   /**
@@ -878,6 +1274,10 @@ export class GameService {
     return newArray;
   }
 
+  private getUniqueCardIds(cardIds: number[]): number[] {
+    return Array.from(new Set(cardIds));
+  }
+
   /**
    * Efecto Shuffle: Tira tus cartas y coge nuevas.
    */
@@ -923,7 +1323,10 @@ export class GameService {
     emissions.push({
       room: pId,
       event: 'server:game:private_hand',
-      data: { hand: this.serializeHand(newHand, state.cardUrls || {}) },
+      data: {
+        hand: this.serializeHand(newHand, state.cardUrls || {}),
+        board: await this.getBoardPayloadForPlayer(pId),
+      },
     });
 
     emissions.push({
@@ -976,10 +1379,93 @@ export class GameService {
     handIds: number[],
     cardDictionary: Record<number, string>,
   ) {
-    return handIds.map((id) => ({
-      id: `${ID_PREFIXES.CARD}${id}`,
-      url_image: cardDictionary[id] || '',
-    }));
+    return this.serializePublicCards(handIds, cardDictionary);
+  }
+
+  private async getBoardPayloadsForPlayers(
+    playerIds: string[],
+  ): Promise<Map<string, typeof DEFAULT_BOARD_PAYLOAD>> {
+    const numericPlayerIds = playerIds
+      .map((playerId) => ({
+        playerId,
+        numericPlayerId: parseInt(playerId.replace(ID_PREFIXES.USER, '')),
+      }))
+      .filter(
+        (
+          player,
+        ): player is { playerId: string; numericPlayerId: number } =>
+          !Number.isNaN(player.numericPlayerId),
+      );
+
+    if (numericPlayerIds.length === 0) {
+      return new Map();
+    }
+
+    const userBoards = await prisma.user.findMany({
+      where: {
+        id_user: { in: numericPlayerIds.map((player) => player.numericPlayerId) },
+      },
+      select: { id_user: true, active_board_id: true },
+    });
+
+    const boardIds = Array.from(
+      new Set(
+        userBoards
+          .map((user) => user.active_board_id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
+
+    const boards = boardIds.length
+      ? await prisma.board.findMany({
+          where: { id_board: { in: boardIds } },
+          select: { id_board: true, name: true, url_image: true },
+        })
+      : [];
+
+    const boardsById = new Map<number, (typeof boards)[number]>();
+    boards.forEach((board) => {
+      boardsById.set(board.id_board, board);
+    });
+
+    const boardPayloadByPlayerId = new Map<
+      string,
+      typeof DEFAULT_BOARD_PAYLOAD
+    >();
+    numericPlayerIds.forEach(({ playerId, numericPlayerId }) => {
+      const activeBoardId = userBoards.find(
+        (user) => user.id_user === numericPlayerId,
+      )?.active_board_id;
+      const board =
+        typeof activeBoardId === 'number' ? boardsById.get(activeBoardId) : null;
+
+      boardPayloadByPlayerId.set(
+        playerId,
+        board
+          ? {
+              id: `${ID_PREFIXES.BOARD}${board.id_board}`,
+              name: board.name,
+              url_image: board.url_image || '',
+            }
+          : DEFAULT_BOARD_PAYLOAD,
+      );
+    });
+
+    return boardPayloadByPlayerId;
+  }
+
+  private async getBoardPayloadForPlayer(playerId: string) {
+    return (
+      (await this.getBoardPayloadsForPlayers([playerId])).get(playerId) ??
+      DEFAULT_BOARD_PAYLOAD
+    );
+  }
+
+  private serializePublicCards(
+    cardIds: number[],
+    cardDictionary: Record<number, string>,
+  ) {
+    return serializePublicCards(cardIds, cardDictionary);
   }
 
   /**
@@ -1082,7 +1568,7 @@ export class GameService {
     emissions.push({
       room: state.lobbyCode,
       event: 'server:game:special_event',
-      data: { effect: 'CONFLICT_RESOLVED', message },
+      data: { effect: 'CONFLICT_RESOLVED', message, winnerId, loserId, isDuel },
     });
 
     // Actualizamos el tablero general para todos
@@ -1133,5 +1619,58 @@ export class GameService {
         },
       },
     ];
+  }
+
+  /**
+   * Recibe la puntuación individual de un jugador en el minijuego.
+   * El servidor actúa como árbitro: espera a tener ambas para decidir quién gana.
+   */
+  public async submitMinigameScore(
+    lobbyCode: string,
+    playerId: string,
+    score: number,
+  ): Promise<SocketEmission[]> {
+    const state = await this.redisRepo.getGame(lobbyCode);
+    if (!state || !state.isMinigameActive || !state.activeConflict) return [];
+
+    const { player1, player2, isDuel } = state.activeConflict;
+
+    // Seguridad: Solo los implicados en el minijuego pueden enviar puntuación
+    if (playerId !== player1 && playerId !== player2) return [];
+
+    // Inicializamos el registro si es el primero en llegar
+    if (!state.activeConflict.scores) {
+      state.activeConflict.scores = {};
+    }
+
+    // Guardamos la puntuación de este jugador y salvamos en Redis
+    state.activeConflict.scores[playerId] = score;
+    await this.redisRepo.saveGame(lobbyCode, state);
+
+    // Revisamos si el otro jugador ya había enviado su puntuación
+    const p1Score = state.activeConflict.scores[player1];
+    const p2Score = state.activeConflict.scores[player2];
+
+    if (p1Score === undefined || p2Score === undefined) {
+      // Falta uno por contestar. No hacemos nada más (array vacío).
+      return [];
+    }
+
+    //Si ambos han contestado decidimos el ganador
+    let winnerId = player1;
+    let loserId = player2;
+
+    if (p2Score > p1Score) {
+      winnerId = player2;
+      loserId = player1;
+    } else if (p1Score === p2Score) {
+      // Si empatan también en el minijuego, lo decidimos a cara o cruz
+      const coinFlip = Math.random() > 0.5;
+      winnerId = coinFlip ? player1 : player2;
+      loserId = coinFlip ? player2 : player1;
+    }
+
+    // Usamos la función que ya tenemos para dar los puntos y desbloquear la partida
+    return this.submitConflictResult(lobbyCode, winnerId, loserId, isDuel);
   }
 }

@@ -131,7 +131,10 @@ export const getOwnedCards = async (
     const userId = req.user!.id;
     const ownedCards = await UserService.getUserCards(userId);
 
-    res.status(200).json({ cards: ownedCards });
+    res.status(200).json({
+      total: ownedCards?.length ?? 0,
+      cards: ownedCards,
+    });
   } catch (error) {
     res.status(500).json({
       message: 'Error al obtener la colección de cartas del usuario.',

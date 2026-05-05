@@ -5,6 +5,7 @@ import {
   GameState,
   StellaGameState,
 } from '../../shared/types';
+import { parsePrefixedCardId, parsePrefixedCardIds } from '../../shared/utils';
 import { GameModeStrategy } from './core.strategy';
 
 export class StellaStrategy implements GameModeStrategy {
@@ -64,7 +65,7 @@ export class StellaStrategy implements GameModeStrategy {
     }
 
     // Validaciones de la cantidad de marcas permitidas
-    const marks = action.payload.cardIds;
+    const marks = parsePrefixedCardIds(action.payload.cardIds) as number[];
     if (marks.length < 1 || marks.length > 10) {
       throw new Error('Debes marcar entre 1 y 10 cartas.');
     }
@@ -106,7 +107,7 @@ export class StellaStrategy implements GameModeStrategy {
       throw new Error('Te has caído, no puedes revelar más cartas.');
     }
 
-    const cardId = action.payload.cardId;
+    const cardId = parsePrefixedCardId(action.payload.cardId) as number;
     const playerMarks = state.currentRound.playerMarks[action.playerId];
 
     // Validar la jugada

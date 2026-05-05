@@ -57,7 +57,11 @@ async function main() {
     },
   });
 
-  console.log('--- Creando Colecciones y Cartas ---'); // 12 Colecciones x 12 Cartas = 144 cartas en total
+  const allBoards = await prisma.board.findMany({
+    orderBy: { id_board: 'asc' },
+  });
+
+  console.log('--- Creando Colecciones y Cartas ---'); // 3 Colecciones x 84 Cartas = 252 cartas en total
 
   const rarities: Rarity[] = [
     ...Array(5).fill(Rarity.COMMON),
@@ -67,17 +71,21 @@ async function main() {
     Rarity.LEGENDARY,
   ];
 
+  const COLLECTION_COUNT = 3;
+  const CARDS_PER_COLLECTION = 84;
+  const STARTER_DECK_SIZE = 16;
+
   const allCards = [];
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= COLLECTION_COUNT; i++) {
     const collection = await prisma.collection.create({
       data: { name: `Colección ${i}` },
     });
 
-    for (let j = 0; j < 12; j++) {
+    for (let j = 0; j < CARDS_PER_COLLECTION; j++) {
       const card = await prisma.cards.create({
         data: {
           title: `Carta ${i}-${j + 1}`,
-          rarity: rarities[j],
+          rarity: rarities[j % rarities.length],
           id_collection: collection.id_collection,
           url_image: 'https://ejemplo.com/placeholder.jpg'
         },
@@ -136,10 +144,10 @@ async function main() {
     const createdUserCards = await prisma.userCard.findMany({
       where: { id_user: user.id_user },
       select: { id_user_card: true },
-      take: 12 // Solo necesitamos 12 para el mazo
+      take: STARTER_DECK_SIZE, // Solo necesitamos las cartas del mazo inicial
     });
 
-    // Crear al menos 1 Mazo de 12 cartas
+    // Crear al menos 1 mazo inicial
     const deck = await prisma.deck.create({
       data: {
         name: `Mazo Principal de ${user.username}`,
@@ -147,7 +155,7 @@ async function main() {
       },
     });
 
-    const deckSelection = createdUserCards.slice(0, 12);
+    const deckSelection = createdUserCards.slice(0, STARTER_DECK_SIZE);
     await prisma.deckCard.createMany({
       data: deckSelection.map((card) => ({
         id_deck: deck.id_deck,
@@ -155,6 +163,52 @@ async function main() {
       })),
     });
   }
+
+  const unlockedUser = await prisma.user.create({
+    data: {
+      username: 'TesterFullUnlock',
+      email: 'tester.full.unlock@ejemplo.com',
+      password: hashedBasePassword,
+      coins: 999999,
+      active_board_id: classicBoard.id_board,
+    },
+  });
+  users.push(unlockedUser);
+
+  await prisma.userBoard.createMany({
+    data: allBoards.map((board) => ({
+      id_user: unlockedUser.id_user,
+      id_board: board.id_board,
+    })),
+  });
+
+  await prisma.userCard.createMany({
+    data: allCards.map((card) => ({
+      id_user: unlockedUser.id_user,
+      id_card: card.id_card,
+    })),
+  });
+
+  const unlockedUserCards = await prisma.userCard.findMany({
+    where: { id_user: unlockedUser.id_user },
+    select: { id_user_card: true },
+    orderBy: { id_user_card: 'asc' },
+    take: STARTER_DECK_SIZE,
+  });
+
+  const unlockedDeck = await prisma.deck.create({
+    data: {
+      name: `Mazo Principal de ${unlockedUser.username}`,
+      id_user: unlockedUser.id_user,
+    },
+  });
+
+  await prisma.deckCard.createMany({
+    data: unlockedUserCards.map((card) => ({
+      id_deck: unlockedDeck.id_deck,
+      id_user_card: card.id_user_card,
+    })),
+  });
 
   console.log('--- Creando Amistades ---');
   for (let i = 0; i < 10; i++) {

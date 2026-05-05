@@ -5,6 +5,7 @@ import { Friendship_States } from '@prisma/client';
 import { prisma } from '../../infrastructure/prisma';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { FriendService } from '../friend.service';
+import { UserService } from '../user.service';
 
 describe('FriendService - Pruebas Funciones', () => {
   const users: number[] = [];
@@ -87,9 +88,8 @@ describe('FriendService - Pruebas Funciones', () => {
                 new RegExp(`^${ID_PREFIXES.USER}\\d+$`),
               ),
               username: expect.stringMatching(/.+/),
-              status: expect.stringMatching(
-                /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
-              ),
+              state: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
+              status: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
             }),
           ]),
         );
@@ -111,6 +111,27 @@ describe('FriendService - Pruebas Funciones', () => {
         await expect(
           FriendService.getConfirmedFriends('usuarioPrueba'),
         ).rejects.toThrow();
+      });
+
+      test('Actualiza la caché de amigos cuando cambia la presencia', async () => {
+        const before = await FriendService.getConfirmedFriends(main_u);
+        expect(before).not.toBeNull();
+        const cachedFriendBefore = before!.find(
+          (friend) => friend.id === friend_u,
+        );
+
+        expect(cachedFriendBefore?.status).toBe('DISCONNECTED');
+
+        await UserService.updatePresence(friend_u, 'CONNECTED');
+
+        const after = await FriendService.getConfirmedFriends(main_u);
+        expect(after).not.toBeNull();
+        const cachedFriendAfter = after!.find(
+          (friend) => friend.id === friend_u,
+        );
+
+        expect(cachedFriendAfter?.status).toBe('CONNECTED');
+        expect(cachedFriendAfter?.state).toBe('CONNECTED');
       });
     });
 

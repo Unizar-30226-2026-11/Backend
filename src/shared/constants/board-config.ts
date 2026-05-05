@@ -2,6 +2,9 @@ export const BOARD_CONFIG = {
   MAX_SCORE: 42, // Longitud total del tablero
   CHECKPOINT_65: 27, // Casilla de equilibrio
 
+  // Probabilidad de ofrecer el cambio de modo en las casillas de bonus
+  CHANGE_OFFER_PROBABILITY: 0.65,
+
   SPECIAL_SQUARES: {
     // Fase Inicial: Creamos desigualdades
     ODD_SQUARE_1: 5, // Impares
@@ -11,7 +14,7 @@ export const BOARD_CONFIG = {
     EVEN_SQUARE_2: 11, // Pares
 
     // Fase Primera Mitad:
-    BONUS_RANDOM_1: 15,
+    BONUS_RANDOM_1: 10,
     SHUFFLE_1: 18,
     BONUS_RANDOM_2: 21,
 

@@ -1,8 +1,13 @@
+import { DixitEngine } from '../../core/engines';
 import { prisma } from '../../infrastructure/prisma';
 import { BOARD_CONFIG } from '../../shared/constants/board-config';
 import { ID_PREFIXES } from '../../shared/constants/id-prefixes';
 import { GameState } from '../../shared/types';
-import { GameService, gameTimeoutsQueue } from '../game.service';
+import {
+  buildRecoveredGameState,
+  GameService,
+  gameTimeoutsQueue,
+} from '../game.service';
 
 jest.mock('bullmq', () => ({
   Queue: jest.fn().mockReturnValue({
@@ -24,8 +29,21 @@ jest.mock('../../infrastructure/prisma', () => ({
         { id_card: 3, url_image: 'url3.jpg' },
       ]),
     },
-    user: { findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }) },
+    user: {
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id_user: 1, active_board_id: 1 }]),
+      findUnique: jest.fn().mockResolvedValue({ active_board_id: 1 }),
+      update: jest.fn(),
+    },
     board: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id_board: 1,
+          name: 'Tablero Classic',
+          url_image: 'classic.png',
+        },
+      ]),
       findUnique: jest.fn().mockResolvedValue({
         id_board: 1,
         name: 'Tablero Classic',
@@ -34,6 +52,7 @@ jest.mock('../../infrastructure/prisma', () => ({
     },
     userGameStats: { create: jest.fn() },
     games_log: { create: jest.fn().mockResolvedValue({ id_game: 1 }) },
+    $transaction: jest.fn().mockResolvedValue([]),
   },
 }));
 
@@ -54,12 +73,207 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
     mockRedisRepo = {
       getGame: jest.fn(),
       saveGame: jest.fn(),
+      deleteGame: jest.fn(),
     };
     gameService = new GameService(mockRedisRepo);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('Oferta de cambio de modo', () => {
+    test('Debe ocultar la oferta pendiente del estado pÃºblico', () => {
+      const publicState = buildRecoveredGameState({
+        lobbyCode: 'ROOM-1',
+        status: 'playing',
+        players: ['p1'],
+        disconnectedPlayers: [],
+        scores: { p1: 10 },
+        hands: { p1: [1] },
+        centralDeck: [2, 3],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 4,
+        pendingModeChangeOffer: { playerId: 'p1', phaseVersion: 4 },
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: { 1: 'url1' },
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        currentRound: {
+          storytellerId: 'p1',
+          clue: null,
+          storytellerCardId: null,
+          playedCards: {},
+          boardCards: [],
+          votes: [],
+        },
+      } as unknown as GameState);
+
+      expect(publicState).not.toHaveProperty('pendingModeChangeOffer');
+    });
+
+    test('Debe aceptar el cambio solo para el jugador ofertado durante SCORING', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        phaseVersion: 7,
+        pendingModeChangeOffer: { playerId: 'p1', phaseVersion: 7 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+      const emissions = await gameService.handleAction('ROOM-1', {
+        type: 'ACCEPT_MODE_CHANGE',
+        playerId: 'p1',
+      } as any);
+
+      expect(mockState.mode).toBe('STELLA');
+      expect(mockState.pendingModeChangeOffer).toBeNull();
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-1', mockState);
+      expect(emissions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            room: 'ROOM-1',
+            event: 'server:game:special_event',
+          }),
+          expect.objectContaining({
+            room: 'ROOM-1',
+            event: 'server:game:state_updated',
+          }),
+        ]),
+      );
+    });
+
+    test('Debe invalidar la oferta al cambiar de fase con NEXT_ROUND', async () => {
+      const currentState = {
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        phase: 'SCORING',
+        phaseVersion: 3,
+        pendingModeChangeOffer: { playerId: 'p1', phaseVersion: 3 },
+        isMinigameActive: false,
+        players: ['p1', 'p2'],
+        hands: { p1: [], p2: [] },
+        scores: { p1: 5, p2: 4 },
+        cardUrls: {},
+      } as unknown as GameState;
+
+      const nextState = {
+        ...currentState,
+        phase: 'STORYTELLING',
+      } as unknown as GameState;
+
+      mockRedisRepo.getGame.mockResolvedValueOnce(currentState);
+      (DixitEngine.transition as jest.Mock).mockReturnValueOnce(nextState);
+
+      await gameService.handleAction('ROOM-1', {
+        type: 'NEXT_ROUND',
+        playerId: 'SYSTEM',
+      } as any);
+
+      expect(nextState.pendingModeChangeOffer).toBeNull();
+      expect(nextState.phaseVersion).toBe(4);
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-1', nextState);
+    });
+
+    test('Debe invalidar la oferta al salir de SCORING tambiÃ©n en STELLA', async () => {
+      const currentState = {
+        lobbyCode: 'ROOM-2',
+        mode: 'STELLA',
+        phase: 'SCORING',
+        phaseVersion: 5,
+        pendingModeChangeOffer: { playerId: 'p2', phaseVersion: 5 },
+        isMinigameActive: false,
+        players: ['p1', 'p2'],
+        hands: { p1: [], p2: [] },
+        scores: { p1: 8, p2: 9 },
+        cardUrls: {},
+      } as unknown as GameState;
+
+      const nextState = {
+        ...currentState,
+        phase: 'STELLA_WORD_REVEAL',
+      } as unknown as GameState;
+
+      mockRedisRepo.getGame.mockResolvedValueOnce(currentState);
+      (DixitEngine.transition as jest.Mock).mockReturnValueOnce(nextState);
+
+      await gameService.handleAction('ROOM-2', {
+        type: 'NEXT_ROUND',
+        playerId: 'SYSTEM',
+      } as any);
+
+      expect(nextState.pendingModeChangeOffer).toBeNull();
+      expect(nextState.phaseVersion).toBe(6);
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith('ROOM-2', nextState);
+    });
+
+    test('Debe rechazar una aceptaciÃ³n cuando la oferta ya caducÃ³ por cambio de fase', async () => {
+      mockRedisRepo.getGame.mockResolvedValue({
+        lobbyCode: 'ROOM-1',
+        mode: 'STANDARD',
+        phase: 'STORYTELLING',
+        phaseVersion: 8,
+        pendingModeChangeOffer: null,
+      });
+
+      await expect(
+        gameService.handleAction('ROOM-1', {
+          type: 'ACCEPT_MODE_CHANGE',
+          playerId: 'p1',
+        } as any),
+      ).rejects.toThrow(
+        'La oferta de cambio de modo ya no estÃ¡ disponible en esta fase.',
+      );
+    });
+  });
+
+  describe('FinalizaciÃ³n manual de partida', () => {
+    test('finalizeGame debe marcar la partida como finalizada y borrarla de Redis', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-END',
+        status: 'playing',
+        phase: 'SCORING',
+        scores: { u_1: 12, u_2: 8, u_3: 4 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+      (prisma.user.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ coins: 110 })
+        .mockResolvedValueOnce({ coins: 95 })
+        .mockResolvedValueOnce({ coins: 80 });
+
+      const emissions = await gameService.finalizeGame('ROOM-END');
+
+      expect(mockState.status).toBe('finished');
+      expect(mockState.phase).toBe('FINISHED');
+      expect(mockRedisRepo.saveGame).toHaveBeenCalledWith(
+        'ROOM-END',
+        mockState,
+      );
+      expect(mockRedisRepo.deleteGame).toHaveBeenCalledWith('ROOM-END');
+      expect(
+        emissions.some((emission) => emission.event === 'server:game:ended'),
+      ).toBe(true);
+    });
+
+    test('handleAction debe rechazar acciones sobre una partida ya finalizada', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-FINISHED',
+        status: 'finished',
+        phase: 'FINISHED',
+      });
+
+      await expect(
+        gameService.handleAction('ROOM-FINISHED', {
+          type: 'NEXT_ROUND',
+          playerId: 'SYSTEM',
+        } as any),
+      ).rejects.toThrow('La partida ya ha finalizado.');
+    });
   });
 
   // ==========================================
@@ -78,18 +292,27 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Simulamos que los jugadores traen MUCHAS cartas (ej: 60 cartas en total) para no entrar al fallback
         const mockDecks = [
           {
-            cards: Array(60).fill({
+            id_user: 1,
+            id_deck: 10,
+            name: 'Deck 1',
+            cards: Array.from({ length: 60 }, (_, i) => ({
               user_card: {
-                id_card: 100,
-                card: { id_card: 100, url_image: 'img.png' },
+                id_card: 100 + i,
+                card: {
+                  id_card: 100 + i,
+                  url_image: `img-${100 + i}.png`,
+                },
               },
-            }),
+            })),
           },
         ];
         (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
-        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
-          { id_card: 100, url_image: 'img.png' },
-        ]);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
+          Array.from({ length: 48 }, (_, i) => ({
+            id_card: 100 + i,
+            url_image: `img-${100 + i}.png`,
+          })),
+        );
 
         const emissions = await gameService.initializeGame(
           'ROOM-INIT',
@@ -126,9 +349,15 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         expect(startEmission).toBeDefined();
         expect(startEmission!.data).not.toHaveProperty('state.centralDeck'); // Privacidad
         expect(startEmission!.data).not.toHaveProperty('state.cardUrls'); // Sobrecarga
-        expect(
-          emissions.filter((e) => e.event === 'server:game:private_hand'),
-        ).toHaveLength(3);
+        const privateHandEmissions = emissions.filter(
+          (e) => e.event === 'server:game:private_hand',
+        );
+        expect(privateHandEmissions).toHaveLength(3);
+        expect((privateHandEmissions[0].data as any).board).toEqual({
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'Tablero Classic',
+          url_image: 'classic.png',
+        });
       });
 
       test('Debe rellenar con cartas fallback (dinámico) si faltan cartas para el mazo objetivo', async () => {
@@ -143,13 +372,14 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         // Simulamos la respuesta del fallback
         (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
-          Array(16).fill({ id_card: 99, url_image: 'img99.png' }),
+          Array.from({ length: 16 }, (_, i) => ({ id_card: 99 + i })),
         );
 
         await gameService.initializeGame('ROOM-FALLBACK', lobbyData);
 
         // Verifica que se llamó al fallback pidiendo EXACTAMENTE las 16 cartas que faltan
         expect(prisma.cards.findMany).toHaveBeenCalledWith({
+          where: { id_card: { notIn: [] } },
           take: 16,
           select: { id_card: true },
         });
@@ -164,18 +394,27 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
 
         const mockDecks = [
           {
-            cards: Array(60).fill({
+            id_user: 1,
+            id_deck: 20,
+            name: 'Deck Stella',
+            cards: Array.from({ length: 60 }, (_, i) => ({
               user_card: {
-                id_card: 100,
-                card: { id_card: 100, url_image: 'img.png' },
+                id_card: 200 + i,
+                card: {
+                  id_card: 200 + i,
+                  url_image: `img-${200 + i}.png`,
+                },
               },
-            }),
+            })),
           },
         ];
         (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
-        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
-          { id_card: 100, url_image: 'img.png' },
-        ]);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce(
+          Array.from({ length: 48 }, (_, i) => ({
+            id_card: 200 + i,
+            url_image: `img-${200 + i}.png`,
+          })),
+        );
 
         await gameService.initializeGame('ROOM-STELLA', lobbyData);
 
@@ -195,6 +434,156 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           expect.objectContaining({ delay: 60000 }),
         );
       });
+
+      test('Debe incluir las URLs de las cartas del tablero en game:started para STELLA', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STELLA', players: [p1, p2, p3] };
+
+        const mockDecks = [
+          {
+            id_user: 1,
+            id_deck: 30,
+            name: 'Deck Stella Start',
+            cards: Array.from({ length: 60 }, (_, i) => ({
+              user_card: {
+                id_card: 300 + i,
+                card: {
+                  id_card: 300 + i,
+                  url_image: `img-${300 + i}.png`,
+                },
+              },
+            })),
+          },
+        ];
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce(mockDecks);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 10, url_image: 'url10.png' },
+          { id_card: 20, url_image: 'url20.png' },
+          { id_card: 30, url_image: 'url30.png' },
+        ]);
+        (DixitEngine.transition as jest.Mock).mockImplementationOnce(
+          (state) => ({
+            ...state,
+            mode: 'STELLA',
+            phase: 'STELLA_WORD_REVEAL',
+            currentRound: {
+              word: 'Bosque Encantado',
+              boardCards: [10, 20, 30],
+              playerMarks: {},
+              revealedCards: [],
+              currentScoutId: null,
+              fallenPlayers: [],
+              inTheDarkPlayerId: null,
+              roundScores: { [p1]: 0, [p2]: 0, [p3]: 0 },
+              successfulMarks: { [p1]: 0, [p2]: 0, [p3]: 0 },
+            },
+          }),
+        );
+
+        const emissions = await gameService.initializeGame(
+          'ROOM-STELLA-START',
+          lobbyData,
+        );
+
+        const startEmission = emissions.find(
+          (e) => e.event === 'server:game:started',
+        );
+
+        expect(
+          (startEmission?.data as any).state.currentRound.boardCards,
+        ).toEqual([10, 20, 30]);
+        expect(
+          (startEmission?.data as any).state.currentRound.boardCardsDetailed,
+        ).toEqual([
+          { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+          { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+          { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+        ]);
+        expect((startEmission?.data as any).state).not.toHaveProperty(
+          'cardUrls',
+        );
+      });
+
+      test('Debe deduplicar el pool antes de llamar al motor de juego', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STANDARD', players: [p1, p2, p3] };
+
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce([
+          {
+            id_user: 1,
+            id_deck: 40,
+            name: 'Deck repetido',
+            cards: Array.from({ length: 24 }, (_, i) => ({
+              user_card: {
+                id_card: i < 12 ? i + 1 : i - 11,
+              },
+            })),
+          },
+        ]);
+        (prisma.cards.findMany as jest.Mock)
+          .mockResolvedValueOnce(
+            Array.from({ length: 36 }, (_, i) => ({ id_card: 100 + i })),
+          )
+          .mockResolvedValueOnce(
+            Array.from({ length: 48 }, (_, i) => ({
+              id_card: i < 12 ? i + 1 : 100 + (i - 12),
+              url_image: `img-${i}.png`,
+            })),
+          );
+
+        await gameService.initializeGame('ROOM-DEDUPE', lobbyData);
+
+        expect(prisma.cards.findMany).toHaveBeenNthCalledWith(1, {
+          where: {
+            id_card: {
+              notIn: Array.from({ length: 12 }, (_, i) => i + 1),
+            },
+          },
+          take: 36,
+          select: { id_card: true },
+        });
+
+        const initAction = (DixitEngine.transition as jest.Mock).mock.calls[0][1];
+        const uniqueDeck = initAction.payload.deck as number[];
+
+        expect(uniqueDeck).toHaveLength(48);
+        expect(new Set(uniqueDeck).size).toBe(48);
+      });
+
+      test('Debe fallar si no hay suficientes cartas únicas para arrancar sin repeticiones', async () => {
+        const p1 = `${ID_PREFIXES.USER}1`;
+        const p2 = `${ID_PREFIXES.USER}2`;
+        const p3 = `${ID_PREFIXES.USER}3`;
+
+        const lobbyData = { engine: 'STANDARD', players: [p1, p2, p3] };
+
+        (prisma.deck.findMany as jest.Mock).mockResolvedValueOnce([
+          {
+            id_user: 1,
+            id_deck: 50,
+            name: 'Deck insuficiente',
+            cards: Array.from({ length: 20 }, () => ({
+              user_card: { id_card: 7 },
+            })),
+          },
+        ]);
+        (prisma.cards.findMany as jest.Mock).mockResolvedValueOnce([
+          { id_card: 8 },
+          { id_card: 9 },
+        ]);
+
+        await expect(
+          gameService.initializeGame('ROOM-NO-UNIQUE', lobbyData),
+        ).rejects.toThrow(
+          'No hay suficientes cartas unicas para iniciar la partida sin repeticiones.',
+        );
+      });
     });
 
     describe('handleAction', () => {
@@ -210,11 +599,20 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       test('Debe actualizar el estado, enmascarar datos privados y generar emisiones', async () => {
         const mockState = {
           lobbyCode: 'ROOM-ACTION',
+          mode: 'STANDARD',
           players: ['p1'],
           scores: { p1: 0 },
           hands: { p1: [5, 6] },
           centralDeck: [1, 2, 3],
           phase: 'STORYTELLING',
+          currentRound: {
+            storytellerId: 'p1',
+            clue: null,
+            storytellerCardId: null,
+            playedCards: {},
+            boardCards: [],
+            votes: [],
+          },
           cardUrls: { 5: 'img5.png', 6: 'img6.png' },
         };
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
@@ -240,6 +638,62 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
           (e) => e.event === 'server:game:private_hand',
         );
         expect(handEmission).toBeDefined();
+        expect((handEmission?.data as any).board).toEqual({
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'CLASSIC',
+          url_image: 'tablero_classic.png',
+        });
+      });
+
+      test('Debe incluir las cartas de votación hidratadas en el estado público', async () => {
+        const mockState = {
+          lobbyCode: 'ROOM-VOTING',
+          mode: 'STANDARD',
+          players: ['p1', 'p2', 'p3'],
+          disconnectedPlayers: [],
+          scores: { p1: 0, p2: 0, p3: 0 },
+          hands: { p1: [], p2: [], p3: [] },
+          centralDeck: [99],
+          discardPile: [],
+          boardRegistry: {},
+          isStarActive: false,
+          starExpiresAt: 0,
+          phaseVersion: 1,
+          isMinigameActive: false,
+          phase: 'VOTING',
+          currentRound: {
+            storytellerId: 'p1',
+            clue: 'pista',
+            storytellerCardId: 10,
+            playedCards: { p1: 10, p2: 20, p3: 30 },
+            boardCards: [30, 10, 20],
+            votes: [],
+          },
+          cardUrls: {
+            10: 'url10.png',
+            20: 'url20.png',
+            30: 'url30.png',
+          },
+        };
+        mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+        const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
+        const emissions = await gameService.handleAction('ROOM-VOTING', action);
+
+        const updateEmission = emissions.find(
+          (e) => e.event === 'server:game:state_updated',
+        );
+
+        expect(
+          (updateEmission?.data as any).state.currentRound.boardCards,
+        ).toEqual([30, 10, 20]);
+        expect(
+          (updateEmission?.data as any).state.currentRound.boardCardsDetailed,
+        ).toEqual([
+          { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+          { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+          { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+        ]);
       });
 
       test('Debe rehidratar y enviar SOLO la mano privada al jugador que se reconecta', async () => {
@@ -274,6 +728,59 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Debe comprobar que la mano va hidratada
         const sentHand = (handEmissions[0].data as any).hand;
         expect(sentHand[0]).toHaveProperty('url_image', 'url10.png');
+        expect((handEmissions[0].data as any).board).toEqual({
+          id: `${ID_PREFIXES.BOARD}1`,
+          name: 'CLASSIC',
+          url_image: 'tablero_classic.png',
+        });
+      });
+
+      test('Debe incluir en recuperación solo la carta votada por el jugador reconectado', () => {
+        const recoveredState = buildRecoveredGameState(
+          {
+            lobbyCode: 'ROOM-VOTE-RECOVER',
+            status: 'playing',
+            mode: 'STANDARD',
+            players: ['p1', 'p2', 'p3'],
+            disconnectedPlayers: [],
+            scores: { p1: 0, p2: 0, p3: 0 },
+            hands: { p1: [], p2: [], p3: [] },
+            centralDeck: [],
+            discardPile: [],
+            boardRegistry: {},
+            isStarActive: false,
+            starExpiresAt: 0,
+            phaseVersion: 1,
+            isMinigameActive: false,
+            activeConflict: null,
+            cardUrls: {
+              10: 'url10.png',
+              20: 'url20.png',
+              30: 'url30.png',
+            },
+            phase: 'VOTING',
+            currentRound: {
+              storytellerId: 'p1',
+              clue: 'pista',
+              storytellerCardId: 10,
+              playedCards: { p1: 10, p2: 20, p3: 30 },
+              boardCards: [30, 10, 20],
+              votes: [{ voterId: 'p2', targetCardId: 20 }],
+            },
+          } as any,
+          'p2',
+        );
+
+        expect((recoveredState as any).currentRound.selectedVoteCardId).toBe(
+          `${ID_PREFIXES.CARD}20`,
+        );
+        expect((recoveredState as any).currentRound.boardCardsDetailed).toEqual(
+          [
+            { id: `${ID_PREFIXES.CARD}30`, url_image: 'url30.png' },
+            { id: `${ID_PREFIXES.CARD}10`, url_image: 'url10.png' },
+            { id: `${ID_PREFIXES.CARD}20`, url_image: 'url20.png' },
+          ],
+        );
       });
 
       test('Debe programar un nuevo Timeout en BullMQ si hay un cambio de fase', async () => {
@@ -299,7 +806,10 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         // Verifica que BullMQ recibe la tarea con el retraso correcto (45000ms para SUBMISSION)
         expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
           'phase-timeout',
-          { lobbyCode: 'ROOM-PHASE', expectedPhase: 'SUBMISSION' },
+          expect.objectContaining({
+            lobbyCode: 'ROOM-PHASE',
+            expectedPhase: 'SUBMISSION',
+          }),
           expect.objectContaining({ delay: 45000 }),
         );
       });
@@ -456,6 +966,11 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         { id: `${ID_PREFIXES.CARD}2`, url_image: 'img2.png' },
         { id: `${ID_PREFIXES.CARD}1`, url_image: 'img1.png' },
       ]);
+      expect((handEmission!.data as any).board).toEqual({
+        id: `${ID_PREFIXES.BOARD}1`,
+        name: 'CLASSIC',
+        url_image: 'tablero_classic.png',
+      });
     });
 
     test('Debe intercambiar puntos con otro jugador al azar en modo STELLA', async () => {
@@ -568,6 +1083,31 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       );
     });
 
+    test('triggerStarEvent no debe crear la estrella durante un desempate activo', async () => {
+      const mockState = {
+        lobbyCode: 'LOBBY1',
+        isStarActive: false,
+        isMinigameActive: true,
+        activeConflict: {
+          player1: 'player1',
+          player2: 'player2',
+          isDuel: false,
+        },
+        scores: {},
+      };
+      mockRedisRepo.getGame.mockResolvedValue(mockState);
+
+      const emissions = await gameService.triggerStarEvent('LOBBY1');
+
+      expect(emissions).toEqual([]);
+      expect(mockRedisRepo.saveGame).not.toHaveBeenCalled();
+      expect(gameTimeoutsQueue.add).not.toHaveBeenCalledWith(
+        'star-expiration',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
     test('claimStar debe dar 3 puntos y apagar la estrella si se pulsa a tiempo', async () => {
       const mockState = {
         lobbyCode: 'LOBBY1',
@@ -603,13 +1143,25 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
   // SISTEMA DE CONFLICTOS: DUELOS Y EMPATES
   // ==========================================
   describe('Sistema de Conflictos y Minijuegos', () => {
-    test('Debe bloquear acciones normales si hay un minijuego activo', async () => {
+    test('Debe ignorar NEXT_ROUND si hay un minijuego activo', async () => {
       mockRedisRepo.getGame.mockResolvedValueOnce({
         lobbyCode: 'ROOM-1',
         isMinigameActive: true, // Partida bloqueada
       });
 
       const action = { type: 'NEXT_ROUND', playerId: 'p1' } as any;
+      const emissions = await gameService.handleAction('ROOM-1', action);
+
+      expect(emissions).toEqual([]);
+    });
+
+    test('Debe bloquear otras acciones normales si hay un minijuego activo', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true, // Partida bloqueada
+      });
+
+      const action = { type: 'CAST_VOTE', playerId: 'p1', payload: {} } as any;
 
       await expect(gameService.handleAction('ROOM-1', action)).rejects.toThrow(
         'Hay un conflicto en curso. Espera a que termine el minijuego.',

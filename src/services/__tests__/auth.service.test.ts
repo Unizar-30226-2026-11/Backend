@@ -81,10 +81,11 @@ describe('AuthService - Pruebas Funciones', () => {
         coins: expect.any(Number),
         exp_level: expect.any(Number),
         progress_level: expect.any(Number),
-        state: expect.stringMatching(
-          /^(DISCONNECTED|CONNECTED|UNKNOWN|IN_GAME)$/,
-        ),
+        state: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
+        status: expect.stringMatching(/^(DISCONNECTED|CONNECTED)$/),
         personal: resultado?.personal === null ? null : expect.any(String),
+        personalStatus:
+          resultado?.personalStatus === null ? null : expect.any(String),
       });
     });
 

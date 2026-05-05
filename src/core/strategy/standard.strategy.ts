@@ -1,16 +1,19 @@
+import { RANDOM_EVENT_CONFIG } from '../../shared/constants/random-events';
 import {
   ActionCastVote,
   ActionSendStory,
   ActionSubmitCard,
   GameAction,
   GameState,
+  ModifierData,
   StandardGameState,
 } from '../../shared/types';
+import { parsePrefixedCardId } from '../../shared/utils';
 import { GameModeStrategy } from './core.strategy';
 
 export class StandardStrategy implements GameModeStrategy {
   /**
-   * Enrutador específico de las acciones del modo Standard.
+   * Enrutador especifico de las acciones del modo Standard.
    */
   public transition(state: GameState, action: GameAction): GameState {
     const stdState = state as StandardGameState;
@@ -24,38 +27,34 @@ export class StandardStrategy implements GameModeStrategy {
         return this.handleCastVote(stdState, action);
       case 'NEXT_ROUND':
         return this.handleNextRound(stdState);
-
-      // Resiliencia: Si alguien entra o sale, reevaluamos si la ronda debe avanzar
       case 'DISCONNECT_PLAYER':
       case 'RECONNECT_PLAYER':
       case 'KICK_PLAYER':
         this.checkPhaseAdvancement(stdState);
         return stdState;
-
       default:
-        // Las acciones globales (como CHANGE_MODE o INIT_GAME) ya las filtró el motor
-        throw new Error(`Acción ${action.type} no soportada en modo STANDARD.`);
+        throw new Error(`Accion ${action.type} no soportada en modo STANDARD.`);
     }
   }
-
-  // ==========================================
-  // LÓGICA DE ACCIONES DEL JUGADOR
-  // ==========================================
 
   private handleSendStory(
     state: StandardGameState,
     action: ActionSendStory,
   ): GameState {
     this.validatePlayerActive(state, action.playerId);
-    if (state.phase !== 'STORYTELLING')
-      throw new Error('No es fase de narración.');
-    if (state.currentRound.storytellerId !== action.playerId)
+    if (state.phase !== 'STORYTELLING') {
+      throw new Error('No es fase de narracion.');
+    }
+    if (state.currentRound.storytellerId !== action.playerId) {
       throw new Error('No eres el narrador.');
+    }
 
-    const cardId = action.payload.cardId;
+    const cardId = parsePrefixedCardId(action.payload.cardId) as number;
     const hand = state.hands[action.playerId];
 
-    if (!hand || !hand.includes(cardId)) throw new Error('Carta no válida.');
+    if (!hand || !hand.includes(cardId)) {
+      throw new Error('Carta no valida.');
+    }
 
     state.hands[action.playerId] = hand.filter((id) => id !== cardId);
     state.currentRound.clue = action.payload.clue;
@@ -72,16 +71,22 @@ export class StandardStrategy implements GameModeStrategy {
     action: ActionSubmitCard,
   ): GameState {
     this.validatePlayerActive(state, action.playerId);
-    if (state.phase !== 'SUBMISSION') throw new Error('No es fase de juego.');
-    if (state.currentRound.storytellerId === action.playerId)
-      throw new Error('El narrador ya jugó.');
-    if (state.currentRound.playedCards[action.playerId])
+    if (state.phase !== 'SUBMISSION') {
+      throw new Error('No es fase de juego.');
+    }
+    if (state.currentRound.storytellerId === action.playerId) {
+      throw new Error('El narrador ya jugo.');
+    }
+    if (state.currentRound.playedCards[action.playerId]) {
       throw new Error('Ya has jugado.');
+    }
 
-    const cardId = action.payload.cardId;
+    const cardId = parsePrefixedCardId(action.payload.cardId) as number;
     const hand = state.hands[action.playerId];
 
-    if (!hand || !hand.includes(cardId)) throw new Error('Carta no poseída.');
+    if (!hand || !hand.includes(cardId)) {
+      throw new Error('Carta no poseida.');
+    }
 
     state.hands[action.playerId] = hand.filter((id) => id !== cardId);
     state.currentRound.playedCards[action.playerId] = cardId;
@@ -95,11 +100,21 @@ export class StandardStrategy implements GameModeStrategy {
     action: ActionCastVote,
   ): GameState {
     this.validatePlayerActive(state, action.playerId);
-    if (state.phase !== 'VOTING') throw new Error('No es fase de votación.');
-    if (state.currentRound.storytellerId === action.playerId)
+    if (state.phase !== 'VOTING') {
+      throw new Error('No es fase de votacion.');
+    }
+    if (state.currentRound.storytellerId === action.playerId) {
       throw new Error('El narrador no vota.');
+    }
 
-    const targetCardId = action.payload.cardId;
+    const existingVote = state.currentRound.votes.find(
+      (vote) => vote.voterId === action.playerId,
+    );
+    if (existingVote) {
+      return state;
+    }
+
+    const targetCardId = parsePrefixedCardId(action.payload.cardId) as number;
 
     if (state.currentRound.playedCards[action.playerId] === targetCardId) {
       throw new Error('No puedes votar por tu propia carta.');
@@ -107,19 +122,12 @@ export class StandardStrategy implements GameModeStrategy {
     if (!Object.values(state.currentRound.playedCards).includes(targetCardId)) {
       throw new Error('Esa carta no existe en la mesa.');
     }
-    if (state.currentRound.votes.some((v) => v.voterId === action.playerId)) {
-      throw new Error('Ya has votado.');
-    }
 
     state.currentRound.votes.push({ voterId: action.playerId, targetCardId });
 
     this.checkPhaseAdvancement(state);
     return state;
   }
-
-  // ==========================================
-  // FLUJO DE FASES Y PUNTUACIÓN
-  // ==========================================
 
   private checkPhaseAdvancement(state: StandardGameState): void {
     const activePlayers = state.players.filter(
@@ -133,7 +141,6 @@ export class StandardStrategy implements GameModeStrategy {
 
       if (allSubmitted && activePlayers.length > 1) {
         const boardCards = Object.values(state.currentRound.playedCards);
-        // Barajado aleatorio para ocultar el autor
         for (let i = boardCards.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [boardCards[i], boardCards[j]] = [boardCards[j], boardCards[i]];
@@ -160,7 +167,9 @@ export class StandardStrategy implements GameModeStrategy {
         let gameFinished = false;
         for (const [pId, points] of Object.entries(roundScores)) {
           state.scores[pId] = (state.scores[pId] || 0) + points;
-          if (state.scores[pId] >= 30) gameFinished = true; // Condición de victoria de Dixit
+          if (state.scores[pId] >= 30) {
+            gameFinished = true;
+          }
         }
 
         if (gameFinished) {
@@ -225,7 +234,7 @@ export class StandardStrategy implements GameModeStrategy {
           );
           pointChanges[pId] = guessedRight ? 3 : 0;
         }
-        pointChanges[pId] += votesReceived[pId]; // Bono por engaño
+        pointChanges[pId] += votesReceived[pId];
       }
     }
 
@@ -247,16 +256,11 @@ export class StandardStrategy implements GameModeStrategy {
     state.winners = currentWinners;
   }
 
-  // ==========================================
-  // PREPARACIÓN DE RONDA (OBLIGATORIO POR INTERFAZ)
-  // ==========================================
-
   public handleNextRound(state: GameState): GameState {
-    // Aquí el estado puede venir genérico si acabamos de cambiar de modo,
-    // así que lo moldeamos a StandardGameState
     const stdState = state as StandardGameState;
+    const shouldApplyHandModifier =
+      this.shouldApplyHandModifier(stdState);
 
-    // 1. Limpieza de cartas jugadas a descartes si venimos de una ronda previa
     if (stdState.currentRound && stdState.currentRound.playedCards) {
       const played = Object.values(stdState.currentRound.playedCards);
       stdState.discardPile.push(...played);
@@ -266,11 +270,38 @@ export class StandardStrategy implements GameModeStrategy {
       (p) => !stdState.disconnectedPlayers.includes(p),
     );
 
-    // 2. Lógica de Reshuffle (Mazo Central)
-    if (stdState.centralDeck.length < activePlayers.length) {
+    stdState.activeModifiers = stdState.activeModifiers || {};
+    this.expireRoundModifiers(stdState);
+
+    if (shouldApplyHandModifier) {
+      this.applyRoundHandModifierToAllPlayers(stdState, activePlayers);
+    }
+
+    const targetHandSizes = this.buildTargetHandSizes(stdState, activePlayers);
+
+    for (let i = 0; i < activePlayers.length; i++) {
+      const pId = activePlayers[i];
+      if (!stdState.hands[pId]) {
+        stdState.hands[pId] = [];
+      }
+
+      while (stdState.hands[pId].length > targetHandSizes[pId]) {
+        const discardedCard = stdState.hands[pId].pop();
+        if (discardedCard !== undefined) {
+          stdState.discardPile.push(discardedCard);
+        }
+      }
+    }
+
+    const totalCardsNeeded = activePlayers.reduce((total, pId) => {
+      const currentHandSize = stdState.hands[pId]?.length ?? 0;
+      return total + Math.max(0, targetHandSizes[pId] - currentHandSize);
+    }, 0);
+
+    if (stdState.centralDeck.length < totalCardsNeeded) {
       if (
         stdState.centralDeck.length + stdState.discardPile.length >=
-        activePlayers.length
+        totalCardsNeeded
       ) {
         const newDeck = [...stdState.centralDeck, ...stdState.discardPile];
         for (let i = newDeck.length - 1; i > 0; i--) {
@@ -287,13 +318,9 @@ export class StandardStrategy implements GameModeStrategy {
       }
     }
 
-    // 3. Rellenar manos hasta 6
     for (let i = 0; i < activePlayers.length; i++) {
       const pId = activePlayers[i];
-      // Si la mano no existe (ej. recién iniciada la partida), la creamos
-      if (!stdState.hands[pId]) stdState.hands[pId] = [];
-
-      while (stdState.hands[pId].length < 6) {
+      while (stdState.hands[pId].length < targetHandSizes[pId]) {
         const drawnCard = stdState.centralDeck.pop();
         if (drawnCard !== undefined) {
           stdState.hands[pId].push(drawnCard);
@@ -303,8 +330,7 @@ export class StandardStrategy implements GameModeStrategy {
       }
     }
 
-    // 4. Determinar el próximo narrador
-    let nextStorytellerId = activePlayers[0]; // Fallback
+    let nextStorytellerId = activePlayers[0];
     if (stdState.currentRound && stdState.currentRound.storytellerId) {
       const currentIndex = stdState.players.indexOf(
         stdState.currentRound.storytellerId,
@@ -318,7 +344,6 @@ export class StandardStrategy implements GameModeStrategy {
       nextStorytellerId = stdState.players[nextIndex];
     }
 
-    // 5. Reiniciar y tipar el objeto currentRound para Standard
     stdState.currentRound = {
       storytellerId: nextStorytellerId,
       clue: null,
@@ -333,13 +358,77 @@ export class StandardStrategy implements GameModeStrategy {
     return stdState;
   }
 
-  // ==========================================
-  // UTILIDADES
-  // ==========================================
-
   private validatePlayerActive(state: StandardGameState, playerId: string) {
     if (state.disconnectedPlayers.includes(playerId)) {
-      throw new Error('Debes reconectarte antes de realizar una acción.');
+      throw new Error('Debes reconectarte antes de realizar una accion.');
     }
+  }
+
+  private shouldApplyHandModifier(state: StandardGameState): boolean {
+    return (
+      state.phase === 'SCORING' &&
+      !!state.currentRound?.storytellerId &&
+      state.currentRound.storytellerCardId !== null &&
+      Object.keys(state.currentRound.playedCards || {}).length > 0
+    );
+  }
+
+  private expireRoundModifiers(state: StandardGameState): void {
+    for (const [playerId, modifier] of Object.entries(
+      state.activeModifiers || {},
+    )) {
+      modifier.turnsLeft -= 1;
+      if (modifier.turnsLeft <= 0) {
+        delete state.activeModifiers[playerId];
+      }
+    }
+  }
+
+  private applyRoundHandModifierToAllPlayers(
+    state: StandardGameState,
+    activePlayers: string[],
+  ): void {
+    if (
+      activePlayers.length === 0 ||
+      Math.random() >= RANDOM_EVENT_CONFIG.HAND_MODIFIER_PROBABILITY
+    ) {
+      return;
+    }
+
+    const values = RANDOM_EVENT_CONFIG.HAND_MODIFIER_VALUES;
+    const selectedValue = values[Math.floor(Math.random() * values.length)];
+
+    for (let i = 0; i < activePlayers.length; i++) {
+      state.activeModifiers[activePlayers[i]] = {
+        type: 'HAND_LIMIT',
+        value: selectedValue,
+        turnsLeft: 1,
+      };
+    }
+  }
+
+  private buildTargetHandSizes(
+    state: StandardGameState,
+    activePlayers: string[],
+  ): Record<string, number> {
+    const targetHandSizes: Record<string, number> = {};
+
+    for (let i = 0; i < activePlayers.length; i++) {
+      const pId = activePlayers[i];
+      targetHandSizes[pId] = this.getTargetHandSize(
+        state.activeModifiers[pId],
+      );
+    }
+
+    return targetHandSizes;
+  }
+
+  private getTargetHandSize(modifier?: ModifierData): number {
+    const baseHandSize = 6;
+    if (!modifier || modifier.type !== 'HAND_LIMIT') {
+      return baseHandSize;
+    }
+
+    return Math.max(1, baseHandSize + modifier.value);
   }
 }
