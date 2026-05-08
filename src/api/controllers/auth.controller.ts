@@ -8,8 +8,23 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, username, password } = req.body;
 
-    // Validar que los campos requeridos existan
-    if (!email || !username || !password) {
+    // Validar que los campos requeridos existan y sean texto
+    if (
+      typeof email !== 'string' ||
+      typeof username !== 'string' ||
+      typeof password !== 'string'
+    ) {
+      res
+        .status(400)
+        .json({ message: 'Email, username y password son obligatorios.' });
+      return;
+    }
+
+    const lower_email = email.toLowerCase().trim();
+    const trimmedUsername = username.trim();
+    const trimmedPassword = password.trim();
+
+    if (!lower_email || !trimmedUsername || !trimmedPassword) {
       res
         .status(400)
         .json({ message: 'Email, username y password son obligatorios.' });
@@ -18,8 +33,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     // Verificar si el usuario ya existe en la base de datos
     const existingUser = await AuthService.findUserByEmailOrUsername(
-      email,
-      username,
+      lower_email,
+      trimmedUsername,
     );
     if (existingUser) {
       res
@@ -28,7 +43,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const newUser = await AuthService.registerUser(email, username, password);
+    const newUser = await AuthService.registerUser(
+      lower_email,
+      trimmedUsername,
+      trimmedPassword,
+    );
 
     // Retornar respuesta exitosa (201 Created)
     res.status(201).json({
@@ -52,13 +71,21 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body;
 
     // Validar datos de entrada
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      res.status(400).json({ message: 'Email y password son obligatorios.' });
+      return;
+    }
+
+    const lower_email = email.toLowerCase().trim();
+    const trimmedPassword = password.trim();
+
+    if (!lower_email || !trimmedPassword) {
       res.status(400).json({ message: 'Email y password son obligatorios.' });
       return;
     }
 
     // Intentar loguear al usuario usando el servicio
-    const authData = await AuthService.loginUser(email, password);
+    const authData = await AuthService.loginUser(lower_email, trimmedPassword);
 
     if (!authData) {
       res.status(401).json({ message: 'Credenciales inválidas.' });
