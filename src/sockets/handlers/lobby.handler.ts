@@ -144,6 +144,9 @@ export const registerLobbyHandlers = (
       // 1. Lo sacamos de Redis
       await LobbyService.leaveLobby(lobbyCode, userId);
 
+      // 1.1. Eliminamos su sesión activa para evitar auto-reconexión a este lobby
+      await UserRedisRepository.clearSession(userId);
+
       // 2. Lo sacamos de la sala de Socket.io
       socket.leave(lobbyCode);
 
