@@ -297,4 +297,49 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
 
     randomSpy.mockRestore();
   });
+
+  test('No finaliza el modo clasico al llegar a 30 puntos si no se alcanzó el final del tablero', () => {
+    const state = DixitEngine.transition(
+      {
+        lobbyCode: 'TEST-NO-EARLY-FINISH',
+        status: 'playing',
+        mode: 'STANDARD',
+        phase: 'VOTING',
+        players: ['P1', 'P2', 'P3', 'P4'],
+        disconnectedPlayers: [],
+        scores: { P1: 29, P2: 10, P3: 10, P4: 10 },
+        activeModifiers: {},
+        hands: { P1: [], P2: [], P3: [], P4: [] },
+        centralDeck: [],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 1,
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: {},
+        currentRound: {
+          storytellerId: 'P1',
+          clue: 'Pista final',
+          storytellerCardId: 10,
+          playedCards: { P1: 10, P2: 20, P3: 30, P4: 40 },
+          boardCards: [10, 20, 30, 40],
+          votes: [
+            { voterId: 'P2', targetCardId: 10 },
+            { voterId: 'P3', targetCardId: 20 },
+          ],
+        },
+      } as any,
+      {
+        type: 'CAST_VOTE',
+        playerId: 'P4',
+        payload: { cardId: 10 },
+      },
+    );
+
+    expect(state.scores['P1']).toBe(32);
+    expect(state.phase).toBe('SCORING');
+    expect(state.status).toBe('playing');
+  });
 });

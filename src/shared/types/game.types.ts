@@ -152,9 +152,11 @@ interface BaseGameState {
   isMinigameActive: boolean;
   /** Conflicto activo */
   activeConflict?: {
+    conflictId: string;
     player1: string;
     player2: string;
     isDuel: boolean;
+    startedAt: number;
     scores?: Record<string, number>;
   } | null;
   /** Diccionario en memoria con las URLs de las cartas de la partida */

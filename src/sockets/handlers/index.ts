@@ -74,6 +74,7 @@ export const setupSockets = (io: Server) => {
     // 2. LÓGICA DE AUTO-RECONEXIÓN AL INICIAR
     if (lobbyCode) {
       // Le unimos a la sala automáticamente sin esperar a que el Frontend haga emit('join')
+      await UserRedisRepository.saveSession(userId, lobbyCode);
       socket.join(lobbyCode);
       console.log(
         `${socket.user?.username} auto-reconectado a la sala: ${lobbyCode}`,

@@ -21,6 +21,8 @@ export const createLobby = async (
       isPrivate,
     });
 
+    await AuthService.saveUserSession(hostId, createdLobby.lobbyCode);
+
     res.status(201).json({
       message: 'Sala creada exitosamente. Listo para conexión WebSocket.',
       lobby: createdLobby,

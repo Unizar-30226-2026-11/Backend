@@ -203,8 +203,10 @@ export const initializeGameWorker = (io: Server) => {
             );
 
             // 1. Delegamos toda la lógica de validación al método de tu compañero
-            const emissions =
-              await gameService.forceUnlockMinigame(targetRoomId);
+            const emissions = await gameService.forceUnlockMinigame(
+              targetRoomId,
+              job.data.conflictId,
+            );
 
             // 2. Si el método nos devuelve emisiones, significa que estaba colgado y lo acaba de desbloquear
             if (emissions && emissions.length > 0) {

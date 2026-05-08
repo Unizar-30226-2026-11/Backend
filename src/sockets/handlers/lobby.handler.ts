@@ -2,6 +2,7 @@
 import { Server } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
+import { UserRedisRepository } from '../../repositories/user.repository';
 import { GameService } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
@@ -27,6 +28,7 @@ export const registerLobbyHandlers = (
 
       // Le unimos a la sala de Socket.io (Room)
       socket.join(lobbyCode);
+      await UserRedisRepository.saveSession(userId, lobbyCode);
       console.log(
         `[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`,
       );
