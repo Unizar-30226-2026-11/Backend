@@ -5,6 +5,7 @@ import {
   GameState,
   StellaGameState,
 } from '../../shared/types';
+import { STELLA_WORDS } from '../../shared/constants';
 import { parsePrefixedCardId, parsePrefixedCardIds } from '../../shared/utils';
 import { GameModeStrategy } from './core.strategy';
 
@@ -316,8 +317,7 @@ export class StellaStrategy implements GameModeStrategy {
 
     // Extraer 15 nuevas cartas para el tablero
     const newBoard = stellaState.centralDeck.splice(-15);
-    // Palabra estática de ejemplo para la ronda (Debería ser dinámica idealmente)
-    const roundWord = 'Bosque Encantado';
+    const roundWord = this.drawNextWord(stellaState);
 
     const roundScores: Record<string, number> = {};
     const successfulMarks: Record<string, number> = {};
@@ -345,6 +345,25 @@ export class StellaStrategy implements GameModeStrategy {
     stellaState.phase = 'STELLA_MARKING';
 
     return stellaState;
+  }
+
+  private drawNextWord(state: StellaGameState): string {
+    if (!Array.isArray(state.stellaWordDeck) || state.stellaWordDeck.length === 0) {
+      state.stellaWordDeck = this.buildShuffledWordDeck();
+    }
+
+    return state.stellaWordDeck.pop() ?? 'Misterio';
+  }
+
+  private buildShuffledWordDeck(): string[] {
+    const deck = [...STELLA_WORDS];
+
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+
+    return deck;
   }
 
   // ==========================================
