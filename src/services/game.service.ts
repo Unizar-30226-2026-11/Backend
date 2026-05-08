@@ -25,7 +25,7 @@ export const gameTimeoutsQueue = new Queue('game-timeouts', {
   connection: bullmqConnection,
 });
 
-const MINIGAME_DURATION_MS = 20 * 1000;
+const MINIGAME_DURATION_MS = 25 * 1000;
 const MINIGAME_FALLBACK_GRACE_MS = 5 * 1000;
 const MINIGAME_FALLBACK_DELAY_MS =
   MINIGAME_DURATION_MS + MINIGAME_FALLBACK_GRACE_MS;
