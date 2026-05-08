@@ -1201,7 +1201,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         player1: 'p1',
         player2: 'p2',
         type: 0,
-        duration: 15000,
+        duration: 22000,
         isDuel: true,
       });
 
@@ -1231,6 +1231,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         (e) => e.event === 'server:game:minigame_start',
       );
       expect(minigameEmission).toBeDefined();
+      expect((minigameEmission?.data as any).duration).toBe(22000);
       expect((minigameEmission?.data as any).isDuel).toBe(false); // Es empate, no duelo
     });
 

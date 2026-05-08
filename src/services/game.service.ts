@@ -25,6 +25,11 @@ export const gameTimeoutsQueue = new Queue('game-timeouts', {
   connection: bullmqConnection,
 });
 
+const MINIGAME_DURATION_MS = 22 * 1000;
+const MINIGAME_FALLBACK_GRACE_MS = 5 * 1000;
+const MINIGAME_FALLBACK_DELAY_MS =
+  MINIGAME_DURATION_MS + MINIGAME_FALLBACK_GRACE_MS;
+
 // ==========================================
 // TIPO DE RETORNO: Lista de emisiones que el handler ejecutará
 // ==========================================
@@ -67,6 +72,7 @@ export const buildRecoveredGameState = (
   delete (publicState as any).hands;
   delete (publicState as any).cardUrls;
   delete (publicState as any).pendingModeChangeOffer;
+  delete (publicState as any).stellaWordDeck;
 
   if (Array.isArray(publicState.currentRound?.boardCards)) {
     (publicState.currentRound as any).boardCardsDetailed = serializePublicCards(
@@ -457,12 +463,12 @@ export class GameService {
       await this.redisRepo.saveGame(lobbyCode, currentState);
 
       // Programamos la cancelación automática por si el frontend falla.
-      // Le damos los 15s que dura el juego + 5s de margen de red.
+      // Le damos lo que dura el juego + un margen de red.
       await gameTimeoutsQueue.add(
         'minigame-fallback',
         { lobbyCode: currentState.lobbyCode },
         {
-          delay: 20 * 1000,
+          delay: MINIGAME_FALLBACK_DELAY_MS,
           jobId: `conflict-${currentState.lobbyCode}-${Date.now()}`,
           removeOnComplete: true,
         },
@@ -476,7 +482,7 @@ export class GameService {
             player1: action.playerId,
             player2: targetId,
             type: Math.floor(Math.random() * 3), // Int 0-2
-            duration: 15000,
+            duration: MINIGAME_DURATION_MS,
             isDuel: true, // Bandera clave para saber cómo puntuar al final
           },
         },
@@ -1492,7 +1498,7 @@ export class GameService {
 
     // Configuración del minijuego
     const minigameType = Math.floor(Math.random() * 3); // Int 0-2 (Actualmente 3 tipos de juegos, eto esta hablado con Samu)
-    const duration = 15 * 1000; // Actualmente duran 15 segundos cada minijuego.
+    const duration = MINIGAME_DURATION_MS;
 
     // BLOQUEAMOS LA PARTIDA
     state.isMinigameActive = true;
@@ -1504,12 +1510,12 @@ export class GameService {
     };
 
     // Programamos la cancelación automática por si el frontend falla.
-    // Le damos los 15s que dura el juego + 5s de margen de red.
+    // Le damos lo que dura el juego + un margen de red.
     await gameTimeoutsQueue.add(
       'minigame-fallback',
       { lobbyCode: state.lobbyCode },
       {
-        delay: 20 * 1000,
+        delay: MINIGAME_FALLBACK_DELAY_MS,
         jobId: `conflict-${state.lobbyCode}-${Date.now()}`,
         removeOnComplete: true,
       },

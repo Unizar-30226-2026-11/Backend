@@ -177,6 +177,8 @@ export interface StellaGameState extends BaseGameState {
   mode: 'STELLA';
   phase: StellaPhase;
   currentRound: StellaRound;
+  /** Mazo interno de palabras Stella, barajado y consumido una por ronda */
+  stellaWordDeck: string[];
 }
 
 /**

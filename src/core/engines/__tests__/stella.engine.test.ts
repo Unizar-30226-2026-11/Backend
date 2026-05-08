@@ -22,6 +22,7 @@ describe('DixitEngine - Simulación de Ronda Completa (Stella)', () => {
       isStarActive: false,
       starExpiresAt: 0,
       isMinigameActive: false,
+      stellaWordDeck: ['Universo', 'Tormenta', 'Reflejo'],
       cardUrls: {},
       currentRound: {
         word: 'Universo',
@@ -167,5 +168,52 @@ describe('DixitEngine - Simulación de Ronda Completa (Stella)', () => {
       0,
     );
     expect(newStellaState.currentRound.roundScores['P1']).toBe(0);
+  });
+  test('NEXT_ROUND debe ir consumiendo distintas palabras del mazo Stella', () => {
+    let state: GameState = {
+      lobbyCode: 'TEST-STELLA-WORDS',
+      phaseVersion: 1,
+      status: 'playing',
+      mode: 'STELLA',
+      phase: 'SCORING',
+      players: ['P1', 'P2', 'P3'],
+      disconnectedPlayers: [],
+      winners: [],
+      scores: { P1: 0, P2: 0, P3: 0 },
+      hands: { P1: [], P2: [], P3: [] },
+      centralDeck: Array.from({ length: 45 }, (_, i) => i + 1),
+      discardPile: [],
+      boardRegistry: {},
+      activeModifiers: {},
+      isStarActive: false,
+      starExpiresAt: 0,
+      isMinigameActive: false,
+      stellaWordDeck: ['Aurora', 'Tormenta'],
+      cardUrls: {},
+      currentRound: {
+        word: null,
+        boardCards: [],
+        playerMarks: {},
+        revealedCards: [],
+        currentScoutId: null,
+        fallenPlayers: [],
+        inTheDarkPlayerId: null,
+        roundScores: { P1: 0, P2: 0, P3: 0 },
+        successfulMarks: { P1: 0, P2: 0, P3: 0 },
+      },
+    } as StellaGameState;
+
+    state = DixitEngine.transition(state, {
+      type: 'NEXT_ROUND',
+      playerId: 'system',
+    });
+    expect((state as StellaGameState).currentRound.word).toBe('Tormenta');
+
+    (state as StellaGameState).phase = 'SCORING';
+    state = DixitEngine.transition(state, {
+      type: 'NEXT_ROUND',
+      playerId: 'system',
+    });
+    expect((state as StellaGameState).currentRound.word).toBe('Aurora');
   });
 });
