@@ -8,6 +8,7 @@ import {
   GameAction,
   GameMode,
   GameState,
+  StandardGameState,
 } from '../../shared/types';
 import {
   GameModeStrategy,
@@ -165,9 +166,73 @@ export class DixitEngine {
     state: GameState,
     action: ActionDisconnect,
   ): void {
+    if (state.mode === 'STANDARD') {
+      this.applyStandardDisconnectFallback(
+        state as StandardGameState,
+        action.playerId,
+      );
+    }
+
     if (!state.disconnectedPlayers.includes(action.playerId)) {
       state.disconnectedPlayers.push(action.playerId);
     }
+  }
+
+  private static applyStandardDisconnectFallback(
+    state: StandardGameState,
+    playerId: string,
+  ): void {
+    const round = state.currentRound;
+    const hand = state.hands[playerId] || [];
+
+    if (state.phase === 'STORYTELLING' && round.storytellerId === playerId) {
+      const cardId = this.pickRandomCard(hand);
+      if (cardId !== null) {
+        // Si el narrador se cae, dejamos una jugada automÃ¡tica mÃ­nima para que
+        // la ronda no se quede bloqueada esperando una pista imposible.
+        round.clue = round.clue ?? 'Jugador desconectado';
+        round.storytellerCardId = cardId;
+        round.playedCards[playerId] = cardId;
+        state.phase = 'SUBMISSION';
+      }
+      return;
+    }
+
+    if (
+      state.phase === 'SUBMISSION' &&
+      round.storytellerId !== playerId &&
+      round.playedCards[playerId] === undefined
+    ) {
+      const cardId = this.pickRandomCard(hand);
+      if (cardId !== null) {
+        round.playedCards[playerId] = cardId;
+      }
+      return;
+    }
+
+    if (
+      state.phase === 'VOTING' &&
+      round.storytellerId !== playerId &&
+      !round.votes.some((vote) => vote.voterId === playerId)
+    ) {
+      const ownCardId = round.playedCards[playerId];
+      const validOptions = round.boardCards.filter((cardId) => cardId !== ownCardId);
+      if (validOptions.length > 0) {
+        const voteCardId =
+          validOptions[Math.floor(Math.random() * validOptions.length)];
+        round.votes.push({ voterId: playerId, targetCardId: voteCardId });
+      }
+    }
+  }
+
+  private static pickRandomCard(hand: number[]): number | null {
+    if (hand.length === 0) {
+      return null;
+    }
+
+    const randomIndex = Math.floor(Math.random() * hand.length);
+    const [cardId] = hand.splice(randomIndex, 1);
+    return cardId ?? null;
   }
 
   /**

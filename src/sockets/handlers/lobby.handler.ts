@@ -80,6 +80,7 @@ export const registerLobbyHandlers = (
       const emissions = await gameService.initializeGame(lobbyCode, lobby, {
         useDynamicPool,
       });
+      await LobbyService.updateStatus(lobbyCode, 'playing');
 
       // Ejecutamos las emisiones devueltas por el service
       for (const { room, event, data } of emissions) {
@@ -112,7 +113,8 @@ export const registerLobbyHandlers = (
         return;
       }
 
-      // Sacamos al jugador de la sala en Redis
+      // Sacamos al jugador de la sala en Redis, pero conservamos su sesión
+      // para permitir una reconexión real mientras la sala siga viva.
       await LobbyService.leaveLobby(lobbyCode, userId);
 
       // Informamos a los demás en la sala
