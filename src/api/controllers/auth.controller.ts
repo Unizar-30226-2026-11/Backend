@@ -114,7 +114,7 @@ export const refreshSession = async (
     const { id: userId, username } = req.user!;
 
     // 1. Delegamos la búsqueda en Redis al servicio
-    const lobbyCode = await AuthService.getUserActiveLobby(userId);
+    const lobbyCode = await AuthService.getValidUserActiveLobby(userId);
 
     // 2. Generamos el token usando el método centralizado
     const wsToken = await AuthService.generateLobbyToken(

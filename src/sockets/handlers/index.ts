@@ -3,7 +3,6 @@ import { Server, Socket } from 'socket.io';
 import { GameRedisRepository } from '../../repositories/game.repository';
 import { LobbyRedisRepository } from '../../repositories/lobby.repository';
 import { UserRedisRepository } from '../../repositories/user.repository';
-// Importa tu cola de timeouts (la que ya usas para el game.worker)
 import {
   buildRecoveredGameState,
   GameService,
@@ -16,9 +15,11 @@ import {
   AuthenticatedSocket,
   authenticateSocket,
 } from '../middleware/socket-auth.middleware';
+import { socketPresenceRegistry } from '../presence.registry';
 import { registerChatHandlers } from './chat.handler';
 import { registerGameHandlers } from './game.handlers';
 import { registerLobbyHandlers } from './lobby.handler';
+
 const connectedUsers = new Map<string, Socket>();
 
 export const setupSockets = (io: Server) => {
@@ -33,21 +34,16 @@ export const setupSockets = (io: Server) => {
       return;
     }
 
-    //Manejo de AFK
-    // 1. REGISTRAMOS SU ACTIVIDAD INICIAL
+    // Manejo de AFK
     await UserRedisRepository.updateLastActivity(userId);
-
-    // 2. ENCOLAMOS EL PRIMER CHEQUEO DE AFK PARA DENTRO DE 5 MINUTOS (300,000 ms)
     await gameTimeoutsQueue.add(
       'check-afk',
       { userId, lobbyCode, socketId: socket.id },
-      { delay: 1800000, jobId: `afk-${userId}-${Date.now()}` }, // jobId con Date.now() evita que BullMQ ignore el job si otro anterior con mismo ID sigue en "completed"
+      { delay: 1800000, jobId: `afk-${userId}-${Date.now()}` },
     );
     console.log(`AFK check job added for user ${userId} in lobby ${lobbyCode}`);
 
-    // 3. ACTUALIZAMOS LA FECHA CON CUALQUIER COSA QUE HAGA EL USUARIO
     socket.onAny(async (_eventName, ..._args) => {
-      // Opcional: Filtrar eventos de "ping" si tienes alguno que el cliente manda solo
       await UserRedisRepository.updateLastActivity(userId);
     });
 
@@ -55,7 +51,7 @@ export const setupSockets = (io: Server) => {
       `Socket conectado: ${socket.id} (Usuario: ${socket.user?.username})`,
     );
 
-    // 1. CONTROL MULTITAB: Echar a la pestaña anterior
+    // Control multitab: la sesión nueva reemplaza a la anterior.
     if (connectedUsers.has(userId)) {
       const oldSocket = connectedUsers.get(userId);
       if (oldSocket && oldSocket.id !== socket.id) {
@@ -67,24 +63,23 @@ export const setupSockets = (io: Server) => {
       }
     }
     connectedUsers.set(userId, socket);
+    socketPresenceRegistry.markConnected(userId);
 
-    // Unir a sala personal
     socket.join(userId);
 
-    // 2. LÓGICA DE AUTO-RECONEXIÓN AL INICIAR
+    // Lógica de auto-reconexión al iniciar.
     if (lobbyCode) {
-      // Le unimos a la sala automáticamente sin esperar a que el Frontend haga emit('join')
-      await UserRedisRepository.saveSession(userId, lobbyCode);
-      socket.join(lobbyCode);
-      console.log(
-        `${socket.user?.username} auto-reconectado a la sala: ${lobbyCode}`,
-      );
-
       try {
-        // Buscamos si la partida ya ha empezado
         const gameState = await GameRedisRepository.getGame(lobbyCode);
 
         if (gameState) {
+          // Conservamos la reconexión real, pero solo si la partida sigue viva.
+          await UserRedisRepository.saveSession(userId, lobbyCode);
+          socket.join(lobbyCode);
+          console.log(
+            `${socket.user?.username} auto-reconectado a la partida: ${lobbyCode}`,
+          );
+
           const gameService = new GameService(GameRedisRepository);
           const reconnectEmissions = await gameService.handleAction(lobbyCode, {
             type: 'RECONNECT_PLAYER',
@@ -102,8 +97,6 @@ export const setupSockets = (io: Server) => {
             await gameService.rearmCurrentPhaseTimeout(refreshedGameState);
           }
 
-          // Salvaguarda por compatibilidad: si por cualquier motivo no hubo
-          // emisiÃ³n privada, le enviamos la mano manualmente.
           if (
             !reconnectEmissions.some(
               (emission) =>
@@ -124,32 +117,47 @@ export const setupSockets = (io: Server) => {
             state: buildRecoveredGameState(refreshedGameState, userId),
           });
         } else {
-          // No hay partida, pero hay lobbyCode, así que está en la sala de espera
-          // El disconnect previo habrá borrado al jugador de Redis (leaveLobby),
-          // así que lo volvemos a insertar antes de emitir el estado a todos.
-          const updatedLobby = await LobbyService.joinLobby(
-            lobbyCode,
-            userId,
-          ).catch(() => LobbyRedisRepository.findByCode(lobbyCode));
+          const existingLobby =
+            await LobbyRedisRepository.findByCode(lobbyCode);
 
-          if (updatedLobby) {
-            // 1. Informamos al propio socket de su recuperación con el estado actualizado
-            socket.emit(SERVER_EVENTS.LOBBY_RECOVERED, {
-              lobbyCode,
-              lobby: updatedLobby,
-            });
-
-            // 2. Notificamos al RESTO de usuarios que el jugador se ha reconectado
-            socket.to(lobbyCode).emit(SERVER_EVENTS.LOBBY_PLAYER_RECONNECTED, {
-              user: socket.user?.username,
-              message: `${socket.user?.username} se ha reconectado a la sala.`,
-            });
-
-            // 3. Emitimos el estado COMPLETO (con el jugador incluido) a TODOS
-            io.to(lobbyCode).emit(
-              SERVER_EVENTS.LOBBY_STATE_UPDATED,
-              updatedLobby,
+          if (!existingLobby) {
+            // Si el JWT llega con una sala inexistente, limpiamos la sesiÃ³n
+            // en Redis para cortar el ciclo de reconexiÃ³n fantasma.
+            await UserRedisRepository.clearSession(userId);
+            console.log(
+              `${socket.user?.username} tení­a una sesión huérfana en ${lobbyCode}; se limpia.`,
             );
+          } else {
+            await UserRedisRepository.saveSession(userId, lobbyCode);
+            socket.join(lobbyCode);
+            console.log(
+              `${socket.user?.username} auto-reconectado a la sala: ${lobbyCode}`,
+            );
+
+            // Si el disconnect lo sacó del array de jugadores, lo reinsertamos.
+            const updatedLobby = await LobbyService.joinLobby(
+              lobbyCode,
+              userId,
+            ).catch(() => LobbyRedisRepository.findByCode(lobbyCode));
+
+            if (updatedLobby) {
+              socket.emit(SERVER_EVENTS.LOBBY_RECOVERED, {
+                lobbyCode,
+                lobby: updatedLobby,
+              });
+
+              socket
+                .to(lobbyCode)
+                .emit(SERVER_EVENTS.LOBBY_PLAYER_RECONNECTED, {
+                  user: socket.user?.username,
+                  message: `${socket.user?.username} se ha reconectado a la sala.`,
+                });
+
+              io.to(lobbyCode).emit(
+                SERVER_EVENTS.LOBBY_STATE_UPDATED,
+                updatedLobby,
+              );
+            }
           }
         }
       } catch (error) {
@@ -157,23 +165,20 @@ export const setupSockets = (io: Server) => {
       }
     }
 
-    // El evento explícito por si vienen de una navegación normal
     socket.on('joinLobbyRoom', (code: string) => {
       socket.join(code);
     });
 
-    // Registramos handlers
     registerChatHandlers(io, socket);
     registerLobbyHandlers(io, socket);
     registerGameHandlers(io, socket);
 
-    // 3. GESTIÓN DE DESCONEXIÓN
     socket.on('disconnect', () => {
       console.log(`Socket desconectado: ${socket.id}`);
-      // Borramos el socket del mapa en memoria, pero NO de Redis.
-      // Si hacen F5, Redis sigue teniendo su partida y se reconectarán en el siguiente ciclo.
+      // No tocamos Redis aquí­ para preservar la reconexiónn legítima.
       if (connectedUsers.get(userId)?.id === socket.id) {
         connectedUsers.delete(userId);
+        socketPresenceRegistry.markDisconnected(userId);
       }
     });
   });

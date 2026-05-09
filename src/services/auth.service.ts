@@ -4,7 +4,11 @@ import jwt from 'jsonwebtoken';
 import { SignOptions } from 'jsonwebtoken';
 
 import { prisma } from '../infrastructure/prisma';
-import { UserRedisRepository } from '../repositories';
+import {
+  GameRedisRepository,
+  LobbyRedisRepository,
+  UserRedisRepository,
+} from '../repositories';
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { normalizePresenceForClient } from '../shared/utils';
 
@@ -140,6 +144,29 @@ export const AuthService = {
       console.error('Error al obtener sesión de Redis-OM:', error);
       return null;
     }
+  },
+
+  /**
+   * Solo consideramos activa una sesiÃ³n si la sala o la partida siguen existiendo.
+   * Si no, limpiamos el puntero de Redis para cortar los "lobbies fantasma".
+   */
+  getValidUserActiveLobby: async (userId: string): Promise<string | null> => {
+    const lobbyCode = await AuthService.getUserActiveLobby(userId);
+    if (!lobbyCode) {
+      return null;
+    }
+
+    const [gameState, lobby] = await Promise.all([
+      GameRedisRepository.getGame(lobbyCode),
+      LobbyRedisRepository.findByCode(lobbyCode),
+    ]);
+
+    if (gameState || lobby) {
+      return lobbyCode;
+    }
+
+    await UserRedisRepository.clearSession(userId);
+    return null;
   },
 
   /**

@@ -342,4 +342,106 @@ describe('DixitEngine - Simulación de Ronda Completa (Standard)', () => {
     expect(state.phase).toBe('SCORING');
     expect(state.status).toBe('playing');
   });
+
+  test('Autocompleta la carta de un jugador desconectado durante SUBMISSION para no dejar menos cartas en mesa', () => {
+    const randomSpy = jest.spyOn(global.Math, 'random').mockReturnValue(0);
+
+    const state = DixitEngine.transition(
+      {
+        lobbyCode: 'TEST-DISCONNECT-SUBMISSION',
+        status: 'playing',
+        mode: 'STANDARD',
+        phase: 'SUBMISSION',
+        players: ['P1', 'P2', 'P3'],
+        disconnectedPlayers: [],
+        scores: { P1: 0, P2: 0, P3: 0 },
+        activeModifiers: {},
+        hands: {
+          P1: [11, 12, 13, 14, 15],
+          P2: [21, 22, 23, 24, 25],
+          P3: [31, 32, 33, 34, 35],
+        },
+        centralDeck: [100, 101, 102],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 1,
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: {},
+        currentRound: {
+          storytellerId: 'P1',
+          clue: 'Pista',
+          storytellerCardId: 10,
+          playedCards: { P1: 10, P2: 21 },
+          boardCards: [],
+          votes: [],
+        },
+      } as any,
+      {
+        type: 'DISCONNECT_PLAYER',
+        playerId: 'P3',
+      },
+    );
+
+    expect(state.disconnectedPlayers).toContain('P3');
+    expect((state.currentRound as any).playedCards['P3']).toBe(31);
+    expect(state.phase).toBe('VOTING');
+    expect(state.currentRound.boardCards).toEqual(
+      expect.arrayContaining([10, 21, 31]),
+    );
+
+    randomSpy.mockRestore();
+  });
+
+  test('Autocompleta el voto de un jugador desconectado durante VOTING para cerrar la ronda', () => {
+    const randomSpy = jest.spyOn(global.Math, 'random').mockReturnValue(0);
+
+    const state = DixitEngine.transition(
+      {
+        lobbyCode: 'TEST-DISCONNECT-VOTING',
+        status: 'playing',
+        mode: 'STANDARD',
+        phase: 'VOTING',
+        players: ['P1', 'P2', 'P3'],
+        disconnectedPlayers: [],
+        scores: { P1: 0, P2: 0, P3: 0 },
+        activeModifiers: {},
+        hands: { P1: [], P2: [], P3: [] },
+        centralDeck: [100, 101, 102],
+        discardPile: [],
+        boardRegistry: {},
+        isStarActive: false,
+        starExpiresAt: 0,
+        phaseVersion: 1,
+        isMinigameActive: false,
+        activeConflict: null,
+        cardUrls: {},
+        currentRound: {
+          storytellerId: 'P1',
+          clue: 'Pista',
+          storytellerCardId: 10,
+          playedCards: { P1: 10, P2: 21, P3: 31 },
+          boardCards: [10, 21, 31],
+          votes: [{ voterId: 'P2', targetCardId: 10 }],
+        },
+      } as any,
+      {
+        type: 'DISCONNECT_PLAYER',
+        playerId: 'P3',
+      },
+    );
+
+    expect(state.disconnectedPlayers).toContain('P3');
+    expect((state.currentRound as any).votes).toEqual(
+      expect.arrayContaining([
+        { voterId: 'P2', targetCardId: 10 },
+        { voterId: 'P3', targetCardId: 10 },
+      ]),
+    );
+    expect(state.phase).toBe('SCORING');
+
+    randomSpy.mockRestore();
+  });
 });

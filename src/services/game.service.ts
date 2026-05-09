@@ -4,6 +4,8 @@ import { Queue } from 'bullmq';
 import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
+import { LobbyRedisRepository } from '../repositories/lobby.repository';
+import { UserRedisRepository } from '../repositories/user.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
 import {
   PREDEFINED_DECK_KEYS,
@@ -779,6 +781,7 @@ export class GameService {
         });
       }
 
+      await this.cleanupFinishedLobby(lobbyCode, ranking.map(({ playerId }) => playerId));
       await this.redisRepo.deleteGame(lobbyCode);
       return emissions;
     } catch (error) {
@@ -786,6 +789,7 @@ export class GameService {
         `[GameService] Error al finalizar la partida ${lobbyCode}:`,
         error,
       );
+      await this.cleanupFinishedLobby(lobbyCode, ranking.map(({ playerId }) => playerId));
       await this.redisRepo.deleteGame(lobbyCode);
       return [
         {
@@ -800,6 +804,18 @@ export class GameService {
   // ==========================================
   // FUNCIONES AUXILIARES PRIVADAS
   // ==========================================
+
+  private async cleanupFinishedLobby(
+    lobbyCode: string,
+    playerIds: string[],
+  ): Promise<void> {
+    // Al terminar la partida eliminamos las referencias persistidas para que
+    // no queden sesiones/lobbies recuperables por error tras un refresh.
+    await Promise.allSettled([
+      ...playerIds.map((playerId) => UserRedisRepository.clearSession(playerId)),
+      LobbyRedisRepository.remove(lobbyCode),
+    ]);
+  }
 
   private async schedulePhaseTimeout(
     lobbyCode: string,
