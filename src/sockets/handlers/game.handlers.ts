@@ -49,8 +49,16 @@ function normalizeGamePayload(payload: unknown): unknown {
  * Esta función es el único punto del handler que habla con Socket.io.
  */
 function dispatchEmissions(io: Server, emissions: SocketEmission[]): void {
-  for (const { room, event, data } of emissions) {
-    io.to(room).emit(event, data);
+  for (const { room, event, data, delayMs } of emissions) {
+    if (delayMs && delayMs > 0) {
+      // Si tiene delay, esperamos antes de enviar el evento
+      setTimeout(() => {
+        io.to(room).emit(event, data);
+      }, delayMs);
+    } else {
+      // Si no tiene delay, se envía de forma instantánea
+      io.to(room).emit(event, data);
+    }
   }
 }
 
