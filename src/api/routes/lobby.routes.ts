@@ -10,7 +10,7 @@ import {
 import {
   validateCreateLobbyBody,
   validateIdParam,
-  validateNotInGame,
+  // validateNotInGame,
 } from '../middlewares';
 import { authenticate } from '../middlewares/auth.middleware';
 
@@ -280,7 +280,7 @@ router.get('/:lobbyCode', validateIdParam('lobbyCode'), getLobbyByCode);
 router.post(
   '/:lobbyCode/join',
   validateIdParam('lobbyCode'),
-  validateNotInGame,
+  // validateNotInGame,
   joinLobby,
 );
 
