@@ -261,9 +261,12 @@ export const validateNotInGame = async (
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
-  const lobbyCode = await AuthService.getUserActiveLobby(req.user!.id);
+  const userActiveLobby = await AuthService.getUserActiveLobby(req.user!.id);
+  const requestedLobbyCode = req.params.lobbyCode;
 
-  if (lobbyCode !== null) {
+  // Permitir si el usuario no está en ninguna sala
+  // o si ya está en la misma sala a la que intenta unirse
+  if (userActiveLobby !== null && userActiveLobby !== requestedLobbyCode) {
     res.status(400).json({
       message: 'El usuario ya está en una sala.',
     });

@@ -5,7 +5,12 @@ export const LobbyRedisRepository = {
    * Guarda o actualiza un lobby usando el lobbyCode como ID único.
    */
   async save(lobbyCode: string, data: any): Promise<void> {
-    await lobbyRepository.save(lobbyCode, data);
+    const dataToSave = {
+      ...data,
+      playerNames: JSON.stringify(data.playerNames || {}),
+    };
+
+    await lobbyRepository.save(lobbyCode, dataToSave);
   },
 
   /**
@@ -17,6 +22,7 @@ export const LobbyRedisRepository = {
       return null;
     }
 
+    lobby.playerNames = JSON.parse((lobby.playerNames as string) || '{}');
     return lobby;
   },
 
@@ -35,7 +41,12 @@ export const LobbyRedisRepository = {
       search = search.and('name').matches(query);
     }
 
-    return await search.return.all();
+    const lobbies = await search.return.all();
+
+    return lobbies.map((lobby) => {
+      lobby.playerNames = JSON.parse((lobby.playerNames as string) || '{}');
+      return lobby;
+    });
   },
 
   /**

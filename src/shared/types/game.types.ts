@@ -124,6 +124,8 @@ interface BaseGameState {
   status: 'playing' | 'finished';
   /** Lista de IDs de los jugadores presentes en la partida */
   players: string[];
+  /** Diccionario con los nombres de usuario de los jugadores { ID_Jugador: Username } */
+  playerNames: Record<string, string>;
   /** Lista de IDs de jugadores que han perdido la conexion */
   disconnectedPlayers: string[];
   /** Lista de IDs de los jugadores que han ganado */

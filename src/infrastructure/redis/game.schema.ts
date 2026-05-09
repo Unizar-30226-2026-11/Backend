@@ -12,6 +12,7 @@ export const gameStateSchema = new Schema(
 
     // Guardamos como strings para serializar los Record<> y tipos complejos de las interfaces
     players: { type: 'string[]' },
+    playerNames: { type: 'string' }, // JSON: Record<string, string>
     disconnectedPlayers: { type: 'string[]' },
     scores: { type: 'string' }, // JSON: Record<string, number>
     hands: { type: 'string' }, // JSON: Record<string, number[]>
