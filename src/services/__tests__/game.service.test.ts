@@ -19,6 +19,20 @@ jest.mock('../../infrastructure/redis', () => ({
   bullmqConnection: {},
 }));
 
+jest.mock('../../repositories/lobby.repository', () => ({
+  LobbyRedisRepository: {
+    remove: jest.fn(),
+    findByCode: jest.fn(),
+    save: jest.fn(),
+  },
+}));
+
+jest.mock('../../repositories/user.repository', () => ({
+  UserRedisRepository: {
+    clearSession: jest.fn(),
+  },
+}));
+
 jest.mock('../../infrastructure/prisma', () => ({
   prisma: {
     deck: { findMany: jest.fn() },

@@ -1,6 +1,7 @@
 // middlewares/validators.middleware.ts
 import { NextFunction, Request, Response } from 'express';
 
+import { AuthService } from '../../services';
 import {
   ID_PREFIXES,
   ID_SAFE_REGEX,
@@ -252,5 +253,21 @@ export const validateMinCardsInDeck = (
     return;
   }
 
+  next();
+};
+
+export const validateNotInGame = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  const lobbyCode = await AuthService.getUserActiveLobby(req.user!.id);
+
+  if (lobbyCode !== null) {
+    res.status(400).json({
+      message: 'El usuario ya está en una sala.',
+    });
+    return;
+  }
   next();
 };

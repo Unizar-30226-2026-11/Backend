@@ -7,7 +7,11 @@ import {
   getPublicLobbies,
   joinLobby,
 } from '../controllers';
-import { validateCreateLobbyBody, validateIdParam } from '../middlewares';
+import {
+  validateCreateLobbyBody,
+  validateIdParam,
+  validateNotInGame,
+} from '../middlewares';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -273,6 +277,11 @@ router.get('/:lobbyCode', validateIdParam('lobbyCode'), getLobbyByCode);
  *       500:
  *         description: Error interno del servidor
  */
-router.post('/:lobbyCode/join', validateIdParam('lobbyCode'), joinLobby);
+router.post(
+  '/:lobbyCode/join',
+  validateIdParam('lobbyCode'),
+  validateNotInGame,
+  joinLobby,
+);
 
 export default router;
