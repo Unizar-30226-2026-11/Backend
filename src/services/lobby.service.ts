@@ -1,8 +1,10 @@
 // service/lobby.service.ts
 // Simulacion de la base de datos asincrona para Lobbies
 
-import { LobbyRedisRepository } from '../repositories/lobby.repository';
 import { socketPresenceRegistry } from '../sockets/presence.registry';
+import { prisma } from '../infrastructure/prisma'; 
+import { LobbyRedisRepository } from '../repositories/lobby.repository'; // Importamos el client de Redis para posibles operaciones relacionadas con lobbies (cacheo, locks, etc.)
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { normalizeGameMode } from '../shared/utils';
 
 const generateLobbyCode = (): string => {
@@ -34,12 +36,21 @@ export const LobbyService = {
       throw new Error('INVALID_GAME_MODE');
     }
 
+    const hostNumericId = parseInt(data.hostId.replace(ID_PREFIXES.USER, ''), 10);
+    const hostUser = await prisma.user.findUnique({
+      where: { id_user: hostNumericId },
+      select: { username: true },
+    });
+
     const newLobbyData = {
       ...data,
       engine: normalizedEngine,
       lobbyCode,
       status: 'waiting',
       players: [data.hostId],
+      playerNames: {
+        [data.hostId]: hostUser?.username || `User_${hostNumericId}`,
+      },
     };
 
     await LobbyRedisRepository.save(lobbyCode, newLobbyData);
@@ -100,6 +111,16 @@ export const LobbyService = {
     if (lobby.players.includes(userId)) return lobby;
     if (lobby.players.length >= lobby.maxPlayers) throw new Error('LOBBY_FULL');
 
+    const numericId = parseInt(userId.replace(ID_PREFIXES.USER, ''), 10);
+    const user = await prisma.user.findUnique({
+      where: { id_user: numericId },
+      select: { username: true },
+    });
+
+
+    if (!lobby.playerNames) lobby.playerNames = {};
+    lobby.playerNames[userId] = user?.username || `User_${numericId}`;
+
     lobby.players.push(userId);
 
     await LobbyRedisRepository.save(code, lobby);
@@ -117,6 +138,12 @@ export const LobbyService = {
       (id: string) => id !== userId,
     );
 
+
+    if (lobby.playerNames && lobby.playerNames[userId]) {
+      delete lobby.playerNames[userId];
+    }
+    
+    // Si la sala se queda vacía, la borramos de Redis
     if (lobby.players.length === 0) {
       await LobbyRedisRepository.remove(code);
     } else {

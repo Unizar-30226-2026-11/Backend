@@ -13,6 +13,7 @@ export const lobbySchema = new Schema(
     engine: { type: 'string' }, // 'STANDARD' | 'STELLA'
     isPrivate: { type: 'boolean' },
     status: { type: 'string' },
+    playerNames: { type: 'string' },
   },
   {
     dataStructure: 'JSON',
