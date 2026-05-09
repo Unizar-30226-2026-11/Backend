@@ -1,3 +1,4 @@
+export * from './board-config';
 export * from './decks';
 export * from './id-prefixes';
 export * from './random-events';
