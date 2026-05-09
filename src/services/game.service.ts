@@ -109,7 +109,7 @@ export class GameService {
     lobbyData: any,
     options: { useDynamicPool: boolean } = { useDynamicPool: true },
   ): Promise<SocketEmission[]> {
-    const { engine: mode, players } = lobbyData;
+    const { engine: mode, players, playerNames } = lobbyData;
 
     // Obtener los IDs numéricos para buscar en Prisma
     const numericPlayerIds = players.map((p: string) => {
@@ -298,6 +298,7 @@ export class GameService {
       lobbyCode,
       mode: safeMode,
       players,
+      playerNames: playerNames || {},
       disconnectedPlayers: [],
       scores: {},
       hands: {},

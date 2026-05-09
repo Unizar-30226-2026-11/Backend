@@ -17,6 +17,7 @@ export const GameRedisRepository = {
       phaseVersion: (data.phaseVersion as number) || 1,
       players: data.players as string[],
       disconnectedPlayers: data.disconnectedPlayers as string[],
+      playerNames: JSON.parse((data.playerNames as string) || '{}'),
       // Parseo de seguridad con fallback a objeto vacío si falla
       scores: JSON.parse((data.scores as string) || '{}'),
       hands: JSON.parse((data.hands as string) || '{}'),
@@ -37,6 +38,7 @@ export const GameRedisRepository = {
     await gameRepository.save(lobbyCode, {
       ...state,
       // Serializamos los objetos complejos antes de guardar
+      playerNames: JSON.stringify(state.playerNames || {}),
       scores: JSON.stringify(state.scores),
       hands: JSON.stringify(state.hands),
       centralDeck: JSON.stringify(state.centralDeck),

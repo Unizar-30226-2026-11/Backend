@@ -1,7 +1,9 @@
 // service/lobby.service.ts
 // Simulación de la base de datos asíncrona para Lobbies
 
+import { prisma } from '../infrastructure/prisma'; 
 import { LobbyRedisRepository } from '../repositories/lobby.repository'; // Importamos el client de Redis para posibles operaciones relacionadas con lobbies (cacheo, locks, etc.)
+import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { normalizeGameMode } from '../shared/utils';
 
 const generateLobbyCode = (): string => {
@@ -33,12 +35,21 @@ export const LobbyService = {
       throw new Error('INVALID_GAME_MODE');
     }
 
+    const hostNumericId = parseInt(data.hostId.replace(ID_PREFIXES.USER, ''), 10);
+    const hostUser = await prisma.user.findUnique({
+      where: { id_user: hostNumericId },
+      select: { username: true },
+    });
+
     const newLobbyData = {
       ...data,
       engine: normalizedEngine,
       lobbyCode,
       status: 'waiting',
       players: [data.hostId],
+      playerNames: {
+        [data.hostId]: hostUser?.username || `User_${hostNumericId}`,
+      },
     };
 
     await LobbyRedisRepository.save(lobbyCode, newLobbyData);
@@ -84,6 +95,16 @@ export const LobbyService = {
 
     if (lobby.players.length >= lobby.maxPlayers) throw new Error('LOBBY_FULL');
 
+    const numericId = parseInt(userId.replace(ID_PREFIXES.USER, ''), 10);
+    const user = await prisma.user.findUnique({
+      where: { id_user: numericId },
+      select: { username: true },
+    });
+
+
+    if (!lobby.playerNames) lobby.playerNames = {};
+    lobby.playerNames[userId] = user?.username || `User_${numericId}`;
+
     //Se añade al jugador
     lobby.players.push(userId);
 
@@ -104,6 +125,11 @@ export const LobbyService = {
     lobby.players = (lobby.players as string[]).filter(
       (id: string) => id !== userId,
     );
+
+    if (lobby.playerNames && lobby.playerNames[userId]) {
+      delete lobby.playerNames[userId];
+    }
+    
     // Si la sala se queda vacía, la borramos de Redis
     if (lobby.players.length === 0) {
       await LobbyRedisRepository.remove(code);
