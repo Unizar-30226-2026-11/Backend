@@ -2,6 +2,7 @@
 import { Server } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
+import { UserRedisRepository } from '../../repositories/user.repository';
 import { GameService } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
@@ -27,6 +28,7 @@ export const registerLobbyHandlers = (
 
       // Le unimos a la sala de Socket.io (Room)
       socket.join(lobbyCode);
+      await UserRedisRepository.saveSession(userId, lobbyCode);
       console.log(
         `[Lobby] ${socket.user?.username} ha entrado al lobby ${lobbyCode}`,
       );
@@ -78,6 +80,7 @@ export const registerLobbyHandlers = (
       const emissions = await gameService.initializeGame(lobbyCode, lobby, {
         useDynamicPool,
       });
+      await LobbyService.updateStatus(lobbyCode, 'playing');
 
       // Ejecutamos las emisiones devueltas por el service
       for (const { room, event, data } of emissions) {
@@ -110,7 +113,8 @@ export const registerLobbyHandlers = (
         return;
       }
 
-      // Sacamos al jugador de la sala en Redis
+      // Sacamos al jugador de la sala en Redis, pero conservamos su sesión
+      // para permitir una reconexión real mientras la sala siga viva.
       await LobbyService.leaveLobby(lobbyCode, userId);
 
       // Informamos a los demás en la sala
@@ -141,6 +145,9 @@ export const registerLobbyHandlers = (
 
       // 1. Lo sacamos de Redis
       await LobbyService.leaveLobby(lobbyCode, userId);
+
+      // 1.1. Eliminamos su sesión activa para evitar auto-reconexión a este lobby
+      await UserRedisRepository.clearSession(userId);
 
       // 2. Lo sacamos de la sala de Socket.io
       socket.leave(lobbyCode);

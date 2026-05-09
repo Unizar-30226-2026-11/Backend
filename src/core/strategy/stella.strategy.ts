@@ -1,3 +1,4 @@
+import { BOARD_CONFIG, STELLA_WORDS } from '../../shared/constants';
 import {
   ActionStellaRevealMark,
   ActionStellaSubmitMarks,
@@ -5,7 +6,6 @@ import {
   GameState,
   StellaGameState,
 } from '../../shared/types';
-import { STELLA_WORDS } from '../../shared/constants';
 import { parsePrefixedCardId, parsePrefixedCardIds } from '../../shared/utils';
 import { GameModeStrategy } from './core.strategy';
 
@@ -228,9 +228,9 @@ export class StellaStrategy implements GameModeStrategy {
           state.scores[pId] += state.currentRound.roundScores[pId] || 0;
         });
 
-        // CONDICIÓN DE VICTORIA (El primer jugador en llegar a 30 puntos gana)
+        // CONDICIÓN DE VICTORIA (El primer jugador en llegar a x puntos gana)
         const gameFinished = Object.values(state.scores).some(
-          (score) => score >= 30,
+          (score) => score >= BOARD_CONFIG.MAX_SCORE,
         );
 
         if (gameFinished) {
@@ -348,7 +348,10 @@ export class StellaStrategy implements GameModeStrategy {
   }
 
   private drawNextWord(state: StellaGameState): string {
-    if (!Array.isArray(state.stellaWordDeck) || state.stellaWordDeck.length === 0) {
+    if (
+      !Array.isArray(state.stellaWordDeck) ||
+      state.stellaWordDeck.length === 0
+    ) {
       state.stellaWordDeck = this.buildShuffledWordDeck();
     }
 

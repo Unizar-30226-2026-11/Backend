@@ -19,6 +19,20 @@ jest.mock('../../infrastructure/redis', () => ({
   bullmqConnection: {},
 }));
 
+jest.mock('../../repositories/lobby.repository', () => ({
+  LobbyRedisRepository: {
+    remove: jest.fn(),
+    findByCode: jest.fn(),
+    save: jest.fn(),
+  },
+}));
+
+jest.mock('../../repositories/user.repository', () => ({
+  UserRedisRepository: {
+    clearSession: jest.fn(),
+  },
+}));
+
 jest.mock('../../infrastructure/prisma', () => ({
   prisma: {
     deck: { findMany: jest.fn() },
@@ -258,6 +272,29 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       expect(
         emissions.some((emission) => emission.event === 'server:game:ended'),
       ).toBe(true);
+    });
+
+    test('finalizeGame debe ser idempotente si la partida ya no existe', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce(null);
+
+      await expect(gameService.finalizeGame('ROOM-MISSING')).resolves.toEqual(
+        [],
+      );
+    });
+
+    test('finalizeGame no debe reprocesar una partida ya marcada como finalizada', async () => {
+      mockRedisRepo.getGame.mockResolvedValueOnce({
+        lobbyCode: 'ROOM-FINISHED-2',
+        status: 'finished',
+        phase: 'FINISHED',
+        scores: { u_1: 12, u_2: 8 },
+      });
+
+      const emissions = await gameService.finalizeGame('ROOM-FINISHED-2');
+
+      expect(emissions).toEqual([]);
+      expect(prisma.games_log.create).not.toHaveBeenCalled();
+      expect(mockRedisRepo.deleteGame).not.toHaveBeenCalled();
     });
 
     test('handleAction debe rechazar acciones sobre una partida ya finalizada', async () => {
@@ -1201,7 +1238,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         player1: 'p1',
         player2: 'p2',
         type: 0,
-        duration: 22000,
+        duration: 25000,
         isDuel: true,
       });
 
@@ -1231,7 +1268,7 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         (e) => e.event === 'server:game:minigame_start',
       );
       expect(minigameEmission).toBeDefined();
-      expect((minigameEmission?.data as any).duration).toBe(22000);
+      expect((minigameEmission?.data as any).duration).toBe(25000);
       expect((minigameEmission?.data as any).isDuel).toBe(false); // Es empate, no duelo
     });
 
@@ -1383,7 +1420,13 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
       const mockState = {
         lobbyCode: 'ROOM-1',
         isMinigameActive: true,
-        activeConflict: { player1: 'p1', player2: 'p2', isDuel: true },
+        activeConflict: {
+          conflictId: 'conflict-1',
+          player1: 'p1',
+          player2: 'p2',
+          isDuel: true,
+          startedAt: Date.now(),
+        },
         scores: { p1: 10, p2: 10 }, // Puntuaciones iniciales
       } as unknown as GameState;
       mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
@@ -1404,6 +1447,31 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         (e) => e.event === 'server:game:special_event',
       );
       expect((cancelEmission?.data as any).effect).toBe('CONFLICT_CANCELLED');
+    });
+
+    test('forceUnlockMinigame no debe cancelar un conflicto distinto si el fallback llega tarde', async () => {
+      const mockState = {
+        lobbyCode: 'ROOM-1',
+        isMinigameActive: true,
+        activeConflict: {
+          conflictId: 'conflict-new',
+          player1: 'p1',
+          player2: 'p2',
+          isDuel: true,
+          startedAt: Date.now(),
+        },
+        scores: { p1: 10, p2: 10 },
+      } as unknown as GameState;
+      mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
+
+      const emissions = await gameService.forceUnlockMinigame(
+        'ROOM-1',
+        'conflict-old',
+      );
+
+      expect(emissions).toEqual([]);
+      expect(mockState.isMinigameActive).toBe(true);
+      expect(mockRedisRepo.saveGame).not.toHaveBeenCalled();
     });
   });
 });

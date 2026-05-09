@@ -7,11 +7,54 @@ import { ID_PREFIXES } from '../shared/constants/id-prefixes';
 import { getCachedData, invalidateCache } from '../shared/utils/cache.utils';
 import { normalizePresenceForClient } from '../shared/utils/presence.utils';
 
+function parseRequiredPrefixedId(
+  value: string,
+  prefix: string,
+  errorMessage: string,
+): number {
+  if (typeof value !== 'string' || !value.startsWith(prefix)) {
+    throw new Error(errorMessage);
+  }
+
+  const numericId = parseInt(value.slice(prefix.length), 10);
+
+  if (Number.isNaN(numericId)) {
+    throw new Error(errorMessage);
+  }
+
+  return numericId;
+}
+
+function parseOptionalRequestId(requestId: string) {
+  if (typeof requestId !== 'string' || !requestId.startsWith(ID_PREFIXES.REQ)) {
+    return null;
+  }
+
+  const parts = requestId.slice(ID_PREFIXES.REQ.length).split('_');
+
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const id_user_1 = parseInt(parts[0], 10);
+  const id_user_2 = parseInt(parts[1], 10);
+
+  if (Number.isNaN(id_user_1) || Number.isNaN(id_user_2)) {
+    return null;
+  }
+
+  return { id_user_1, id_user_2 };
+}
+
 export const FriendService = {
   // Obtener lista de amigos de un usuario
   getConfirmedFriends: async (u_id: string) => {
     return getCachedData(`cache:friends:confirmed:${u_id}`, async () => {
-      const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
+      const id_user = parseRequiredPrefixedId(
+        u_id,
+        ID_PREFIXES.USER,
+        'INVALID_USER_ID',
+      );
 
       const friendships = await prisma.friendships.findMany({
         where: {
@@ -44,7 +87,11 @@ export const FriendService = {
   // Obtener solicitudes enviadas hacia el usuario (pendientes de aceptar)
   getPendingRequests: async (u_id: string) => {
     return getCachedData(`cache:friends:pending:${u_id}`, async () => {
-      const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
+      const id_user = parseRequiredPrefixedId(
+        u_id,
+        ID_PREFIXES.USER,
+        'INVALID_USER_ID',
+      );
 
       const pending = await prisma.friendships.findMany({
         where: {
@@ -64,8 +111,16 @@ export const FriendService = {
 
   // Comprobar la relacion entre dos usuarios. Devuelve un enum de Friendship_States.
   checkRelationshipStatus: async (u_id: string, target_u_id: string) => {
-    const id_user_1 = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
-    const id_user_2 = parseInt(target_u_id.replace(ID_PREFIXES.USER, ''));
+    const id_user_1 = parseRequiredPrefixedId(
+      u_id,
+      ID_PREFIXES.USER,
+      'INVALID_USER_ID',
+    );
+    const id_user_2 = parseRequiredPrefixedId(
+      target_u_id,
+      ID_PREFIXES.USER,
+      'INVALID_USER_ID',
+    );
 
     const friendship = await prisma.friendships.findFirst({
       where: {
@@ -83,8 +138,16 @@ export const FriendService = {
 
   // Crea una peticion de amistad pendiente del 1er al 2o usuario
   createFriendRequest: async (from_u_id: string, to_u_id: string) => {
-    const id_from_u = parseInt(from_u_id.replace(ID_PREFIXES.USER, ''));
-    const id_to_u = parseInt(to_u_id.replace(ID_PREFIXES.USER, ''));
+    const id_from_u = parseRequiredPrefixedId(
+      from_u_id,
+      ID_PREFIXES.USER,
+      'INVALID_USER_ID',
+    );
+    const id_to_u = parseRequiredPrefixedId(
+      to_u_id,
+      ID_PREFIXES.USER,
+      'INVALID_USER_ID',
+    );
 
     const newFriendship = await prisma.friendships.create({
       data: {
@@ -114,13 +177,10 @@ export const FriendService = {
     const ids = isArray ? req_id : [req_id];
 
     const validConditions = ids.reduce((acc: any[], currentId: string) => {
-      const parts = currentId.replace(ID_PREFIXES.REQ, '').split('_');
+      const parsedRequest = parseOptionalRequestId(currentId);
 
-      if (parts.length === 2) {
-        acc.push({
-          id_user_1: parseInt(parts[0]),
-          id_user_2: parseInt(parts[1]),
-        });
+      if (parsedRequest) {
+        acc.push(parsedRequest);
       }
       return acc;
     }, []);
@@ -153,13 +213,10 @@ export const FriendService = {
     const ids = Array.isArray(req_id) ? req_id : [req_id];
 
     const validRequests = ids.reduce((acc: any[], currentId: string) => {
-      const parts = currentId.replace(ID_PREFIXES.REQ, '').split('_');
+      const parsedRequest = parseOptionalRequestId(currentId);
 
-      if (parts.length === 2) {
-        acc.push({
-          id_user_1: parseInt(parts[0]),
-          id_user_2: parseInt(parts[1]),
-        });
+      if (parsedRequest) {
+        acc.push(parsedRequest);
       }
       return acc;
     }, []);
@@ -193,11 +250,15 @@ export const FriendService = {
   },
 
   removeFriend: async (u_id: string, f_id: string | string[]) => {
-    const id_user = parseInt(u_id.replace(ID_PREFIXES.USER, ''));
+    const id_user = parseRequiredPrefixedId(
+      u_id,
+      ID_PREFIXES.USER,
+      'INVALID_USER_ID',
+    );
     const f_ids_array = Array.isArray(f_id) ? f_id : [f_id];
 
     const friend_ids = f_ids_array.map((id) =>
-      parseInt(id.replace(ID_PREFIXES.USER, '')),
+      parseRequiredPrefixedId(id, ID_PREFIXES.USER, 'INVALID_USER_ID'),
     );
 
     if (friend_ids.length === 0) return false;
@@ -229,13 +290,10 @@ export const FriendService = {
     const ids = Array.isArray(req_id) ? req_id : [req_id];
 
     const validConditions = ids.reduce((acc: any[], currentId: string) => {
-      const parts = currentId.replace(ID_PREFIXES.REQ, '').split('_');
+      const parsedRequest = parseOptionalRequestId(currentId);
 
-      if (parts.length === 2) {
-        acc.push({
-          id_user_1: parseInt(parts[0]),
-          id_user_2: parseInt(parts[1]),
-        });
+      if (parsedRequest) {
+        acc.push(parsedRequest);
       }
       return acc;
     }, []);

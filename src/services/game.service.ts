@@ -4,6 +4,8 @@ import { Queue } from 'bullmq';
 import { prisma } from '../infrastructure/prisma';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
+import { LobbyRedisRepository } from '../repositories/lobby.repository';
+import { UserRedisRepository } from '../repositories/user.repository';
 import { BOARD_CONFIG } from '../shared/constants/board-config';
 import {
   PREDEFINED_DECK_KEYS,
@@ -25,10 +27,13 @@ export const gameTimeoutsQueue = new Queue('game-timeouts', {
   connection: bullmqConnection,
 });
 
-const MINIGAME_DURATION_MS = 22 * 1000;
+const MINIGAME_DURATION_MS = 25 * 1000;
 const MINIGAME_FALLBACK_GRACE_MS = 5 * 1000;
 const MINIGAME_FALLBACK_DELAY_MS =
   MINIGAME_DURATION_MS + MINIGAME_FALLBACK_GRACE_MS;
+
+const buildConflictId = (lobbyCode: string, player1: string, player2: string) =>
+  `${lobbyCode}:${player1}:${player2}:${Date.now()}`;
 
 // ==========================================
 // TIPO DE RETORNO: Lista de emisiones que el handler ejecutará
@@ -155,8 +160,8 @@ export class GameService {
         const randomDeck = decks[Math.floor(Math.random() * decks.length)];
         const deckCardIds = this.getUniqueCardIds(
           randomDeck.cards
-          .map((dc) => dc.user_card?.id_card)
-          .filter((id): id is number => typeof id === 'number'),
+            .map((dc) => dc.user_card?.id_card)
+            .filter((id): id is number => typeof id === 'number'),
         );
 
         centralDeck.push(...deckCardIds);
@@ -268,7 +273,10 @@ export class GameService {
       boardsById.set(board.id_board, board);
     });
 
-    const boardPayloadByUserId = new Map<number, typeof DEFAULT_BOARD_PAYLOAD>();
+    const boardPayloadByUserId = new Map<
+      number,
+      typeof DEFAULT_BOARD_PAYLOAD
+    >();
     userBoards.forEach((user) => {
       const board = user.active_board_id
         ? boardsById.get(user.active_board_id)
@@ -454,11 +462,19 @@ export class GameService {
     // Si la acción es iniciar el duelo, lo disparamos sin pasar por el motor
     if (action.type === 'RESOLVE_DUEL') {
       const targetId = (action as any).payload.targetId;
+      const conflictId = buildConflictId(
+        currentState.lobbyCode,
+        action.playerId,
+        targetId,
+      );
+      const startedAt = Date.now();
       currentState.isMinigameActive = true;
       currentState.activeConflict = {
+        conflictId,
         player1: action.playerId,
         player2: targetId,
         isDuel: true,
+        startedAt,
       };
       await this.redisRepo.saveGame(lobbyCode, currentState);
 
@@ -466,7 +482,7 @@ export class GameService {
       // Le damos lo que dura el juego + un margen de red.
       await gameTimeoutsQueue.add(
         'minigame-fallback',
-        { lobbyCode: currentState.lobbyCode },
+        { lobbyCode: currentState.lobbyCode, conflictId },
         {
           delay: MINIGAME_FALLBACK_DELAY_MS,
           jobId: `conflict-${currentState.lobbyCode}-${Date.now()}`,
@@ -677,7 +693,13 @@ export class GameService {
     // 2. Ordenar jugadores por puntuación (de mayor a menor)
     const currentState = await this.redisRepo.getGame(lobbyCode);
     if (!currentState) {
-      throw new Error('Partida no encontrada o expirada.');
+      return [];
+    }
+    if (
+      currentState.status === 'finished' &&
+      currentState.phase === 'FINISHED'
+    ) {
+      return [];
     }
     currentState.status = 'finished';
     currentState.phase = 'FINISHED';
@@ -759,6 +781,7 @@ export class GameService {
         });
       }
 
+      await this.cleanupFinishedLobby(lobbyCode, ranking.map(({ playerId }) => playerId));
       await this.redisRepo.deleteGame(lobbyCode);
       return emissions;
     } catch (error) {
@@ -766,6 +789,7 @@ export class GameService {
         `[GameService] Error al finalizar la partida ${lobbyCode}:`,
         error,
       );
+      await this.cleanupFinishedLobby(lobbyCode, ranking.map(({ playerId }) => playerId));
       await this.redisRepo.deleteGame(lobbyCode);
       return [
         {
@@ -780,6 +804,18 @@ export class GameService {
   // ==========================================
   // FUNCIONES AUXILIARES PRIVADAS
   // ==========================================
+
+  private async cleanupFinishedLobby(
+    lobbyCode: string,
+    playerIds: string[],
+  ): Promise<void> {
+    // Al terminar la partida eliminamos las referencias persistidas para que
+    // no queden sesiones/lobbies recuperables por error tras un refresh.
+    await Promise.allSettled([
+      ...playerIds.map((playerId) => UserRedisRepository.clearSession(playerId)),
+      LobbyRedisRepository.remove(lobbyCode),
+    ]);
+  }
 
   private async schedulePhaseTimeout(
     lobbyCode: string,
@@ -1397,9 +1433,7 @@ export class GameService {
         numericPlayerId: parseInt(playerId.replace(ID_PREFIXES.USER, '')),
       }))
       .filter(
-        (
-          player,
-        ): player is { playerId: string; numericPlayerId: number } =>
+        (player): player is { playerId: string; numericPlayerId: number } =>
           !Number.isNaN(player.numericPlayerId),
       );
 
@@ -1409,7 +1443,9 @@ export class GameService {
 
     const userBoards = await prisma.user.findMany({
       where: {
-        id_user: { in: numericPlayerIds.map((player) => player.numericPlayerId) },
+        id_user: {
+          in: numericPlayerIds.map((player) => player.numericPlayerId),
+        },
       },
       select: { id_user: true, active_board_id: true },
     });
@@ -1443,7 +1479,9 @@ export class GameService {
         (user) => user.id_user === numericPlayerId,
       )?.active_board_id;
       const board =
-        typeof activeBoardId === 'number' ? boardsById.get(activeBoardId) : null;
+        typeof activeBoardId === 'number'
+          ? boardsById.get(activeBoardId)
+          : null;
 
       boardPayloadByPlayerId.set(
         playerId,
@@ -1499,21 +1537,29 @@ export class GameService {
     // Configuración del minijuego
     const minigameType = Math.floor(Math.random() * 3); // Int 0-2 (Actualmente 3 tipos de juegos, eto esta hablado con Samu)
     const duration = MINIGAME_DURATION_MS;
+    const conflictId = buildConflictId(
+      state.lobbyCode,
+      movingPlayerId,
+      rivalId,
+    );
+    const startedAt = Date.now();
 
     // BLOQUEAMOS LA PARTIDA
     state.isMinigameActive = true;
 
     state.activeConflict = {
+      conflictId,
       player1: movingPlayerId,
       player2: rivalId,
       isDuel: false,
+      startedAt,
     };
 
     // Programamos la cancelación automática por si el frontend falla.
     // Le damos lo que dura el juego + un margen de red.
     await gameTimeoutsQueue.add(
       'minigame-fallback',
-      { lobbyCode: state.lobbyCode },
+      { lobbyCode: state.lobbyCode, conflictId },
       {
         delay: MINIGAME_FALLBACK_DELAY_MS,
         jobId: `conflict-${state.lobbyCode}-${Date.now()}`,
@@ -1596,11 +1642,17 @@ export class GameService {
    */
   public async forceUnlockMinigame(
     lobbyCode: string,
+    expectedConflictId?: string,
   ): Promise<SocketEmission[]> {
     const state = await this.redisRepo.getGame(lobbyCode);
 
     // Si ya no está activo, el frontend respondió a tiempo
     if (!state || !state.isMinigameActive) return [];
+    if (
+      expectedConflictId &&
+      state.activeConflict?.conflictId !== expectedConflictId
+    )
+      return [];
 
     // Limpiamos los bloqueos forzosamente
     state.isMinigameActive = false;

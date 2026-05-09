@@ -1,3 +1,4 @@
+import { BOARD_CONFIG } from '../../shared/constants/board-config';
 import { RANDOM_EVENT_CONFIG } from '../../shared/constants/random-events';
 import {
   ActionCastVote,
@@ -167,7 +168,7 @@ export class StandardStrategy implements GameModeStrategy {
         let gameFinished = false;
         for (const [pId, points] of Object.entries(roundScores)) {
           state.scores[pId] = (state.scores[pId] || 0) + points;
-          if (state.scores[pId] >= 30) {
+          if (state.scores[pId] >= BOARD_CONFIG.MAX_SCORE) {
             gameFinished = true;
           }
         }

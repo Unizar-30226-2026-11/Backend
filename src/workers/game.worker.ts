@@ -203,8 +203,10 @@ export const initializeGameWorker = (io: Server) => {
             );
 
             // 1. Delegamos toda la lógica de validación al método de tu compañero
-            const emissions =
-              await gameService.forceUnlockMinigame(targetRoomId);
+            const emissions = await gameService.forceUnlockMinigame(
+              targetRoomId,
+              job.data.conflictId,
+            );
 
             // 2. Si el método nos devuelve emisiones, significa que estaba colgado y lo acaba de desbloquear
             if (emissions && emissions.length > 0) {
@@ -239,7 +241,7 @@ export const initializeGameWorker = (io: Server) => {
 
             const now = Date.now();
             const timeSinceLastAction = now - lastActivity;
-            const AFK_LIMIT = 30 * 60 * 1000; // 30 minutos en milisegundos
+            const AFK_LIMIT = 1 * 60 * 1000; // 1 minuto en milisegundos
 
             if (timeSinceLastAction >= AFK_LIMIT) {
               console.log(
@@ -254,6 +256,7 @@ export const initializeGameWorker = (io: Server) => {
                   await gameService.kickPlayer(lobbyCode, userId);
                 }
                 await LobbyService.leaveLobby(lobbyCode, userId);
+                await UserRedisRepository.clearSession(userId);
                 // 2. Avisamos al resto de la sala
                 io.to(lobbyCode).emit('server:lobby:player_left', {
                   // o SOCKET_EVENTS.LOBBY_PLAYER_LEFT

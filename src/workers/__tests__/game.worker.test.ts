@@ -171,12 +171,12 @@ describe('Game Worker (game-timeouts)', () => {
 
       const job = {
         name: 'minigame-fallback',
-        data: { gameId: 'SALA1' },
+        data: { gameId: 'SALA1', conflictId: 'conflict-1' },
       };
 
       await workerCallback(job);
 
-      expect(mockForceUnlock).toHaveBeenCalledWith('SALA1');
+      expect(mockForceUnlock).toHaveBeenCalledWith('SALA1', 'conflict-1');
       expect(mockIo.to).toHaveBeenCalledWith('SALA1');
       expect(mockIo.emit).toHaveBeenCalledWith('special_event', {});
     });
