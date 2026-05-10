@@ -42,6 +42,7 @@ export interface SocketEmission {
   room: string; // ID de sala o de jugador (socket.id / lobbyCode)
   event: string;
   data: unknown;
+  delayMs?: number;
 }
 
 // Definimos la interfaz común para el Strategy Pattern
@@ -1632,6 +1633,7 @@ export class GameService {
         state: this.maskPrivateState(state),
         lastAction: 'CONFLICT_RESOLVED',
       },
+      delayMs: 5000
     });
 
     return emissions;
