@@ -31,6 +31,8 @@ const MINIGAME_DURATION_MS = 25 * 1000;
 const MINIGAME_FALLBACK_GRACE_MS = 5 * 1000;
 const MINIGAME_FALLBACK_DELAY_MS =
   MINIGAME_DURATION_MS + MINIGAME_FALLBACK_GRACE_MS;
+export const POST_MINIGAME_REVEAL_DELAY_MS = 2 * 1000;
+export const POST_MINIGAME_SCORING_DELAY_MS = 2 * 1000;
 
 const buildConflictId = (lobbyCode: string, player1: string, player2: string) =>
   `${lobbyCode}:${player1}:${player2}:${Date.now()}`;
@@ -78,6 +80,7 @@ export const buildRecoveredGameState = (
   delete (publicState as any).hands;
   delete (publicState as any).cardUrls;
   delete (publicState as any).pendingModeChangeOffer;
+  delete (publicState as any).postMinigameSequence;
   delete (publicState as any).stellaWordDeck;
 
   if (Array.isArray(publicState.currentRound?.boardCards)) {
@@ -451,6 +454,14 @@ export class GameService {
     }
 
     if (
+      currentState.postMinigameSequence &&
+      action.type === 'NEXT_ROUND' &&
+      action.playerId !== 'SYSTEM'
+    ) {
+      return [];
+    }
+
+    if (
       currentState.isMinigameActive &&
       action.type !== 'RECONNECT_PLAYER' &&
       action.type !== 'DISCONNECT_PLAYER' &&
@@ -471,6 +482,7 @@ export class GameService {
       );
       const startedAt = Date.now();
       currentState.isMinigameActive = true;
+      currentState.postMinigameSequence = null;
       currentState.activeConflict = {
         conflictId,
         player1: action.playerId,
@@ -839,7 +851,36 @@ export class GameService {
     );
   }
 
+  public async schedulePostMinigameSequence(
+    lobbyCode: string,
+    sequenceId: string,
+    phase: string,
+    phaseVersion: number,
+    stage: 'show-scoring' | 'next-round',
+    delayMs: number,
+  ): Promise<void> {
+    await gameTimeoutsQueue.add(
+      'post-minigame-sequence',
+      {
+        lobbyCode,
+        sequenceId,
+        expectedPhase: phase,
+        expectedPhaseVersion: phaseVersion,
+        stage,
+      },
+      {
+        delay: delayMs,
+        jobId: `post-minigame-${lobbyCode}-${sequenceId}-${stage}`,
+        removeOnComplete: true,
+      },
+    );
+  }
+
   public async rearmCurrentPhaseTimeout(state: GameState): Promise<void> {
+    if (state.phase === 'SCORING' && state.postMinigameSequence) {
+      return;
+    }
+
     const timeLimits: Record<string, number> = {
       STORYTELLING: 60000,
       SUBMISSION: 45000,
@@ -883,12 +924,7 @@ export class GameService {
     await this.redisRepo.saveGame(lobbyCode, state);
 
     if (state.phase === 'SCORING') {
-      await this.schedulePhaseTimeout(
-        lobbyCode,
-        state.phase,
-        10000,
-        state.phaseVersion ?? 1,
-      );
+      await this.rearmCurrentPhaseTimeout(state);
     }
 
     const emissions: SocketEmission[] = [];
@@ -938,12 +974,7 @@ export class GameService {
     await this.redisRepo.saveGame(lobbyCode, state);
 
     if (state.phase === 'SCORING') {
-      await this.schedulePhaseTimeout(
-        lobbyCode,
-        state.phase,
-        10000,
-        state.phaseVersion ?? 1,
-      );
+      await this.rearmCurrentPhaseTimeout(state);
     }
 
     return [
@@ -1548,6 +1579,7 @@ export class GameService {
 
     // BLOQUEAMOS LA PARTIDA
     state.isMinigameActive = true;
+    state.postMinigameSequence = null;
 
     state.activeConflict = {
       conflictId,
@@ -1610,7 +1642,21 @@ export class GameService {
     // 2. Liberamos la partida para que continúe
     state.isMinigameActive = false;
     state.activeConflict = null;
+    const sequenceId = `${lobbyCode}-${Date.now()}`;
+    state.postMinigameSequence = {
+      sequenceId,
+      phaseVersion: state.phaseVersion ?? 1,
+      stage: 'reveal',
+    };
     await this.redisRepo.saveGame(lobbyCode, state);
+    await this.schedulePostMinigameSequence(
+      lobbyCode,
+      sequenceId,
+      state.phase,
+      state.phaseVersion ?? 1,
+      'show-scoring',
+      POST_MINIGAME_REVEAL_DELAY_MS,
+    );
 
     // 3. Preparamos las notificaciones
     const emissions: SocketEmission[] = [];
@@ -1633,7 +1679,6 @@ export class GameService {
         state: this.maskPrivateState(state),
         lastAction: 'CONFLICT_RESOLVED',
       },
-      delayMs: 5000
     });
 
     return emissions;
@@ -1660,6 +1705,7 @@ export class GameService {
     // Limpiamos los bloqueos forzosamente
     state.isMinigameActive = false;
     state.activeConflict = null;
+    state.postMinigameSequence = null;
     await this.redisRepo.saveGame(lobbyCode, state);
 
     return [

@@ -33,6 +33,7 @@ export const gameStateSchema = new Schema(
 
     isMinigameActive: { type: 'boolean' },
     activeConflict: { type: 'string' }, // JSON: { player1, player2, isDuel }
+    postMinigameSequence: { type: 'string' }, // JSON: { sequenceId, phaseVersion, stage }
     activeBoardId: { type: 'number' },
   },
   { dataStructure: 'JSON' },

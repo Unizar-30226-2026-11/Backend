@@ -3,7 +3,11 @@ import { Worker } from 'bullmq';
 import { Server } from 'socket.io';
 
 import { GameRedisRepository } from '../../repositories/game.repository';
-import { GameService, gameTimeoutsQueue } from '../../services/game.service';
+import {
+  buildPublicGameState,
+  GameService,
+  gameTimeoutsQueue,
+} from '../../services/game.service';
 import { initializeGameWorker } from '../../workers/game.worker';
 
 // 1. Mockeamos las dependencias externas
@@ -24,6 +28,7 @@ describe('Game Worker (game-timeouts)', () => {
   let mockHandleAction: jest.Mock;
   let mockForceUnlock: jest.Mock;
   let mockQueueAdd: jest.Mock;
+  let mockSchedulePostMinigameSequence: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -50,12 +55,15 @@ describe('Game Worker (game-timeouts)', () => {
     mockHandleAction = jest.fn().mockResolvedValue([]);
     mockForceUnlock = jest.fn().mockResolvedValue([]);
     mockQueueAdd = jest.fn().mockResolvedValue(undefined);
+    mockSchedulePostMinigameSequence = jest.fn().mockResolvedValue(undefined);
 
     (gameTimeoutsQueue as any).add = mockQueueAdd;
+    (buildPublicGameState as jest.Mock).mockImplementation((state) => state);
 
     (GameService as unknown as jest.Mock).mockImplementation(() => ({
       handleAction: mockHandleAction,
       forceUnlockMinigame: mockForceUnlock,
+      schedulePostMinigameSequence: mockSchedulePostMinigameSequence,
     }));
 
     initializeGameWorker(mockIo as unknown as Server);
@@ -138,6 +146,33 @@ describe('Game Worker (game-timeouts)', () => {
         }),
       );
     });
+
+    it('Debe ignorar el timeout de scoring si la secuencia post-minijuego sigue activa', async () => {
+      (GameRedisRepository.getGame as jest.Mock).mockResolvedValue({
+        phase: 'SCORING',
+        phaseVersion: 3,
+        isMinigameActive: false,
+        postMinigameSequence: {
+          sequenceId: 'seq-1',
+          phaseVersion: 3,
+          stage: 'reveal',
+        },
+      });
+
+      const job = {
+        name: 'phase-timeout',
+        data: {
+          lobbyCode: 'SALA1',
+          expectedPhase: 'SCORING',
+          expectedPhaseVersion: 3,
+        },
+      };
+
+      await workerCallback(job);
+
+      expect(mockHandleAction).not.toHaveBeenCalled();
+      expect(mockQueueAdd).not.toHaveBeenCalled();
+    });
   });
 
   describe('Job: star-expiration', () => {
@@ -179,6 +214,88 @@ describe('Game Worker (game-timeouts)', () => {
       expect(mockForceUnlock).toHaveBeenCalledWith('SALA1', 'conflict-1');
       expect(mockIo.to).toHaveBeenCalledWith('SALA1');
       expect(mockIo.emit).toHaveBeenCalledWith('special_event', {});
+    });
+  });
+
+  describe('Job: post-minigame-sequence', () => {
+    it('Debe emitir el snapshot de scoring y programar el siguiente paso', async () => {
+      const mockState = {
+        lobbyCode: 'SALA1',
+        phase: 'SCORING',
+        phaseVersion: 4,
+        isMinigameActive: false,
+        postMinigameSequence: {
+          sequenceId: 'seq-1',
+          phaseVersion: 4,
+          stage: 'reveal',
+        },
+      };
+      (GameRedisRepository.getGame as jest.Mock).mockResolvedValue(mockState);
+
+      await workerCallback({
+        name: 'post-minigame-sequence',
+        data: {
+          lobbyCode: 'SALA1',
+          sequenceId: 'seq-1',
+          expectedPhase: 'SCORING',
+          expectedPhaseVersion: 4,
+          stage: 'show-scoring',
+        },
+      });
+
+      expect(GameRedisRepository.saveGame).toHaveBeenCalledWith(
+        'SALA1',
+        expect.objectContaining({
+          postMinigameSequence: expect.objectContaining({ stage: 'scoring' }),
+        }),
+      );
+      expect(mockIo.emit).toHaveBeenCalledWith(
+        'server:game:state_updated',
+        expect.objectContaining({ lastAction: 'SCORING' }),
+      );
+      expect(mockSchedulePostMinigameSequence).toHaveBeenCalledWith(
+        'SALA1',
+        'seq-1',
+        'SCORING',
+        4,
+        'next-round',
+        2000,
+      );
+    });
+
+    it('Debe avanzar a la siguiente ronda una sola vez en el segundo paso', async () => {
+      const mockState = {
+        lobbyCode: 'SALA1',
+        phase: 'SCORING',
+        phaseVersion: 4,
+        isMinigameActive: false,
+        postMinigameSequence: {
+          sequenceId: 'seq-1',
+          phaseVersion: 4,
+          stage: 'scoring',
+        },
+      };
+      (GameRedisRepository.getGame as jest.Mock).mockResolvedValue(mockState);
+
+      await workerCallback({
+        name: 'post-minigame-sequence',
+        data: {
+          lobbyCode: 'SALA1',
+          sequenceId: 'seq-1',
+          expectedPhase: 'SCORING',
+          expectedPhaseVersion: 4,
+          stage: 'next-round',
+        },
+      });
+
+      expect(GameRedisRepository.saveGame).toHaveBeenCalledWith(
+        'SALA1',
+        expect.objectContaining({ postMinigameSequence: null }),
+      );
+      expect(mockHandleAction).toHaveBeenCalledWith('SALA1', {
+        type: 'NEXT_ROUND',
+        playerId: 'SYSTEM',
+      });
     });
   });
 });

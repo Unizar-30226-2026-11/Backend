@@ -28,6 +28,9 @@ export const GameRedisRepository = {
       activeModifiers: JSON.parse((data.activeModifiers as string) || '{}'),
       boardRegistry: JSON.parse((data.boardRegistry as string) || '{}'),
       activeConflict: JSON.parse((data.activeConflict as string) || 'null'),
+      postMinigameSequence: JSON.parse(
+        (data.postMinigameSequence as string) || 'null',
+      ),
     } as unknown as GameState;
   },
 
@@ -48,6 +51,7 @@ export const GameRedisRepository = {
       activeModifiers: JSON.stringify(state.activeModifiers || {}),
       boardRegistry: JSON.stringify(state.boardRegistry),
       activeConflict: JSON.stringify(state.activeConflict ?? null),
+      postMinigameSequence: JSON.stringify(state.postMinigameSequence ?? null),
     });
   },
 
