@@ -6,6 +6,7 @@ import { UserRedisRepository } from '../../repositories/user.repository';
 import { GameService } from '../../services/game.service';
 import { LobbyService } from '../../services/lobby.service';
 import { LOBBY_MIN_PLAYERS } from '../../shared/constants';
+import { dispatchEmissions } from '../dispatch-emissions';
 import { CLIENT_EVENTS, SERVER_EVENTS, SOCKET_EVENTS } from '../events';
 import { LobbyStartPayload } from '../events/types';
 import { AuthenticatedSocket } from '../middleware/socket-auth.middleware';
@@ -83,9 +84,7 @@ export const registerLobbyHandlers = (
       await LobbyService.updateStatus(lobbyCode, 'playing');
 
       // Ejecutamos las emisiones devueltas por el service
-      for (const { room, event, data } of emissions) {
-        io.to(room).emit(event, data);
-      }
+      dispatchEmissions(io, emissions);
 
       //Avisamos a los clientes para que cambien su pantalla al tablero de juego
       io.to(lobbyCode).emit(SOCKET_EVENTS.GAME_STARTED, { lobbyCode });
@@ -107,9 +106,7 @@ export const registerLobbyHandlers = (
           playerId: userId,
         } as any);
 
-        for (const { room, event, data } of emissions) {
-          io.to(room).emit(event, data);
-        }
+        dispatchEmissions(io, emissions);
         return;
       }
 

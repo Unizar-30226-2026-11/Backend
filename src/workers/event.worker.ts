@@ -6,6 +6,7 @@ import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { GameService } from '../services/game.service';
 import { RANDOM_EVENT_CONFIG } from '../shared/constants';
+import { dispatchEmissions } from '../sockets/dispatch-emissions';
 
 export const initializeEventWorker = (io: Server) => {
   // Instanciamos el servicio como lo hace tu compañero
@@ -38,9 +39,7 @@ export const initializeEventWorker = (io: Server) => {
 
               // 4. Procesamos y enviamos las emisiones por Sockets
               if (emissions && emissions.length > 0) {
-                for (const { room, event, data } of emissions) {
-                  io.to(room).emit(event, data);
-                }
+                dispatchEmissions(io, emissions);
               }
             }
           }

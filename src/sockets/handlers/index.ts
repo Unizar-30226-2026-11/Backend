@@ -16,6 +16,7 @@ import {
   authenticateSocket,
 } from '../middleware/socket-auth.middleware';
 import { socketPresenceRegistry } from '../presence.registry';
+import { dispatchEmissions } from '../dispatch-emissions';
 import { registerChatHandlers } from './chat.handler';
 import { registerGameHandlers } from './game.handlers';
 import { registerLobbyHandlers } from './lobby.handler';
@@ -86,9 +87,7 @@ export const setupSockets = (io: Server) => {
             playerId: userId,
           } as any);
 
-          for (const { room, event, data } of reconnectEmissions) {
-            io.to(room).emit(event, data);
-          }
+          dispatchEmissions(io, reconnectEmissions);
 
           const refreshedGameState =
             (await GameRedisRepository.getGame(lobbyCode)) || gameState;

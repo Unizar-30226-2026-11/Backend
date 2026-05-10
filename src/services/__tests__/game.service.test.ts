@@ -1277,6 +1277,8 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         const mockState = {
           lobbyCode: 'ROOM-1',
           isMinigameActive: true,
+          phase: 'SCORING',
+          phaseVersion: 4,
           scores: { p1: 10, p2: 5 },
         } as unknown as GameState;
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
@@ -1292,17 +1294,44 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         expect(mockState.scores['p1']).toBe(12); // 10 + 2
         expect(mockState.scores['p2']).toBe(3); // 5 - 2
         expect(mockState.isMinigameActive).toBe(false); // Desbloqueado
+        expect(mockState.postMinigameSequence).toEqual({
+          sequenceId: expect.any(String),
+          phaseVersion: 4,
+          stage: 'reveal',
+        });
+        expect(gameTimeoutsQueue.add).toHaveBeenCalledWith(
+          'post-minigame-sequence',
+          expect.objectContaining({
+            lobbyCode: 'ROOM-1',
+            expectedPhase: 'SCORING',
+            expectedPhaseVersion: 4,
+            stage: 'show-scoring',
+          }),
+          expect.objectContaining({
+            delay: 2000,
+            removeOnComplete: true,
+          }),
+        );
 
         const specialEvent = emissions.find(
           (e) => e.event === 'server:game:special_event',
         );
         expect((specialEvent?.data as any).effect).toBe('CONFLICT_RESOLVED');
+        const stateUpdated = emissions.find(
+          (e) => e.event === 'server:game:state_updated',
+        );
+        expect((stateUpdated?.data as any).lastAction).toBe(
+          'CONFLICT_RESOLVED',
+        );
+        expect(stateUpdated?.delayMs).toBeUndefined();
       });
 
       test('Debe aplicar puntuación de Empate (+1 / 0) y desbloquear partida', async () => {
         const mockState = {
           lobbyCode: 'ROOM-1',
           isMinigameActive: true,
+          phase: 'SCORING',
+          phaseVersion: 7,
           scores: { p1: 10, p2: 10 },
         } as unknown as GameState;
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);
@@ -1313,12 +1342,15 @@ describe('GameService - Suite Completa de Tablero, Powerups y Minijuegos', () =>
         expect(mockState.scores['p1']).toBe(11); // 10 + 1
         expect(mockState.scores['p2']).toBe(10); // 10 + 0
         expect(mockState.isMinigameActive).toBe(false); // Desbloqueado
+        expect(mockState.postMinigameSequence?.stage).toBe('reveal');
       });
 
       test('No debe bajar de 0 puntos a un jugador en un Duelo', async () => {
         const mockState = {
           lobbyCode: 'ROOM-1',
           isMinigameActive: true,
+          phase: 'SCORING',
+          phaseVersion: 2,
           scores: { p1: 10, p2: 1 }, // p2 solo tiene 1 punto
         } as unknown as GameState;
         mockRedisRepo.getGame.mockResolvedValueOnce(mockState);

@@ -5,9 +5,15 @@ import { Server } from 'socket.io';
 import { bullmqConnection } from '../infrastructure/redis';
 import { GameRedisRepository } from '../repositories/game.repository';
 import { UserRedisRepository } from '../repositories/user.repository';
-import { GameService, gameTimeoutsQueue } from '../services/game.service';
+import {
+  buildPublicGameState,
+  GameService,
+  gameTimeoutsQueue,
+  POST_MINIGAME_SCORING_DELAY_MS,
+} from '../services/game.service';
 import { LobbyService } from '../services/lobby.service';
-import { GameAction } from '../shared/types/game.types';
+import { GameAction, GameState } from '../shared/types/game.types';
+import { dispatchEmissions } from '../sockets/dispatch-emissions';
 
 export const initializeGameWorker = (io: Server) => {
   const gameService = new GameService(GameRedisRepository);
@@ -63,6 +69,13 @@ export const initializeGameWorker = (io: Server) => {
                   jobId: `timeout-${targetRoomId}-${expectedPhase}-${Date.now()}`,
                   removeOnComplete: true,
                 },
+              );
+              return;
+            }
+
+            if (expectedPhase === 'SCORING' && state.postMinigameSequence) {
+              console.log(
+                `[Worker] La sala ${targetRoomId} sigue en secuencia post-minijuego. Ignorando timeout de scoring.`,
               );
               return;
             }
@@ -159,9 +172,7 @@ export const initializeGameWorker = (io: Server) => {
                 action,
               );
               if (emissions && emissions.length > 0) {
-                for (const { room, event, data } of emissions) {
-                  io.to(room).emit(event, data);
-                }
+                dispatchEmissions(io, emissions);
               }
             }
             break;
@@ -213,9 +224,7 @@ export const initializeGameWorker = (io: Server) => {
               console.log(
                 `[Worker] ¡Alerta! Minijuego colgado en ${targetRoomId}. Desbloqueando forzosamente y avisando a los jugadores...`,
               );
-              for (const { room, event, data } of emissions) {
-                io.to(room).emit(event, data);
-              }
+              dispatchEmissions(io, emissions);
             } else {
               // Si nos devuelve un array vacío, significa que el frontend sí contestó a tiempo y el minijuego ya estaba en false
               console.log(
@@ -224,6 +233,70 @@ export const initializeGameWorker = (io: Server) => {
             }
 
             break;
+          }
+
+          case 'post-minigame-sequence': {
+            const state = (await GameRedisRepository.getGame(
+              targetRoomId,
+            )) as GameState | null;
+            if (!state) return;
+
+            const sequence = state.postMinigameSequence;
+            const stage = job.data.stage as 'show-scoring' | 'next-round';
+
+            if (
+              !sequence ||
+              sequence.sequenceId !== job.data.sequenceId ||
+              state.phase !== expectedPhase ||
+              state.phaseVersion !== expectedPhaseVersion ||
+              state.isMinigameActive
+            ) {
+              return;
+            }
+
+            if (stage === 'show-scoring') {
+              if (sequence.stage !== 'reveal') {
+                return;
+              }
+
+              state.postMinigameSequence = {
+                ...sequence,
+                stage: 'scoring',
+              };
+              await GameRedisRepository.saveGame(targetRoomId, state);
+              dispatchEmissions(io, [
+                {
+                  room: targetRoomId,
+                  event: 'server:game:state_updated',
+                  data: {
+                    state: buildPublicGameState(state),
+                    lastAction: 'SCORING',
+                  },
+                },
+              ]);
+              await gameService.schedulePostMinigameSequence(
+                targetRoomId,
+                sequence.sequenceId,
+                state.phase,
+                state.phaseVersion ?? 1,
+                'next-round',
+                POST_MINIGAME_SCORING_DELAY_MS,
+              );
+              return;
+            }
+
+            if (sequence.stage !== 'scoring') {
+              return;
+            }
+
+            state.postMinigameSequence = null;
+            await GameRedisRepository.saveGame(targetRoomId, state);
+            const emissions = await gameService.handleAction(targetRoomId, {
+              type: 'NEXT_ROUND',
+              playerId: 'SYSTEM',
+            });
+            dispatchEmissions(io, emissions);
+            return;
           }
 
           case 'check-afk': {

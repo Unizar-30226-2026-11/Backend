@@ -161,6 +161,12 @@ interface BaseGameState {
     startedAt: number;
     scores?: Record<string, number>;
   } | null;
+  /** Secuencia interna para reanudar la ronda tras un minijuego */
+  postMinigameSequence?: {
+    sequenceId: string;
+    phaseVersion: number;
+    stage: 'reveal' | 'scoring';
+  } | null;
   /** Diccionario en memoria con las URLs de las cartas de la partida */
   cardUrls: Record<number, string>;
 }
