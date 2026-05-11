@@ -126,7 +126,7 @@ export const FriendService = {
       where: {
         OR: [
           { id_user_1: id_user_1, id_user_2: id_user_2 },
-          { id_user_2: id_user_2, id_user_1: id_user_1 },
+          { id_user_1: id_user_2, id_user_2: id_user_1 },
         ],
       },
     });
