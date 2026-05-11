@@ -12,6 +12,7 @@ describe('FriendService - Pruebas Funciones', () => {
   let main_u: string;
   let friend_u: string;
   let stranger_u: string;
+  let isolated_u: string;
   const dynamic_relations: { id_user_1: number; id_user_2: number }[] = [];
 
   beforeAll(async () => {
@@ -38,9 +39,19 @@ describe('FriendService - Pruebas Funciones', () => {
       users.push(u.id_user);
     }
 
+    // Create one more isolated user with no relations
+    const isolatedUser = await prisma.user.create({
+      data: {
+        username: 'FriendTest_Isolated',
+        email: 'ftisolated@test.com',
+        password: '123',
+      },
+    });
+
     main_u = `${ID_PREFIXES.USER}${users[0]}`;
     friend_u = `${ID_PREFIXES.USER}${users[1]}`;
     stranger_u = `${ID_PREFIXES.USER}${users[9]}`;
+    isolated_u = `${ID_PREFIXES.USER}${isolatedUser.id_user}`;
 
     // Crear una amistad confirmada (User 0 y User 1)
     await prisma.friendships.create({
@@ -193,7 +204,7 @@ describe('FriendService - Pruebas Funciones', () => {
       test('Relación Inexistente:', async () => {
         const resultado = await FriendService.checkRelationshipStatus(
           main_u,
-          stranger_u,
+          isolated_u,
         );
 
         expect(resultado).toBeNull();
@@ -419,12 +430,23 @@ describe('FriendService - Pruebas Funciones', () => {
   });
 
   afterAll(async () => {
+    // Limpieza final - incluir el usuario aislado
+    const allTestUsers = await prisma.user.findMany({
+      where: { username: { startsWith: 'FriendTest_' } },
+    });
+    const allTestUserIds = allTestUsers.map((u) => u.id_user);
+
     await prisma.friendships.deleteMany({
       where: {
-        OR: [{ id_user_1: { in: users } }, { id_user_2: { in: users } }],
+        OR: [
+          { id_user_1: { in: allTestUserIds } },
+          { id_user_2: { in: allTestUserIds } },
+        ],
       },
     });
-    await prisma.user.deleteMany({ where: { id_user: { in: users } } });
+    await prisma.user.deleteMany({
+      where: { id_user: { in: allTestUserIds } },
+    });
   });
 
   afterEach(() => {});
