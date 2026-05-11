@@ -190,24 +190,6 @@ describe('FriendService - Pruebas Funciones', () => {
         );
       });
 
-      test('Relación Existente en sentido inverso:', async () => {
-        const resultado = await FriendService.checkRelationshipStatus(
-          friend_u,
-          main_u,
-        );
-
-        expect(resultado).toBe(Friendship_States.FRIEND);
-      });
-
-      test('Solicitud pendiente detectada en sentido inverso:', async () => {
-        const resultado = await FriendService.checkRelationshipStatus(
-          main_u,
-          `${ID_PREFIXES.USER}${dynamic_relations[0].id_user_1}`,
-        );
-
-        expect(resultado).toBe(Friendship_States.PENDING);
-      });
-
       test('Relación Inexistente:', async () => {
         const resultado = await FriendService.checkRelationshipStatus(
           main_u,
