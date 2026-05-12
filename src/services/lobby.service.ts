@@ -1,8 +1,6 @@
 // service/lobby.service.ts
 // Simulacion de la base de datos asincrona para Lobbies
 
-import { PrismaClient } from '@prisma/client';
-
 import { prisma } from '../infrastructure/prisma';
 import { LobbyRedisRepository } from '../repositories/lobby.repository'; // Importamos el client de Redis para posibles operaciones relacionadas con lobbies (cacheo, locks, etc.)
 import { ID_PREFIXES } from '../shared/constants/id-prefixes';
