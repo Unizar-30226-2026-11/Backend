@@ -30,23 +30,29 @@ export const LobbyRedisRepository = {
    * Buscador para la lista de salas públicas.
    */
   async searchPublic(query?: string) {
-    let search = lobbyRepository
+    const search = lobbyRepository
       .search()
       .where('isPrivate')
       .equals(false)
       .and('status')
       .equals('waiting');
 
-    if (query) {
-      search = search.and('name').matches(query);
-    }
-
     const lobbies = await search.return.all();
+    const normalizedQuery = query?.trim().toLowerCase();
 
-    return lobbies.map((lobby) => {
-      lobby.playerNames = JSON.parse((lobby.playerNames as string) || '{}');
-      return lobby;
-    });
+    return lobbies
+      .filter((lobby) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+
+        const name = (lobby.name as string | undefined)?.toLowerCase() || '';
+        return name.includes(normalizedQuery);
+      })
+      .map((lobby) => {
+        lobby.playerNames = JSON.parse((lobby.playerNames as string) || '{}');
+        return lobby;
+      });
   },
 
   /**
